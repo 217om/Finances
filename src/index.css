@@ -95,8 +95,20 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
-.currency-picker select,
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.picker-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.picker select,
 .field select {
   appearance: none;
   background: var(--surface);
@@ -336,6 +348,33 @@ main.container {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
   gap: 20px;
+}
+
+/* ---------- Range controls ---------- */
+.controls {
+  padding: 14px 18px;
+}
+.controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.range-pickers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range-dash {
+  color: var(--muted);
+}
+.controls-note {
+  margin-top: 10px;
+}
+.range-pickers select {
+  padding: 6px 8px;
+  font-size: 13px;
 }
 
 /* ---------- Segmented control ---------- */

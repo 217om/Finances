@@ -47,14 +47,29 @@ function monthsBetween(start: string, end: string): string[] {
   return out;
 }
 
-/** Group transactions into per-month income / expense / net buckets. */
-export function summarizeByMonth(txs: Transaction[]): MonthlySummary[] {
+/**
+ * Which monthly period a date belongs to, given the day the user's month starts
+ * on (1 = normal calendar months). With startDay = 25, a transaction dated the
+ * 25th or later belongs to the period that *starts* that month; an earlier date
+ * belongs to the period that started the previous month. The period is labelled
+ * by the calendar month it starts in — i.e. the month that "starts on the 25th".
+ */
+export function periodKey(dateISO: string, startDay: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const ym = `${y}-${String(m).padStart(2, '0')}`;
+  if (startDay <= 1 || d >= startDay) return ym;
+  return addMonths(ym, -1);
+}
+
+/** Group transactions into per-period income / expense / net buckets. */
+export function summarizeByMonth(txs: Transaction[], startDay = 1): MonthlySummary[] {
   const map = new Map<string, MonthlySummary>();
   for (const t of txs) {
-    let s = map.get(t.month);
+    const key = periodKey(t.date, startDay);
+    let s = map.get(key);
     if (!s) {
-      s = { month: t.month, income: 0, expenses: 0, net: 0, txCount: 0 };
-      map.set(t.month, s);
+      s = { month: key, income: 0, expenses: 0, net: 0, txCount: 0 };
+      map.set(key, s);
     }
     if (t.amount >= 0) s.income += t.amount;
     else s.expenses += -t.amount;
@@ -94,8 +109,8 @@ function average(nums: number[]): number {
 }
 
 /** Compute the whole-history overview from a flat transaction list. */
-export function buildOverview(txs: Transaction[]): Overview {
-  const months = summarizeByMonth(txs);
+export function buildOverview(txs: Transaction[], startDay = 1): Overview {
+  const months = summarizeByMonth(txs, startDay);
   const active = months.filter((m) => m.txCount > 0);
 
   const totalIncome = active.reduce((a, m) => a + m.income, 0);

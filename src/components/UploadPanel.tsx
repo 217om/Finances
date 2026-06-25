@@ -48,7 +48,7 @@ export default function UploadPanel({ onFiles, compact }: Props) {
         ⬆
       </div>
       <div className="dropzone-text">
-        <strong>{compact ? 'Add this month’s statement' : 'Drop your bank statement here'}</strong>
+        <strong>{compact ? 'Add more data' : 'Drop your bank statement here'}</strong>
         <span>CSV or Excel · click to browse · your file stays on your device</span>
       </div>
     </section>

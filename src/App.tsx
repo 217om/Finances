@@ -12,6 +12,7 @@ import EmptyState from './components/EmptyState';
 import Toast from './components/Toast';
 
 const CURRENCY_KEY = 'cashflow.currency';
+const MONTH_START_KEY = 'cashflow.monthStartDay';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -21,26 +22,37 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrencyState] = useState(getCurrency());
+  const [monthStartDay, setMonthStartDay] = useState(1);
 
-  // Restore currency preference and load stored history on first mount.
+  // Restore preferences and load stored history on first mount.
   useEffect(() => {
     const saved = localStorage.getItem(CURRENCY_KEY);
     if (saved) {
       setCurrency(saved);
       setCurrencyState(saved);
     }
+    const savedDay = Number(localStorage.getItem(MONTH_START_KEY));
+    if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
     getAllTransactions()
       .then(setTransactions)
       .catch(() => setError('Could not open local storage. Is this a private browsing window?'))
       .finally(() => setLoading(false));
   }, []);
 
-  const overview = useMemo(() => buildOverview(transactions), [transactions]);
+  const overview = useMemo(
+    () => buildOverview(transactions, monthStartDay),
+    [transactions, monthStartDay],
+  );
 
   const handleCurrencyChange = useCallback((code: string) => {
     setCurrency(code);
     setCurrencyState(code);
     localStorage.setItem(CURRENCY_KEY, code);
+  }, []);
+
+  const handleMonthStartChange = useCallback((day: number) => {
+    setMonthStartDay(day);
+    localStorage.setItem(MONTH_START_KEY, String(day));
   }, []);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
@@ -101,6 +113,8 @@ export default function App() {
       <Header
         currency={currency}
         onCurrencyChange={handleCurrencyChange}
+        monthStartDay={monthStartDay}
+        onMonthStartChange={handleMonthStartChange}
         hasData={hasData}
         onClearAll={handleClearAll}
       />
@@ -115,7 +129,7 @@ export default function App() {
             {error && <div className="banner banner-error">{error}</div>}
 
             {hasData ? (
-              <Dashboard overview={overview} />
+              <Dashboard overview={overview} monthStartDay={monthStartDay} />
             ) : (
               <EmptyState />
             )}

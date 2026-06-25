@@ -1,6 +1,6 @@
 // Display formatting helpers.
 
-let currency = 'USD';
+let currency = 'OMR';
 
 /** Set the currency used by `money()` (persisted by the caller). */
 export function setCurrency(code: string): void {
@@ -11,18 +11,20 @@ export function getCurrency(): string {
   return currency;
 }
 
-const COMMON_CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'AED', 'SAR', 'JPY', 'INR', 'CHF'];
+const COMMON_CURRENCIES = ['OMR', 'USD', 'EUR', 'GBP', 'AED', 'SAR', 'QAR', 'KWD', 'BHD', 'CAD', 'AUD', 'JPY', 'INR', 'CHF'];
 
 export function currencyOptions(): string[] {
   return COMMON_CURRENCIES;
 }
 
 export function money(n: number, opts: { compact?: boolean; sign?: boolean } = {}): string {
+  // In standard mode let the currency decide its natural decimals (e.g. OMR
+  // uses 3). In compact mode keep it terse.
   const formatter = new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
     notation: opts.compact ? 'compact' : 'standard',
-    maximumFractionDigits: opts.compact ? 1 : 2,
+    ...(opts.compact ? { maximumFractionDigits: 1 } : {}),
     signDisplay: opts.sign ? 'always' : 'auto',
   });
   return formatter.format(n);
