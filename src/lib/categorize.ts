@@ -173,6 +173,26 @@ export const CATEGORY_COLORS: Record<string, string> = {
   Other: '#94a3b8',
 };
 
+// Palette used to give user-created categories a stable, distinct color.
+const PALETTE = [
+  '#6366f1', '#0ea5e9', '#f97316', '#14b8a6', '#eab308', '#ec4899', '#ef4444',
+  '#a855f7', '#06b6d4', '#8b5cf6', '#22c55e', '#f43f5e', '#0891b2', '#84cc16',
+  '#d946ef', '#fb7185', '#2dd4bf', '#f59e0b',
+];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
 export function categoryColor(category: string): string {
-  return CATEGORY_COLORS[category] ?? '#94a3b8';
+  if (CATEGORY_COLORS[category]) return CATEGORY_COLORS[category];
+  // Deterministic color for custom categories so they look consistent.
+  return PALETTE[hashString(category) % PALETTE.length];
+}
+
+/** Normalize a user-typed category name (trim, collapse spaces, cap length). */
+export function normalizeCategoryName(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 28);
 }

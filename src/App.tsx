@@ -18,7 +18,7 @@ import {
 } from './lib/db';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
-import { makeResolver } from './lib/categorize';
+import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
 import { getCurrency, setCurrency } from './lib/format';
 import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
 import Header from './components/Header';
@@ -31,6 +31,7 @@ import CategorizeWizard from './components/CategorizeWizard';
 
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
+const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -43,6 +44,7 @@ export default function App() {
   const [monthStartDay, setMonthStartDay] = useState(1);
   const [rules, setRules] = useState<CategoryRule[]>([]);
   const [overrides, setOverrides] = useState<CategoryOverride[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
 
   // Restore preferences and load stored data on first mount.
@@ -54,6 +56,12 @@ export default function App() {
     }
     const savedDay = Number(localStorage.getItem(MONTH_START_KEY));
     if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
+    try {
+      const savedCats = JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) ?? '[]');
+      if (Array.isArray(savedCats)) setCustomCategories(savedCats.filter((c) => typeof c === 'string'));
+    } catch {
+      /* ignore malformed value */
+    }
     Promise.all([getAllTransactions(), getRules(), getOverrides()])
       .then(([txs, r, o]) => {
         setTransactions(txs);
@@ -80,6 +88,18 @@ export default function App() {
     () => buildGroups(transactions, rulesMap, overridesMap),
     [transactions, rulesMap, overridesMap],
   );
+
+  const handleCreateCategory = useCallback((rawName: string) => {
+    setCustomCategories((prev) => {
+      const exists =
+        prev.some((c) => c.toLowerCase() === rawName.toLowerCase()) ||
+        EXPENSE_CATEGORIES.some((c) => c.toLowerCase() === rawName.toLowerCase());
+      if (exists) return prev;
+      const next = [...prev, rawName];
+      localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const handleWizardComplete = useCallback(
     async (newRules: CategoryRule[], newOverrides: CategoryOverride[]) => {
@@ -179,9 +199,11 @@ export default function App() {
       return;
     }
     await clearAll();
+    localStorage.removeItem(CUSTOM_CATEGORIES_KEY);
     setTransactions([]);
     setRules([]);
     setOverrides([]);
+    setCustomCategories([]);
     setToast('All data cleared.');
   }, []);
 
@@ -237,6 +259,8 @@ export default function App() {
         <CategorizeWizard
           groups={grouping.groups}
           leftovers={grouping.leftovers}
+          customCategories={customCategories}
+          onCreateCategory={handleCreateCategory}
           onComplete={handleWizardComplete}
           onClose={() => setWizardOpen(false)}
         />

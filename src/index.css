@@ -938,6 +938,25 @@ main.container {
   border-radius: 7px;
   font-size: 13px;
 }
+.catpick-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.catpick-add input {
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 13px;
+  width: 150px;
+  outline: none;
+}
+.wiz-row-leftover .catpick-add {
+  flex: none;
+}
+.wiz-row-leftover .catpick-add input {
+  width: 120px;
+}
 .wiz-legend {
   display: flex;
   flex-wrap: wrap;

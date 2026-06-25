@@ -3,10 +3,13 @@ import type { CategoryOverride, CategoryRule, Transaction } from '../types';
 import type { TxGroup } from '../lib/grouping';
 import { EXPENSE_CATEGORIES, categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
+import CategoryPicker from './CategoryPicker';
 
 interface Props {
   groups: TxGroup[];
   leftovers: Transaction[];
+  customCategories: string[];
+  onCreateCategory: (name: string) => void;
   onComplete: (rules: CategoryRule[], overrides: CategoryOverride[]) => void;
   onClose: () => void;
 }
@@ -19,8 +22,28 @@ const KEEP = '__keep__';
  * continue. A final step quick-classifies the leftovers. Choices are returned
  * as rules (auto-applied to future imports) and per-transaction overrides.
  */
-export default function CategorizeWizard({ groups, leftovers, onComplete, onClose }: Props) {
+export default function CategorizeWizard({
+  groups,
+  leftovers,
+  customCategories,
+  onCreateCategory,
+  onComplete,
+  onClose,
+}: Props) {
   const [step, setStep] = useState(0);
+
+  // Built-in categories plus any the user has created (de-duplicated).
+  const categoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...EXPENSE_CATEGORIES, ...customCategories]) {
+      if (!seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    return out;
+  }, [customCategories]);
 
   // Accumulated decisions.
   const [rules, setRules] = useState<CategoryRule[]>([]);
@@ -145,13 +168,12 @@ export default function CategorizeWizard({ groups, leftovers, onComplete, onClos
               </div>
               <label className="field">
                 <span>Category for the {includedCount} selected</span>
-                <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {EXPENSE_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <CategoryPicker
+                  value={category}
+                  onChange={setCategory}
+                  options={categoryOptions}
+                  onCreate={onCreateCategory}
+                />
               </label>
             </div>
 
@@ -200,19 +222,14 @@ export default function CategorizeWizard({ groups, leftovers, onComplete, onClos
                       {t.description || '—'}
                     </span>
                     <span className="wiz-amt neg">{money(t.amount)}</span>
-                    <select
+                    <CategoryPicker
                       value={leftoverPick[t.id] ?? KEEP}
-                      onChange={(e) =>
-                        setLeftoverPick((p) => ({ ...p, [t.id]: e.target.value }))
-                      }
-                    >
-                      <option value={KEEP}>Keep auto-guess</option>
-                      {EXPENSE_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(cat) => setLeftoverPick((p) => ({ ...p, [t.id]: cat }))}
+                      options={categoryOptions}
+                      onCreate={onCreateCategory}
+                      keepValue={KEEP}
+                      keepLabel="Keep auto-guess"
+                    />
                   </div>
                 ))}
               </div>
