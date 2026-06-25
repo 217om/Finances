@@ -1,4 +1,5 @@
 import { currencyOptions } from '../lib/format';
+import DataMenu from './DataMenu';
 
 interface Props {
   currency: string;
@@ -7,6 +8,8 @@ interface Props {
   onMonthStartChange: (day: number) => void;
   hasData: boolean;
   onClearAll: () => void;
+  onExportJSON: () => void;
+  onExportCSV: () => void;
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
@@ -18,6 +21,8 @@ export default function Header({
   onMonthStartChange,
   hasData,
   onClearAll,
+  onExportJSON,
+  onExportCSV,
 }: Props) {
   return (
     <header className="header">
@@ -57,9 +62,11 @@ export default function Header({
             </select>
           </label>
           {hasData && (
-            <button type="button" className="btn btn-ghost" onClick={onClearAll}>
-              Clear data
-            </button>
+            <DataMenu
+              onExportJSON={onExportJSON}
+              onExportCSV={onExportCSV}
+              onClearAll={onClearAll}
+            />
           )}
         </div>
       </div>

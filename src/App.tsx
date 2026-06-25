@@ -4,6 +4,7 @@ import { inspectFile, normalize } from './lib/parse';
 import { addTransactions, clearAll, getAllTransactions } from './lib/db';
 import { buildOverview } from './lib/aggregate';
 import { getCurrency, setCurrency } from './lib/format';
+import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
 import ColumnMapper from './components/ColumnMapper';
@@ -59,9 +60,28 @@ export default function App() {
     setError(null);
     const list = Array.from(files);
     if (list.length === 0) return;
-    // Inspect one file at a time so the user can confirm its column mapping.
+    const file = list[0];
+
+    // A CashFlow JSON backup is restored directly, skipping column mapping.
+    if (isBackupFile(file.name)) {
+      try {
+        const restored = parseBackup(await file.text());
+        const result = await addTransactions(restored, file.name);
+        setTransactions(await getAllTransactions());
+        setToast(
+          `Restored backup · ${result.added} added${
+            result.duplicates ? `, ${result.duplicates} already present` : ''
+          }`,
+        );
+      } catch (e) {
+        setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
+      }
+      return;
+    }
+
+    // Otherwise inspect the statement so the user can confirm its columns.
     try {
-      const parsed = await inspectFile(list[0]);
+      const parsed = await inspectFile(file);
       if (parsed.rows.length === 0) {
         setError(`No rows found in "${parsed.fileName}". Is it an exported transaction file?`);
         return;
@@ -71,6 +91,9 @@ export default function App() {
       setError(`Could not read that file. ${(e as Error).message ?? ''}`.trim());
     }
   }, []);
+
+  const handleExportJSON = useCallback(() => downloadBackup(transactions), [transactions]);
+  const handleExportCSV = useCallback(() => downloadCSV(transactions), [transactions]);
 
   const handleConfirmMapping = useCallback(
     async (parsed: ParsedFile, mapping: ColumnMapping) => {
@@ -117,6 +140,8 @@ export default function App() {
         onMonthStartChange={handleMonthStartChange}
         hasData={hasData}
         onClearAll={handleClearAll}
+        onExportJSON={handleExportJSON}
+        onExportCSV={handleExportCSV}
       />
 
       <main className="container">

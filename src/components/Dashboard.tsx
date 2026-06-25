@@ -7,6 +7,8 @@ import NetCashflowChart from './NetCashflowChart';
 import IncomeExpenseChart from './IncomeExpenseChart';
 import MonthTable from './MonthTable';
 import Sources from './Sources';
+import CategoryBreakdown from './CategoryBreakdown';
+import Insights from './Insights';
 
 interface Props {
   overview: Overview;
@@ -138,6 +140,28 @@ export default function Dashboard({ overview, monthStartDay }: Props) {
         </div>
         <IncomeExpenseChart months={visible} />
       </section>
+
+      <div className="two-col">
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Where your money goes</h2>
+              <p className="muted">Spending by category over the selected range.</p>
+            </div>
+          </div>
+          <CategoryBreakdown months={visible} />
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Insights</h2>
+              <p className="muted">Recurring items and alerts, from your full history.</p>
+            </div>
+          </div>
+          <Insights overview={overview} />
+        </section>
+      </div>
 
       <div className="two-col">
         <section className="panel">

@@ -37,7 +37,7 @@ export default function UploadPanel({ onFiles, compact }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.xlsx,.xls,.xlsm,text/csv"
+        accept=".csv,.xlsx,.xls,.xlsm,.json,text/csv,application/json"
         hidden
         onChange={(e) => {
           if (e.target.files?.length) onFiles(e.target.files);

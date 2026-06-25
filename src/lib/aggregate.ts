@@ -3,12 +3,33 @@
 // simple trend signals over the whole history.
 
 import type { MonthlySummary, Transaction } from '../types';
+import { categorize } from './categorize';
 
 export interface SourceSummary {
   source: string;
   count: number;
   firstDate: string;
   lastDate: string;
+}
+
+/** A detected recurring payment (subscription/bill) or income (salary). */
+export interface RecurringItem {
+  label: string;
+  kind: 'income' | 'expense';
+  category: string;
+  /** Typical (median) amount per occurrence, positive number. */
+  amount: number;
+  /** Number of distinct months it appeared in. */
+  months: number;
+  lastDate: string;
+}
+
+/** A noteworthy observation about the user's months. */
+export interface Insight {
+  severity: 'good' | 'warn' | 'info';
+  title: string;
+  detail: string;
+  month?: string;
 }
 
 export interface Overview {
@@ -26,6 +47,9 @@ export interface Overview {
   netTrendPct: number | null;
   sources: SourceSummary[];
   txCount: number;
+  recurring: RecurringItem[];
+  recurringExpenseMonthly: number;
+  insights: Insight[];
 }
 
 function addMonths(ym: string, delta: number): string {
@@ -68,11 +92,16 @@ export function summarizeByMonth(txs: Transaction[], startDay = 1): MonthlySumma
     const key = periodKey(t.date, startDay);
     let s = map.get(key);
     if (!s) {
-      s = { month: key, income: 0, expenses: 0, net: 0, txCount: 0 };
+      s = { month: key, income: 0, expenses: 0, net: 0, txCount: 0, categories: {} };
       map.set(key, s);
     }
-    if (t.amount >= 0) s.income += t.amount;
-    else s.expenses += -t.amount;
+    if (t.amount >= 0) {
+      s.income += t.amount;
+    } else {
+      s.expenses += -t.amount;
+      const cat = categorize(t.description, t.amount);
+      s.categories[cat] = (s.categories[cat] ?? 0) + -t.amount;
+    }
     s.net = s.income - s.expenses;
     s.txCount++;
   }
@@ -84,7 +113,7 @@ export function summarizeByMonth(txs: Transaction[], startDay = 1): MonthlySumma
   // silently collapsing the time axis.
   const all = monthsBetween(present[0].month, present[present.length - 1].month);
   return all.map(
-    (m) => map.get(m) ?? { month: m, income: 0, expenses: 0, net: 0, txCount: 0 },
+    (m) => map.get(m) ?? { month: m, income: 0, expenses: 0, net: 0, txCount: 0, categories: {} },
   );
 }
 
@@ -106,6 +135,152 @@ function summarizeSources(txs: Transaction[]): SourceSummary[] {
 function average(nums: number[]): number {
   if (nums.length === 0) return 0;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Sum each category's expense across a set of months (e.g. the visible range). */
+export function categoryTotals(months: MonthlySummary[]): { category: string; amount: number }[] {
+  const totals: Record<string, number> = {};
+  for (const m of months) {
+    for (const [cat, amt] of Object.entries(m.categories)) {
+      totals[cat] = (totals[cat] ?? 0) + amt;
+    }
+  }
+  return Object.entries(totals)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/** Collapse a description to a stable merchant key (drop digits/punctuation). */
+function merchantKey(description: string): string {
+  return description
+    .toLowerCase()
+    .replace(/[0-9]+/g, ' ')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 3)
+    .join(' ');
+}
+
+/**
+ * Detect recurring income/expenses: things that show up in 3+ distinct months
+ * with a reasonably consistent amount (e.g. salary, rent, subscriptions).
+ */
+export function detectRecurring(txs: Transaction[]): RecurringItem[] {
+  const groups = new Map<string, { txs: Transaction[]; labels: Map<string, number> }>();
+  for (const t of txs) {
+    const key = merchantKey(t.description);
+    if (key.length < 3) continue;
+    let g = groups.get(key);
+    if (!g) {
+      g = { txs: [], labels: new Map() };
+      groups.set(key, g);
+    }
+    g.txs.push(t);
+    g.labels.set(t.description, (g.labels.get(t.description) ?? 0) + 1);
+  }
+
+  const items: RecurringItem[] = [];
+  for (const g of groups.values()) {
+    const monthsSeen = new Set(g.txs.map((t) => t.month));
+    if (monthsSeen.size < 3) continue;
+
+    const amounts = g.txs.map((t) => t.amount);
+    const med = median(amounts);
+    if (med === 0) continue;
+
+    // Require consistency: most occurrences within 30% of the median amount.
+    const consistent = amounts.filter((a) => Math.abs(a - med) <= Math.abs(med) * 0.3).length;
+    if (consistent / amounts.length < 0.6) continue;
+
+    // Most frequent original description as the display label.
+    const label = [...g.labels.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const lastDate = g.txs.reduce((acc, t) => (t.date > acc ? t.date : acc), g.txs[0].date);
+
+    items.push({
+      label,
+      kind: med >= 0 ? 'income' : 'expense',
+      category: categorize(label, med),
+      amount: Math.abs(med),
+      months: monthsSeen.size,
+      lastDate,
+    });
+  }
+
+  return items.sort((a, b) => b.amount - a.amount);
+}
+
+/** Build a short list of plain-language insights about the user's months. */
+function buildInsights(active: MonthlySummary[], recurring: RecurringItem[]): Insight[] {
+  const insights: Insight[] = [];
+  if (active.length === 0) return insights;
+
+  const last = active[active.length - 1];
+  const expenseHistory = active.map((m) => m.expenses);
+  const medExpense = median(expenseHistory);
+
+  // High-spend month: latest month well above the typical month.
+  if (medExpense > 0 && last.expenses >= medExpense * 1.4) {
+    const pct = Math.round((last.expenses / medExpense - 1) * 100);
+    insights.push({
+      severity: 'warn',
+      title: `Spending spiked in ${last.month}`,
+      detail: `Expenses were ${pct}% above your typical month.`,
+      month: last.month,
+    });
+  }
+
+  // Missing income: income usually present, but not in the latest month.
+  const monthsWithIncome = active.filter((m) => m.income > 0).length;
+  if (active.length >= 3 && monthsWithIncome / active.length >= 0.6 && last.income === 0) {
+    insights.push({
+      severity: 'warn',
+      title: `No income recorded in ${last.month}`,
+      detail: 'You usually have income this time — a statement may be missing or a deposit is late.',
+      month: last.month,
+    });
+  }
+
+  // Negative month: spent more than earned most recently.
+  if (last.income > 0 && last.net < 0) {
+    insights.push({
+      severity: 'warn',
+      title: `${last.month} ran at a loss`,
+      detail: 'You spent more than you brought in this month.',
+      month: last.month,
+    });
+  }
+
+  // A reassuring note when things look healthy.
+  const recentNets = active.slice(-3).map((m) => m.net);
+  if (recentNets.length >= 2 && recentNets.every((n) => n > 0)) {
+    insights.push({
+      severity: 'good',
+      title: 'Consistently positive',
+      detail: `You've saved money in each of the last ${recentNets.length} months.`,
+    });
+  }
+
+  // Subscriptions footprint.
+  const subs = recurring.filter((r) => r.kind === 'expense');
+  if (subs.length >= 2) {
+    const monthly = subs.reduce((a, r) => a + r.amount, 0);
+    insights.push({
+      severity: 'info',
+      title: `${subs.length} recurring payments detected`,
+      detail: `They add up to about ${monthly.toFixed(0)} per month in regular bills and subscriptions.`,
+    });
+  }
+
+  return insights;
 }
 
 /** Compute the whole-history overview from a flat transaction list. */
@@ -138,6 +313,12 @@ export function buildOverview(txs: Transaction[], startDay = 1): Overview {
     }
   }
 
+  const recurring = detectRecurring(txs);
+  const recurringExpenseMonthly = recurring
+    .filter((r) => r.kind === 'expense')
+    .reduce((a, r) => a + r.amount, 0);
+  const insights = buildInsights(active, recurring);
+
   return {
     months,
     totalIncome,
@@ -152,6 +333,9 @@ export function buildOverview(txs: Transaction[], startDay = 1): Overview {
     netTrendPct,
     sources: summarizeSources(txs),
     txCount: txs.length,
+    recurring,
+    recurringExpenseMonthly,
+    insights,
   };
 }
 

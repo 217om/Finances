@@ -50,6 +50,8 @@ export interface MonthlySummary {
   expenses: number; // stored as a positive number
   net: number; // income - expenses
   txCount: number;
+  /** Expense totals broken down by category (positive numbers). */
+  categories: Record<string, number>;
 }
 
 /** Outcome of importing a file into the store. */
