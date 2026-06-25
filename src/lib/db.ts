@@ -3,7 +3,7 @@
 // Everything stays on the user's device; nothing is sent to a server.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { ImportResult, Transaction } from '../types';
+import type { CategoryOverride, CategoryRule, ImportResult, Transaction } from '../types';
 
 interface CashFlowDB extends DBSchema {
   transactions: {
@@ -11,20 +11,34 @@ interface CashFlowDB extends DBSchema {
     value: Transaction;
     indexes: { 'by-month': string; 'by-date': string };
   };
+  rules: {
+    key: string; // CategoryRule.signature
+    value: CategoryRule;
+  };
+  overrides: {
+    key: string; // CategoryOverride.id (transaction id)
+    value: CategoryOverride;
+  };
 }
 
 const DB_NAME = 'cashflow';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
 
 function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
   if (!dbPromise) {
     dbPromise = openDB<CashFlowDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const store = db.createObjectStore('transactions', { keyPath: 'id' });
-        store.createIndex('by-month', 'month');
-        store.createIndex('by-date', 'date');
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const store = db.createObjectStore('transactions', { keyPath: 'id' });
+          store.createIndex('by-month', 'month');
+          store.createIndex('by-date', 'date');
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore('rules', { keyPath: 'signature' });
+          db.createObjectStore('overrides', { keyPath: 'id' });
+        }
       },
     });
   }
@@ -82,8 +96,44 @@ export async function deleteBySource(source: string): Promise<number> {
   return removed;
 }
 
-/** Wipe all stored data. */
+/** Wipe all stored data, including category rules and overrides. */
 export async function clearAll(): Promise<void> {
   const db = await getDB();
-  await db.clear('transactions');
+  await Promise.all([db.clear('transactions'), db.clear('rules'), db.clear('overrides')]);
+}
+
+// --- Category rules & overrides ----------------------------------------------
+
+export async function getRules(): Promise<CategoryRule[]> {
+  const db = await getDB();
+  return db.getAll('rules');
+}
+
+export async function getOverrides(): Promise<CategoryOverride[]> {
+  const db = await getDB();
+  return db.getAll('overrides');
+}
+
+/** Upsert rules and overrides in one transaction. */
+export async function saveCategorization(
+  rules: CategoryRule[],
+  overrides: CategoryOverride[],
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(['rules', 'overrides'], 'readwrite');
+  for (const r of rules) await tx.objectStore('rules').put(r);
+  for (const o of overrides) await tx.objectStore('overrides').put(o);
+  await tx.done;
+}
+
+/** Remove a single rule by signature. */
+export async function deleteRule(signature: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('rules', signature);
+}
+
+/** Reset all user categorization (keeps transactions). */
+export async function clearCategorization(): Promise<void> {
+  const db = await getDB();
+  await Promise.all([db.clear('rules'), db.clear('overrides')]);
 }

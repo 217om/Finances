@@ -1,8 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ColumnMapping, ImportResult, ParsedFile, Transaction } from './types';
+import type {
+  CategoryOverride,
+  CategoryRule,
+  ColumnMapping,
+  ImportResult,
+  ParsedFile,
+  Transaction,
+} from './types';
 import { inspectFile, normalize } from './lib/parse';
-import { addTransactions, clearAll, getAllTransactions } from './lib/db';
+import {
+  addTransactions,
+  clearAll,
+  getAllTransactions,
+  getOverrides,
+  getRules,
+  saveCategorization,
+} from './lib/db';
 import { buildOverview } from './lib/aggregate';
+import { buildGroups } from './lib/grouping';
+import { makeResolver } from './lib/categorize';
 import { getCurrency, setCurrency } from './lib/format';
 import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
 import Header from './components/Header';
@@ -11,6 +27,7 @@ import ColumnMapper from './components/ColumnMapper';
 import Dashboard from './components/Dashboard';
 import EmptyState from './components/EmptyState';
 import Toast from './components/Toast';
+import CategorizeWizard from './components/CategorizeWizard';
 
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
@@ -24,8 +41,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrencyState] = useState(getCurrency());
   const [monthStartDay, setMonthStartDay] = useState(1);
+  const [rules, setRules] = useState<CategoryRule[]>([]);
+  const [overrides, setOverrides] = useState<CategoryOverride[]>([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
-  // Restore preferences and load stored history on first mount.
+  // Restore preferences and load stored data on first mount.
   useEffect(() => {
     const saved = localStorage.getItem(CURRENCY_KEY);
     if (saved) {
@@ -34,15 +54,49 @@ export default function App() {
     }
     const savedDay = Number(localStorage.getItem(MONTH_START_KEY));
     if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
-    getAllTransactions()
-      .then(setTransactions)
+    Promise.all([getAllTransactions(), getRules(), getOverrides()])
+      .then(([txs, r, o]) => {
+        setTransactions(txs);
+        setRules(r);
+        setOverrides(o);
+      })
       .catch(() => setError('Could not open local storage. Is this a private browsing window?'))
       .finally(() => setLoading(false));
   }, []);
 
+  const rulesMap = useMemo(() => new Map(rules.map((r) => [r.signature, r])), [rules]);
+  const overridesMap = useMemo(
+    () => new Map(overrides.map((o) => [o.id, o.category])),
+    [overrides],
+  );
+  const categoryOf = useMemo(() => makeResolver(rulesMap, overridesMap), [rulesMap, overridesMap]);
+
   const overview = useMemo(
-    () => buildOverview(transactions, monthStartDay),
-    [transactions, monthStartDay],
+    () => buildOverview(transactions, monthStartDay, categoryOf),
+    [transactions, monthStartDay, categoryOf],
+  );
+
+  const grouping = useMemo(
+    () => buildGroups(transactions, rulesMap, overridesMap),
+    [transactions, rulesMap, overridesMap],
+  );
+
+  const handleWizardComplete = useCallback(
+    async (newRules: CategoryRule[], newOverrides: CategoryOverride[]) => {
+      // Merge: new decisions replace any existing rule/override with the same key.
+      const mergedRules = new Map(rules.map((r) => [r.signature, r]));
+      for (const r of newRules) mergedRules.set(r.signature, r);
+      const mergedOverrides = new Map(overrides.map((o) => [o.id, o]));
+      for (const o of newOverrides) mergedOverrides.set(o.id, o);
+
+      await saveCategorization(newRules, newOverrides);
+      setRules([...mergedRules.values()]);
+      setOverrides([...mergedOverrides.values()]);
+      setWizardOpen(false);
+      const n = newRules.length + newOverrides.length;
+      if (n > 0) setToast(`Categorization saved · ${newRules.length} rules applied`);
+    },
+    [rules, overrides],
   );
 
   const handleCurrencyChange = useCallback((code: string) => {
@@ -126,10 +180,13 @@ export default function App() {
     }
     await clearAll();
     setTransactions([]);
+    setRules([]);
+    setOverrides([]);
     setToast('All data cleared.');
   }, []);
 
   const hasData = transactions.length > 0;
+  const canCategorize = grouping.groups.length > 0 || grouping.leftovers.length > 0;
 
   return (
     <div className="app">
@@ -154,7 +211,12 @@ export default function App() {
             {error && <div className="banner banner-error">{error}</div>}
 
             {hasData ? (
-              <Dashboard overview={overview} monthStartDay={monthStartDay} />
+              <Dashboard
+                overview={overview}
+                monthStartDay={monthStartDay}
+                pendingCount={grouping.pendingCount}
+                onReview={canCategorize ? () => setWizardOpen(true) : undefined}
+              />
             ) : (
               <EmptyState />
             )}
@@ -168,6 +230,15 @@ export default function App() {
           busy={busy}
           onCancel={() => setPending(null)}
           onConfirm={handleConfirmMapping}
+        />
+      )}
+
+      {wizardOpen && (
+        <CategorizeWizard
+          groups={grouping.groups}
+          leftovers={grouping.leftovers}
+          onComplete={handleWizardComplete}
+          onClose={() => setWizardOpen(false)}
         />
       )}
 

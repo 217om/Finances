@@ -60,3 +60,22 @@ export interface ImportResult {
   duplicates: number;
   fileName: string;
 }
+
+/**
+ * A user-defined categorization rule, keyed by a merchant "signature" derived
+ * from the description. Applies to every current and future transaction whose
+ * signature matches, except the explicitly excluded ones.
+ */
+export interface CategoryRule {
+  signature: string;
+  category: string;
+  excludedIds: string[];
+  sample: string;
+  createdAt: number;
+}
+
+/** A manual, per-transaction category assignment (highest precedence). */
+export interface CategoryOverride {
+  id: string; // transaction id
+  category: string;
+}

@@ -5,6 +5,11 @@
 import type { MonthlySummary, Transaction } from '../types';
 import { categorize } from './categorize';
 
+/** A function that returns the category for a transaction. */
+export type CategoryOf = (tx: Transaction) => string;
+
+const defaultCategoryOf: CategoryOf = (t) => categorize(t.description, t.amount);
+
 export interface SourceSummary {
   source: string;
   count: number;
@@ -86,7 +91,11 @@ export function periodKey(dateISO: string, startDay: number): string {
 }
 
 /** Group transactions into per-period income / expense / net buckets. */
-export function summarizeByMonth(txs: Transaction[], startDay = 1): MonthlySummary[] {
+export function summarizeByMonth(
+  txs: Transaction[],
+  startDay = 1,
+  categoryOf: CategoryOf = defaultCategoryOf,
+): MonthlySummary[] {
   const map = new Map<string, MonthlySummary>();
   for (const t of txs) {
     const key = periodKey(t.date, startDay);
@@ -99,7 +108,7 @@ export function summarizeByMonth(txs: Transaction[], startDay = 1): MonthlySumma
       s.income += t.amount;
     } else {
       s.expenses += -t.amount;
-      const cat = categorize(t.description, t.amount);
+      const cat = categoryOf(t);
       s.categories[cat] = (s.categories[cat] ?? 0) + -t.amount;
     }
     s.net = s.income - s.expenses;
@@ -174,7 +183,10 @@ function merchantKey(description: string): string {
  * Detect recurring income/expenses: things that show up in 3+ distinct months
  * with a reasonably consistent amount (e.g. salary, rent, subscriptions).
  */
-export function detectRecurring(txs: Transaction[]): RecurringItem[] {
+export function detectRecurring(
+  txs: Transaction[],
+  categoryOf: CategoryOf = defaultCategoryOf,
+): RecurringItem[] {
   const groups = new Map<string, { txs: Transaction[]; labels: Map<string, number> }>();
   for (const t of txs) {
     const key = merchantKey(t.description);
@@ -204,11 +216,12 @@ export function detectRecurring(txs: Transaction[]): RecurringItem[] {
     // Most frequent original description as the display label.
     const label = [...g.labels.entries()].sort((a, b) => b[1] - a[1])[0][0];
     const lastDate = g.txs.reduce((acc, t) => (t.date > acc ? t.date : acc), g.txs[0].date);
+    const representative = g.txs.find((t) => t.description === label) ?? g.txs[0];
 
     items.push({
       label,
       kind: med >= 0 ? 'income' : 'expense',
-      category: categorize(label, med),
+      category: categoryOf(representative),
       amount: Math.abs(med),
       months: monthsSeen.size,
       lastDate,
@@ -284,8 +297,12 @@ function buildInsights(active: MonthlySummary[], recurring: RecurringItem[]): In
 }
 
 /** Compute the whole-history overview from a flat transaction list. */
-export function buildOverview(txs: Transaction[], startDay = 1): Overview {
-  const months = summarizeByMonth(txs, startDay);
+export function buildOverview(
+  txs: Transaction[],
+  startDay = 1,
+  categoryOf: CategoryOf = defaultCategoryOf,
+): Overview {
+  const months = summarizeByMonth(txs, startDay, categoryOf);
   const active = months.filter((m) => m.txCount > 0);
 
   const totalIncome = active.reduce((a, m) => a + m.income, 0);
@@ -313,7 +330,7 @@ export function buildOverview(txs: Transaction[], startDay = 1): Overview {
     }
   }
 
-  const recurring = detectRecurring(txs);
+  const recurring = detectRecurring(txs, categoryOf);
   const recurringExpenseMonthly = recurring
     .filter((r) => r.kind === 'expense')
     .reduce((a, r) => a + r.amount, 0);

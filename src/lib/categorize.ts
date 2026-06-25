@@ -85,6 +85,75 @@ export function categorize(description: string, amount: number): string {
   return 'Other';
 }
 
+// --- Fuzzy grouping signature -------------------------------------------------
+
+// Noise words that aren't useful for identifying a merchant.
+const SIGNATURE_STOP = new Set([
+  'pos', 'purchase', 'payment', 'pmt', 'card', 'visa', 'mastercard', 'maestro',
+  'debit', 'credit', 'transaction', 'trans', 'txn', 'tran', 'ref', 'reference',
+  'online', 'web', 'ecom', 'ecommerce', 'intl', 'international', 'value', 'date',
+  'authorisation', 'authorization', 'auth', 'contactless', 'mobile', 'app',
+  'aed', 'omr', 'usd', 'eur', 'gbp', 'sar', 'inr',
+]);
+
+/** Significant lowercase tokens from a description (drops noise & numbers). */
+export function significantTokens(description: string): string[] {
+  return description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !SIGNATURE_STOP.has(t));
+}
+
+/**
+ * A stable "merchant signature" used to group similar transactions even when
+ * the full descriptions differ (extra branch codes, locations, reference
+ * numbers). Bank descriptions usually lead with the merchant name, so the first
+ * significant token is the most stable identifier: "ADNOC Petrol" and "ADNOC
+ * Petrol Station Marina" both reduce to "adnoc".
+ */
+export function signatureOf(description: string): string {
+  const toks = significantTokens(description);
+  if (toks.length === 0) {
+    const fallback = description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')[0];
+    return fallback || 'misc';
+  }
+  return toks[0];
+}
+
+interface MinimalTx {
+  id: string;
+  description: string;
+  amount: number;
+}
+
+/**
+ * Resolve a transaction's category with precedence:
+ *   1. a manual per-transaction override
+ *   2. a user rule matching its signature (unless this tx is excluded from it)
+ *   3. the built-in keyword guess
+ */
+export function resolveCategory(
+  tx: MinimalTx,
+  rules: Map<string, import('../types').CategoryRule>,
+  overrides: Map<string, string>,
+): string {
+  const o = overrides.get(tx.id);
+  if (o) return o;
+  if (tx.amount >= 0) return INCOME_CATEGORY;
+  const rule = rules.get(signatureOf(tx.description));
+  if (rule && !rule.excludedIds.includes(tx.id)) return rule.category;
+  return categorize(tx.description, tx.amount);
+}
+
+/** Build a resolver closure for the current rules + overrides. */
+export function makeResolver(
+  rules: Map<string, import('../types').CategoryRule>,
+  overrides: Map<string, string>,
+): (tx: MinimalTx) => string {
+  return (tx) => resolveCategory(tx, rules, overrides);
+}
+
 // Stable colors so a category looks the same across every chart.
 export const CATEGORY_COLORS: Record<string, string> = {
   Income: '#16a34a',

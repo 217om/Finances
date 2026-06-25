@@ -17,6 +17,11 @@ Your statements never leave your device. All parsing and storage happen in your 
   money-in / money-out (debit/credit) columns.
 - **Safe re-uploads.** Transactions are de-duplicated by a hash of date + amount + description, so
   re-importing an overlapping statement never double-counts.
+- **Guided categorization.** Instead of pure keyword guessing, a wizard groups
+  similar transactions by merchant (fuzzy — descriptions need not match exactly),
+  lets you exclude outliers and assign one category per group, then quick-classify
+  the leftovers. Decisions are saved as rules and **auto-apply to future imports**,
+  so you're never re-prompted for merchants you've already classified.
 - **High-level dashboard.**
   - Net cashflow per month (with a 3-month moving average)
   - Income vs. expenses per month

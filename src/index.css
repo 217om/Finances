@@ -814,6 +814,139 @@ main.container {
   flex: none;
 }
 
+/* ---------- Review button / badge ---------- */
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.badge {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---------- Categorize wizard ---------- */
+.modal-wide {
+  max-width: 820px;
+}
+.wiz-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.wiz-head h2 {
+  margin: 0 0 2px;
+  font-size: 19px;
+}
+.wiz-progress {
+  height: 6px;
+  background: #eef1f5;
+  border-radius: 999px;
+  margin: 14px 0 18px;
+  overflow: hidden;
+}
+.wiz-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #16a34a);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+.wiz-group-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wiz-merchant {
+  display: block;
+  font-size: 17px;
+  margin-bottom: 2px;
+}
+.wiz-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip {
+  background: #f1f3f6;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.wiz-group-meta .field {
+  min-width: 220px;
+}
+.wiz-hint {
+  margin: 14px 0 8px;
+}
+.wiz-list {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.wiz-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #f1f3f6;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wiz-row:last-child {
+  border-bottom: none;
+}
+.wiz-row-off {
+  opacity: 0.45;
+}
+.wiz-row-leftover {
+  cursor: default;
+}
+.wiz-date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  width: 92px;
+}
+.wiz-desc {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wiz-amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  flex: none;
+}
+.wiz-row-leftover select {
+  flex: none;
+  width: 150px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+}
+.wiz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 /* ---------- Footer ---------- */
 .footer {
   text-align: center;
