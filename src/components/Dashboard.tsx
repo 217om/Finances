@@ -15,6 +15,7 @@ interface Props {
   monthStartDay: number;
   pendingCount: number;
   onReview?: () => void;
+  onReset?: () => void;
 }
 
 const PRESETS: { count: number | 'all'; label: string }[] = [
@@ -31,7 +32,13 @@ function ordinal(d: number): string {
   return `${d}th`;
 }
 
-export default function Dashboard({ overview, monthStartDay, pendingCount, onReview }: Props) {
+export default function Dashboard({
+  overview,
+  monthStartDay,
+  pendingCount,
+  onReview,
+  onReset,
+}: Props) {
   const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
   const first = keys[0];
   const last = keys[keys.length - 1];
@@ -150,12 +157,19 @@ export default function Dashboard({ overview, monthStartDay, pendingCount, onRev
               <h2>Where your money goes</h2>
               <p className="muted">Spending by category over the selected range.</p>
             </div>
-            {onReview && (
-              <button type="button" className="btn btn-primary btn-sm" onClick={onReview}>
-                Review categories
-                {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
-              </button>
-            )}
+            <div className="panel-actions">
+              {onReset && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
+                  Start over
+                </button>
+              )}
+              {onReview && (
+                <button type="button" className="btn btn-primary btn-sm" onClick={onReview}>
+                  Review categories
+                  {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+                </button>
+              )}
+            </div>
           </div>
           <CategoryBreakdown months={visible} />
         </section>

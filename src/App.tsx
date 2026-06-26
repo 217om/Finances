@@ -11,6 +11,7 @@ import { inspectFile, normalize } from './lib/parse';
 import {
   addTransactions,
   clearAll,
+  clearCategorization,
   getAllTransactions,
   getOverrides,
   getRules,
@@ -88,6 +89,23 @@ export default function App() {
     () => buildGroups(transactions, rulesMap, overridesMap),
     [transactions, rulesMap, overridesMap],
   );
+
+  const handleResetCategorization = useCallback(async () => {
+    if (
+      !confirm(
+        'Start categorization over? This clears your saved category rules and manual ' +
+          'assignments so you can reclassify from scratch. Your transactions and custom ' +
+          'categories are kept.',
+      )
+    ) {
+      return;
+    }
+    await clearCategorization();
+    setRules([]);
+    setOverrides([]);
+    setWizardOpen(true);
+    setToast('Categorization reset — reclassify from scratch.');
+  }, []);
 
   const handleCreateCategory = useCallback((rawName: string) => {
     setCustomCategories((prev) => {
@@ -209,6 +227,7 @@ export default function App() {
 
   const hasData = transactions.length > 0;
   const canCategorize = grouping.groups.length > 0 || grouping.leftovers.length > 0;
+  const hasCategorization = rules.length > 0 || overrides.length > 0;
 
   return (
     <div className="app">
@@ -238,6 +257,7 @@ export default function App() {
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
+                onReset={hasCategorization ? handleResetCategorization : undefined}
               />
             ) : (
               <EmptyState />
