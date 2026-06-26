@@ -76,13 +76,25 @@ const RULES: Rule[] = [
   { category: 'Cash', patterns: [/\batm\b/i, /cash withdrawal/i, /withdrawal/i, /cash wdl/i] },
 ];
 
+// Pure functions of the description are memoized: with many years of data the
+// same descriptions and signatures are looked up repeatedly across aggregation,
+// grouping, and resolution.
+const categoryCache = new Map<string, string>();
+
 /** Pick a category for a transaction. Positive amounts are income. */
 export function categorize(description: string, amount: number): string {
   if (amount >= 0) return INCOME_CATEGORY;
+  const cached = categoryCache.get(description);
+  if (cached !== undefined) return cached;
+  let result = 'Other';
   for (const rule of RULES) {
-    if (rule.patterns.some((p) => p.test(description))) return rule.category;
+    if (rule.patterns.some((p) => p.test(description))) {
+      result = rule.category;
+      break;
+    }
   }
-  return 'Other';
+  categoryCache.set(description, result);
+  return result;
 }
 
 // --- Fuzzy grouping signature -------------------------------------------------
@@ -112,13 +124,21 @@ export function significantTokens(description: string): string[] {
  * significant token is the most stable identifier: "ADNOC Petrol" and "ADNOC
  * Petrol Station Marina" both reduce to "adnoc".
  */
+const signatureCache = new Map<string, string>();
+
 export function signatureOf(description: string): string {
+  const cached = signatureCache.get(description);
+  if (cached !== undefined) return cached;
   const toks = significantTokens(description);
+  let result: string;
   if (toks.length === 0) {
     const fallback = description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')[0];
-    return fallback || 'misc';
+    result = fallback || 'misc';
+  } else {
+    result = toks[0];
   }
-  return toks[0];
+  signatureCache.set(description, result);
+  return result;
 }
 
 interface MinimalTx {

@@ -6,7 +6,6 @@
 // negatives. This module turns any of that into clean `Transaction` records.
 
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
 import type { ColumnMapping, ParsedFile, Transaction } from '../types';
 
 // --- Header detection vocabulary ---------------------------------------------
@@ -103,7 +102,7 @@ export function parseDate(raw: string | number | undefined | null): string | nul
 
   // Excel serial date number.
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const d = XLSX.SSF ? excelSerialToDate(raw) : null;
+    const d = excelSerialToDate(raw);
     return d ? toISO(d) : null;
   }
 
@@ -286,6 +285,9 @@ function isExcel(fileName: string): boolean {
 /** Read a File into normalized { headers, rows } regardless of CSV vs Excel. */
 async function readRows(file: File): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
   if (isExcel(file.name)) {
+    // Loaded on demand so the (large) spreadsheet library stays out of the
+    // initial bundle — only fetched when an Excel file is actually imported.
+    const XLSX = await import('xlsx');
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array', cellDates: false });
     const sheet = wb.Sheets[wb.SheetNames[0]];

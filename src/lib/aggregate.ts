@@ -167,8 +167,11 @@ export function categoryTotals(months: MonthlySummary[]): { category: string; am
 }
 
 /** Collapse a description to a stable merchant key (drop digits/punctuation). */
+const merchantKeyCache = new Map<string, string>();
 function merchantKey(description: string): string {
-  return description
+  const cached = merchantKeyCache.get(description);
+  if (cached !== undefined) return cached;
+  const key = description
     .toLowerCase()
     .replace(/[0-9]+/g, ' ')
     .replace(/[^a-z\s]/g, ' ')
@@ -177,6 +180,8 @@ function merchantKey(description: string): string {
     .split(' ')
     .slice(0, 3)
     .join(' ');
+  merchantKeyCache.set(description, key);
+  return key;
 }
 
 /**

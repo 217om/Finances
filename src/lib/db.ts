@@ -62,7 +62,10 @@ function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
 export async function getAllTransactions(): Promise<Transaction[]> {
   const db = await getDB();
   const all = await db.getAll('transactions');
-  return all.sort((a, b) => a.date.localeCompare(b.date));
+  // ISO date strings sort correctly with a plain comparison, which is far
+  // faster than localeCompare across tens of thousands of rows.
+  all.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return all;
 }
 
 /**
@@ -78,16 +81,21 @@ export async function addTransactions(
   const tx = db.transaction('transactions', 'readwrite');
   const store = tx.objectStore('transactions');
 
+  // Fetch existing keys once instead of an awaited lookup per row, then queue
+  // puts without awaiting each — a large import goes from thousands of
+  // round-trips to one key scan plus a batch of writes.
+  const existing = new Set<string>((await store.getAllKeys()) as string[]);
+
   let added = 0;
   let duplicates = 0;
   for (const t of txs) {
-    const existing = await store.get(t.id);
-    if (existing) {
+    if (existing.has(t.id)) {
       duplicates++;
-    } else {
-      await store.put(t);
-      added++;
+      continue;
     }
+    existing.add(t.id); // also de-dupes identical rows within this file
+    void store.put(t);
+    added++;
   }
   await tx.done;
   return { added, duplicates, fileName };
