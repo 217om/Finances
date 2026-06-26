@@ -637,6 +637,108 @@ main.container {
   margin-top: 18px;
 }
 
+/* ---------- Category trends ---------- */
+.trends-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.trends-quick {
+  display: flex;
+  gap: 4px;
+}
+.linklike {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.linklike:hover {
+  background: #eef2ff;
+}
+.cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.cat-chip.on {
+  color: var(--text);
+  font-weight: 600;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.cat-chip:not(.on) {
+  opacity: 0.6;
+}
+.cat-chip:not(.on) .catdot {
+  opacity: 0.4;
+}
+.tooltip-total {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ---------- Calendar heatmap ---------- */
+.heat-controls {
+  margin-bottom: 12px;
+}
+.heatmap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-x: auto;
+}
+.heat-row {
+  display: grid;
+  grid-template-columns: 44px repeat(12, minmax(20px, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+.heat-year {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+  padding-right: 4px;
+}
+.heat-month-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+.heat-cell {
+  height: 30px;
+  border-radius: 5px;
+}
+.heat-cell:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* ---------- Menu dropdown ---------- */
 .menu {
   position: relative;

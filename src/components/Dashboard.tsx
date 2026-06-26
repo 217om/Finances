@@ -8,6 +8,8 @@ import IncomeExpenseChart from './IncomeExpenseChart';
 import MonthTable from './MonthTable';
 import Sources from './Sources';
 import CategoryBreakdown from './CategoryBreakdown';
+import CategoryTrends from './CategoryTrends';
+import CalendarHeatmap from './CalendarHeatmap';
 import Insights from './Insights';
 
 interface Props {
@@ -148,6 +150,26 @@ export default function Dashboard({
           </div>
         </div>
         <IncomeExpenseChart months={visible} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Category trends</h2>
+            <p className="muted">Spending per category over time — toggle categories to focus.</p>
+          </div>
+        </div>
+        <CategoryTrends months={visible} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Spending calendar</h2>
+            <p className="muted">Each month colored by amount — spot seasonal patterns across years.</p>
+          </div>
+        </div>
+        <CalendarHeatmap overview={overview} />
       </section>
 
       <div className="two-col">
