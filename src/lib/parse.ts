@@ -171,13 +171,22 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+// Reject obviously-wrong years (parse errors / mis-mapped columns) so a single
+// bad row can't stretch the time axis to thousands of months.
+const MAX_YEAR = new Date().getFullYear() + 1;
+function plausibleYear(y: number): boolean {
+  return y >= 1900 && y <= MAX_YEAR;
+}
+
 function formatISO(y: number, m: number, d: number): string | null {
-  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31 || !plausibleYear(y)) return null;
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
-function toISO(d: Date): string {
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+function toISO(d: Date): string | null {
+  const y = d.getUTCFullYear();
+  if (!plausibleYear(y)) return null;
+  return `${y}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
 // --- Column detection --------------------------------------------------------

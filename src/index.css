@@ -227,6 +227,10 @@ main.container {
   background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fecaca;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .toast {
   position: fixed;

@@ -39,6 +39,16 @@ let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
 function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
   if (!dbPromise) {
     dbPromise = openDB<CashFlowDB>(DB_NAME, DB_VERSION, {
+      blocked() {
+        console.warn('CashFlow: opening the database is blocked by another open tab.');
+      },
+      blocking() {
+        // Another tab needs to upgrade; nothing to release here.
+      },
+      terminated() {
+        // Let the next call re-open instead of reusing a dead connection.
+        dbPromise = null;
+      },
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('transactions', { keyPath: 'id' });

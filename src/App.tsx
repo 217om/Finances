@@ -55,30 +55,63 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
 
-  // Restore preferences and load stored data on first mount.
+  // Restore preferences and load stored data on first mount. Everything here is
+  // defensive: reading localStorage can throw on some browsers/privacy modes,
+  // and opening IndexedDB can hang — neither should ever leave the app stuck on
+  // the loading screen.
   useEffect(() => {
-    const saved = localStorage.getItem(CURRENCY_KEY);
-    if (saved) {
-      setCurrency(saved);
-      setCurrencyState(saved);
-    }
-    const savedDay = Number(localStorage.getItem(MONTH_START_KEY));
-    if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
+    // Preferences (best-effort; never block the app on these).
     try {
+      const saved = localStorage.getItem(CURRENCY_KEY);
+      if (saved) {
+        setCurrency(saved);
+        setCurrencyState(saved);
+      }
+      const savedDay = Number(localStorage.getItem(MONTH_START_KEY));
+      if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
       const savedCats = JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) ?? '[]');
       if (Array.isArray(savedCats)) setCustomCategories(savedCats.filter((c) => typeof c === 'string'));
     } catch {
-      /* ignore malformed value */
+      /* ignore unavailable / malformed localStorage */
     }
-    Promise.all([getAllTransactions(), getRules(), getOverrides(), getKeywordRules()])
-      .then(([txs, r, o, kr]) => {
+
+    let cancelled = false;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timed-out')), 20000),
+    );
+
+    (async () => {
+      try {
+        // Transactions are the critical data; guard against a hung DB open.
+        const txs = (await Promise.race([getAllTransactions(), timeout])) as Transaction[];
+        if (cancelled) return;
         setTransactions(txs);
+
+        // Categorization is non-critical: tolerate a failure of any one store.
+        const [r, o, kr] = await Promise.all([
+          getRules().catch(() => [] as CategoryRule[]),
+          getOverrides().catch(() => [] as CategoryOverride[]),
+          getKeywordRules().catch(() => [] as KeywordRule[]),
+        ]);
+        if (cancelled) return;
         setRules(r);
         setOverrides(o);
         setKeywordRules(kr);
-      })
-      .catch(() => setError('Could not open local storage. Is this a private browsing window?'))
-      .finally(() => setLoading(false));
+      } catch (e) {
+        if (cancelled) return;
+        setError(
+          (e as Error)?.message === 'timed-out'
+            ? 'Loading your saved data is taking too long. Your data is safe — try Reload. If this app is open in another tab, close it first.'
+            : 'Could not open local storage. If this is a private/incognito window, browser storage may be blocked.',
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const rulesMap = useMemo(() => new Map(rules.map((r) => [r.signature, r])), [rules]);
@@ -274,7 +307,18 @@ export default function App() {
           <>
             <UploadPanel onFiles={handleFiles} compact={hasData} />
 
-            {error && <div className="banner banner-error">{error}</div>}
+            {error && (
+              <div className="banner banner-error">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => window.location.reload()}
+                >
+                  Reload
+                </button>
+              </div>
+            )}
 
             {hasData ? (
               <Dashboard

@@ -32,10 +32,20 @@ export default function CalendarHeatmap({ overview }: Props) {
     const active = overview.months.filter((m) => m.txCount > 0);
     if (active.length === 0) return { years: [] as number[], byKey, max: 0 };
 
-    const minYear = Number(active[0].month.slice(0, 4));
-    const maxYear = Number(active[active.length - 1].month.slice(0, 4));
-    const years: number[] = [];
-    for (let y = minYear; y <= maxYear; y++) years.push(y);
+    const yearsWithData = [...new Set(active.map((m) => Number(m.month.slice(0, 4))))].sort(
+      (a, b) => a - b,
+    );
+    const minYear = yearsWithData[0];
+    const maxYear = yearsWithData[yearsWithData.length - 1];
+    // Fill the gaps for a continuous grid, but if the span is implausibly wide
+    // (a stray date) fall back to only the years that actually have data.
+    let years: number[];
+    if (maxYear - minYear <= 40) {
+      years = [];
+      for (let y = minYear; y <= maxYear; y++) years.push(y);
+    } else {
+      years = yearsWithData;
+    }
 
     let max = 0;
     for (const m of active) {
