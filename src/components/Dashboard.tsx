@@ -18,6 +18,7 @@ interface Props {
   pendingCount: number;
   onReview?: () => void;
   onReset?: () => void;
+  onRefine?: () => void;
 }
 
 const PRESETS: { count: number | 'all'; label: string }[] = [
@@ -40,6 +41,7 @@ export default function Dashboard({
   pendingCount,
   onReview,
   onReset,
+  onRefine,
 }: Props) {
   const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
   const first = keys[0];
@@ -180,6 +182,11 @@ export default function Dashboard({
               <p className="muted">Spending by category over the selected range.</p>
             </div>
             <div className="panel-actions">
+              {onRefine && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onRefine}>
+                  Refine
+                </button>
+              )}
               {onReset && (
                 <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
                   Start over

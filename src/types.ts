@@ -79,3 +79,14 @@ export interface CategoryOverride {
   id: string; // transaction id
   category: string;
 }
+
+/**
+ * A refinement rule: any transaction whose description contains `keyword` gets
+ * `category`. Keyword rules outrank the wizard's signature rules, and a newer
+ * keyword rule wins over an older one, so later refinements take priority.
+ */
+export interface KeywordRule {
+  keyword: string; // lowercased substring to match
+  category: string;
+  createdAt: number;
+}

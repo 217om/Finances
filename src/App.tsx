@@ -4,6 +4,7 @@ import type {
   CategoryRule,
   ColumnMapping,
   ImportResult,
+  KeywordRule,
   ParsedFile,
   Transaction,
 } from './types';
@@ -12,10 +13,13 @@ import {
   addTransactions,
   clearAll,
   clearCategorization,
+  deleteKeywordRule,
   getAllTransactions,
+  getKeywordRules,
   getOverrides,
   getRules,
   saveCategorization,
+  saveKeywordRule,
 } from './lib/db';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
@@ -29,6 +33,7 @@ import Dashboard from './components/Dashboard';
 import EmptyState from './components/EmptyState';
 import Toast from './components/Toast';
 import CategorizeWizard from './components/CategorizeWizard';
+import RefineCategories from './components/RefineCategories';
 
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
@@ -46,7 +51,9 @@ export default function App() {
   const [rules, setRules] = useState<CategoryRule[]>([]);
   const [overrides, setOverrides] = useState<CategoryOverride[]>([]);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
 
   // Restore preferences and load stored data on first mount.
   useEffect(() => {
@@ -63,11 +70,12 @@ export default function App() {
     } catch {
       /* ignore malformed value */
     }
-    Promise.all([getAllTransactions(), getRules(), getOverrides()])
-      .then(([txs, r, o]) => {
+    Promise.all([getAllTransactions(), getRules(), getOverrides(), getKeywordRules()])
+      .then(([txs, r, o, kr]) => {
         setTransactions(txs);
         setRules(r);
         setOverrides(o);
+        setKeywordRules(kr);
       })
       .catch(() => setError('Could not open local storage. Is this a private browsing window?'))
       .finally(() => setLoading(false));
@@ -78,7 +86,10 @@ export default function App() {
     () => new Map(overrides.map((o) => [o.id, o.category])),
     [overrides],
   );
-  const categoryOf = useMemo(() => makeResolver(rulesMap, overridesMap), [rulesMap, overridesMap]);
+  const categoryOf = useMemo(
+    () => makeResolver(rulesMap, overridesMap, keywordRules),
+    [rulesMap, overridesMap, keywordRules],
+  );
 
   const overview = useMemo(
     () => buildOverview(transactions, monthStartDay, categoryOf),
@@ -86,8 +97,8 @@ export default function App() {
   );
 
   const grouping = useMemo(
-    () => buildGroups(transactions, rulesMap, overridesMap),
-    [transactions, rulesMap, overridesMap],
+    () => buildGroups(transactions, rulesMap, overridesMap, keywordRules),
+    [transactions, rulesMap, overridesMap, keywordRules],
   );
 
   const handleResetCategorization = useCallback(async () => {
@@ -103,8 +114,21 @@ export default function App() {
     await clearCategorization();
     setRules([]);
     setOverrides([]);
+    setKeywordRules([]);
     setWizardOpen(true);
     setToast('Categorization reset — reclassify from scratch.');
+  }, []);
+
+  const handleCreateKeywordRule = useCallback((keyword: string, category: string) => {
+    const rule: KeywordRule = { keyword, category, createdAt: Date.now() };
+    saveKeywordRule(rule);
+    setKeywordRules((prev) => [...prev.filter((r) => r.keyword !== keyword), rule]);
+    setToast(`Rule saved · “${keyword}” → ${category}`);
+  }, []);
+
+  const handleDeleteKeywordRule = useCallback((keyword: string) => {
+    deleteKeywordRule(keyword);
+    setKeywordRules((prev) => prev.filter((r) => r.keyword !== keyword));
   }, []);
 
   const handleCreateCategory = useCallback((rawName: string) => {
@@ -221,6 +245,7 @@ export default function App() {
     setTransactions([]);
     setRules([]);
     setOverrides([]);
+    setKeywordRules([]);
     setCustomCategories([]);
     setToast('All data cleared.');
   }, []);
@@ -258,6 +283,7 @@ export default function App() {
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
                 onReset={hasCategorization ? handleResetCategorization : undefined}
+                onRefine={() => setRefineOpen(true)}
               />
             ) : (
               <EmptyState />
@@ -283,6 +309,19 @@ export default function App() {
           onCreateCategory={handleCreateCategory}
           onComplete={handleWizardComplete}
           onClose={() => setWizardOpen(false)}
+        />
+      )}
+
+      {refineOpen && (
+        <RefineCategories
+          transactions={transactions}
+          keywordRules={keywordRules}
+          customCategories={customCategories}
+          categoryOf={categoryOf}
+          onCreateCategory={handleCreateCategory}
+          onCreateRule={handleCreateKeywordRule}
+          onDeleteRule={handleDeleteKeywordRule}
+          onClose={() => setRefineOpen(false)}
         />
       )}
 

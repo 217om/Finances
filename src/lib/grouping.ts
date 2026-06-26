@@ -3,7 +3,7 @@
 // override and no matching rule), so re-running after a new import only asks
 // about genuinely new merchants.
 
-import type { CategoryRule, Transaction } from '../types';
+import type { CategoryRule, KeywordRule, Transaction } from '../types';
 import { categorize, signatureOf } from './categorize';
 
 export interface TxGroup {
@@ -28,8 +28,11 @@ function isCovered(
   t: Transaction,
   rules: Map<string, CategoryRule>,
   overrides: Map<string, string>,
+  keywordRules: KeywordRule[],
 ): boolean {
   if (overrides.has(t.id)) return true;
+  const desc = t.description.toLowerCase();
+  if (keywordRules.some((kr) => kr.keyword && desc.includes(kr.keyword))) return true;
   const rule = rules.get(signatureOf(t.description));
   return !!rule && !rule.excludedIds.includes(t.id);
 }
@@ -49,8 +52,9 @@ export function buildGroups(
   txs: Transaction[],
   rules: Map<string, CategoryRule>,
   overrides: Map<string, string>,
+  keywordRules: KeywordRule[] = [],
 ): GroupingResult {
-  const pending = txs.filter((t) => t.amount < 0 && !isCovered(t, rules, overrides));
+  const pending = txs.filter((t) => t.amount < 0 && !isCovered(t, rules, overrides, keywordRules));
 
   const bySig = new Map<string, Transaction[]>();
   for (const t of pending) {

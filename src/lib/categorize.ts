@@ -130,28 +130,41 @@ interface MinimalTx {
 /**
  * Resolve a transaction's category with precedence:
  *   1. a manual per-transaction override
- *   2. a user rule matching its signature (unless this tx is excluded from it)
- *   3. the built-in keyword guess
+ *   2. a keyword refinement rule (newest matching one wins)
+ *   3. a user rule matching its signature (unless this tx is excluded from it)
+ *   4. the built-in keyword guess
+ *
+ * `keywordRules` must be pre-sorted newest-first so the first substring match
+ * is the highest-priority refinement.
  */
 export function resolveCategory(
   tx: MinimalTx,
   rules: Map<string, import('../types').CategoryRule>,
   overrides: Map<string, string>,
+  keywordRules: import('../types').KeywordRule[] = [],
 ): string {
   const o = overrides.get(tx.id);
   if (o) return o;
   if (tx.amount >= 0) return INCOME_CATEGORY;
+
+  const desc = tx.description.toLowerCase();
+  for (const kr of keywordRules) {
+    if (kr.keyword && desc.includes(kr.keyword)) return kr.category;
+  }
+
   const rule = rules.get(signatureOf(tx.description));
   if (rule && !rule.excludedIds.includes(tx.id)) return rule.category;
   return categorize(tx.description, tx.amount);
 }
 
-/** Build a resolver closure for the current rules + overrides. */
+/** Build a resolver closure for the current rules, overrides, and keyword rules. */
 export function makeResolver(
   rules: Map<string, import('../types').CategoryRule>,
   overrides: Map<string, string>,
+  keywordRules: import('../types').KeywordRule[] = [],
 ): (tx: MinimalTx) => string {
-  return (tx) => resolveCategory(tx, rules, overrides);
+  const sorted = [...keywordRules].sort((a, b) => b.createdAt - a.createdAt);
+  return (tx) => resolveCategory(tx, rules, overrides, sorted);
 }
 
 // Stable colors so a category looks the same across every chart.

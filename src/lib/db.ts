@@ -3,7 +3,13 @@
 // Everything stays on the user's device; nothing is sent to a server.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { CategoryOverride, CategoryRule, ImportResult, Transaction } from '../types';
+import type {
+  CategoryOverride,
+  CategoryRule,
+  ImportResult,
+  KeywordRule,
+  Transaction,
+} from '../types';
 
 interface CashFlowDB extends DBSchema {
   transactions: {
@@ -19,10 +25,14 @@ interface CashFlowDB extends DBSchema {
     key: string; // CategoryOverride.id (transaction id)
     value: CategoryOverride;
   };
+  keywordRules: {
+    key: string; // KeywordRule.keyword
+    value: KeywordRule;
+  };
 }
 
 const DB_NAME = 'cashflow';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
 
@@ -38,6 +48,9 @@ function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
         if (oldVersion < 2) {
           db.createObjectStore('rules', { keyPath: 'signature' });
           db.createObjectStore('overrides', { keyPath: 'id' });
+        }
+        if (oldVersion < 3) {
+          db.createObjectStore('keywordRules', { keyPath: 'keyword' });
         }
       },
     });
@@ -99,7 +112,12 @@ export async function deleteBySource(source: string): Promise<number> {
 /** Wipe all stored data, including category rules and overrides. */
 export async function clearAll(): Promise<void> {
   const db = await getDB();
-  await Promise.all([db.clear('transactions'), db.clear('rules'), db.clear('overrides')]);
+  await Promise.all([
+    db.clear('transactions'),
+    db.clear('rules'),
+    db.clear('overrides'),
+    db.clear('keywordRules'),
+  ]);
 }
 
 // --- Category rules & overrides ----------------------------------------------
@@ -135,5 +153,23 @@ export async function deleteRule(signature: string): Promise<void> {
 /** Reset all user categorization (keeps transactions). */
 export async function clearCategorization(): Promise<void> {
   const db = await getDB();
-  await Promise.all([db.clear('rules'), db.clear('overrides')]);
+  await Promise.all([db.clear('rules'), db.clear('overrides'), db.clear('keywordRules')]);
+}
+
+// --- Keyword refinement rules ------------------------------------------------
+
+export async function getKeywordRules(): Promise<KeywordRule[]> {
+  const db = await getDB();
+  return db.getAll('keywordRules');
+}
+
+/** Upsert a keyword rule (keyed by keyword). */
+export async function saveKeywordRule(rule: KeywordRule): Promise<void> {
+  const db = await getDB();
+  await db.put('keywordRules', rule);
+}
+
+export async function deleteKeywordRule(keyword: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('keywordRules', keyword);
 }
