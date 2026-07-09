@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Overview } from '../lib/aggregate';
 import { withMovingAverage } from '../lib/aggregate';
+import type { Transaction } from '../types';
 import { monthLabel } from '../lib/format';
 import KpiCards from './KpiCards';
 import NetCashflowChart from './NetCashflowChart';
@@ -11,9 +12,12 @@ import CategoryBreakdown from './CategoryBreakdown';
 import CategoryTrends from './CategoryTrends';
 import CalendarHeatmap from './CalendarHeatmap';
 import Insights from './Insights';
+import TransactionExplorer from './TransactionExplorer';
 
 interface Props {
   overview: Overview;
+  transactions: Transaction[];
+  categoryOf: (tx: Transaction) => string;
   monthStartDay: number;
   pendingCount: number;
   onReview?: () => void;
@@ -37,6 +41,8 @@ function ordinal(d: number): string {
 
 export default function Dashboard({
   overview,
+  transactions,
+  categoryOf,
   monthStartDay,
   pendingCount,
   onReview,
@@ -172,6 +178,24 @@ export default function Dashboard({
           </div>
         </div>
         <CalendarHeatmap overview={overview} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Explore transactions</h2>
+            <p className="muted">
+              Slice your spending by category and the selected date range, and dig into the details.
+            </p>
+          </div>
+        </div>
+        <TransactionExplorer
+          transactions={transactions}
+          categoryOf={categoryOf}
+          lo={lo}
+          hi={hi}
+          monthStartDay={monthStartDay}
+        />
       </section>
 
       <div className="two-col">

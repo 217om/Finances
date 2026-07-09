@@ -706,6 +706,61 @@ main.container {
   color: var(--text);
 }
 
+/* ---------- Transaction explorer ---------- */
+.explorer-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.explorer-search {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+}
+.explorer-search:focus {
+  border-color: var(--accent);
+}
+.linklike.on {
+  background: #eef2ff;
+  color: var(--accent);
+}
+.explorer-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.explorer-stat {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.explorer-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.explorer-stat-value {
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 3px;
+  letter-spacing: -0.01em;
+}
+.explorer-table {
+  max-height: 420px;
+}
+.explorer-foot {
+  margin-top: 10px;
+}
+
 /* ---------- Calendar heatmap ---------- */
 .heat-controls {
   margin-bottom: 12px;
