@@ -6,6 +6,8 @@ import type {
   ImportResult,
   KeywordRule,
   ParsedFile,
+  SubOverride,
+  SubRule,
   Transaction,
 } from './types';
 import { inspectFile, normalize } from './lib/parse';
@@ -19,13 +21,20 @@ import {
   getKeywordRules,
   getOverrides,
   getRules,
+  getSubOverrides,
+  getSubRules,
   saveCategorization,
   saveKeywordRule,
   saveOverride,
+  saveSubOverride,
+  saveSubRule,
+  deleteSubOverride,
+  deleteSubRule,
 } from './lib/db';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
+import { makeSubResolver, UNSORTED } from './lib/subcategory';
 import { getCurrency, setCurrency } from './lib/format';
 import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
 import Header from './components/Header';
@@ -37,6 +46,7 @@ import Toast from './components/Toast';
 import CategorizeWizard from './components/CategorizeWizard';
 import RefineCategories from './components/RefineCategories';
 import TransactionsPage from './components/TransactionsPage';
+import CategoriesPage from './components/CategoriesPage';
 
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
@@ -55,9 +65,11 @@ export default function App() {
   const [overrides, setOverrides] = useState<CategoryOverride[]>([]);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([]);
+  const [subRules, setSubRules] = useState<SubRule[]>([]);
+  const [subOverrides, setSubOverrides] = useState<SubOverride[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'transactions'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
 
   // Restore preferences and load stored data on first mount. Everything here is
   // defensive: reading localStorage can throw on some browsers/privacy modes,
@@ -92,15 +104,19 @@ export default function App() {
         setTransactions(txs);
 
         // Categorization is non-critical: tolerate a failure of any one store.
-        const [r, o, kr] = await Promise.all([
+        const [r, o, kr, sr, so] = await Promise.all([
           getRules().catch(() => [] as CategoryRule[]),
           getOverrides().catch(() => [] as CategoryOverride[]),
           getKeywordRules().catch(() => [] as KeywordRule[]),
+          getSubRules().catch(() => [] as SubRule[]),
+          getSubOverrides().catch(() => [] as SubOverride[]),
         ]);
         if (cancelled) return;
         setRules(r);
         setOverrides(o);
         setKeywordRules(kr);
+        setSubRules(sr);
+        setSubOverrides(so);
       } catch (e) {
         if (cancelled) return;
         setError(
@@ -152,11 +168,41 @@ export default function App() {
     setRules([]);
     setOverrides([]);
     setKeywordRules([]);
+    setSubRules([]);
+    setSubOverrides([]);
     setWizardOpen(true);
     setToast('Categorization reset — reclassify from scratch.');
   }, []);
 
   const overriddenIds = useMemo(() => new Set(overrides.map((o) => o.id)), [overrides]);
+  const subResolver = useMemo(
+    () => makeSubResolver(subRules, subOverrides),
+    [subRules, subOverrides],
+  );
+
+  const handleAddSubRule = useCallback((parent: string, keyword: string, subName: string) => {
+    const kw = keyword.toLowerCase();
+    const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
+    saveSubRule(rule);
+    setSubRules((prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
+    setToast(`Sub-category saved · ${parent} → ${subName}`);
+  }, []);
+
+  const handleDeleteSubRule = useCallback((id: string) => {
+    deleteSubRule(id);
+    setSubRules((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const handleSetSubCategory = useCallback((id: string, parent: string, subName: string) => {
+    if (subName === UNSORTED) {
+      deleteSubOverride(id);
+      setSubOverrides((prev) => prev.filter((o) => o.id !== id));
+      return;
+    }
+    const o: SubOverride = { id, parent, sub: subName };
+    saveSubOverride(o);
+    setSubOverrides((prev) => [...prev.filter((x) => x.id !== id), o]);
+  }, []);
 
   const handleSetCategory = useCallback((id: string, category: string) => {
     const o: CategoryOverride = { id, category };
@@ -296,6 +342,8 @@ export default function App() {
     setRules([]);
     setOverrides([]);
     setKeywordRules([]);
+    setSubRules([]);
+    setSubOverrides([]);
     setCustomCategories([]);
     setToast('All data cleared.');
   }, []);
@@ -333,6 +381,13 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  className={view === 'categories' ? 'on' : ''}
+                  onClick={() => setView('categories')}
+                >
+                  Categories
+                </button>
+                <button
+                  type="button"
                   className={view === 'transactions' ? 'on' : ''}
                   onClick={() => setView('transactions')}
                 >
@@ -358,15 +413,26 @@ export default function App() {
 
             {!hasData ? (
               <EmptyState />
+            ) : view === 'categories' ? (
+              <CategoriesPage
+                transactions={transactions}
+                categoryOf={categoryOf}
+                sub={subResolver}
+                subRules={subRules}
+                onAddSubRule={handleAddSubRule}
+                onDeleteSubRule={handleDeleteSubRule}
+              />
             ) : view === 'transactions' ? (
               <TransactionsPage
                 transactions={transactions}
                 categoryOf={categoryOf}
                 overriddenIds={overriddenIds}
                 customCategories={customCategories}
+                sub={subResolver}
                 onSetCategory={handleSetCategory}
                 onClearCategory={handleClearCategory}
                 onCreateCategory={handleCreateCategory}
+                onSetSubCategory={handleSetSubCategory}
               />
             ) : (
               <Dashboard

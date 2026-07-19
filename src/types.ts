@@ -90,3 +90,24 @@ export interface KeywordRule {
   category: string;
   createdAt: number;
 }
+
+/**
+ * An optional second tier under a category. A sub-rule tags any transaction
+ * that already resolves to `parent` and whose description contains `keyword`
+ * with the sub-category `sub`. Sub-categories never change the top-level
+ * category — they only split a bucket (e.g. Transfers) into finer parts.
+ */
+export interface SubRule {
+  id: string; // `${parent}${keyword}`
+  parent: string; // top-level category this applies within
+  keyword: string; // lowercased substring
+  sub: string; // sub-category name
+  createdAt: number;
+}
+
+/** A manual per-transaction sub-category assignment (highest sub precedence). */
+export interface SubOverride {
+  id: string; // transaction id
+  parent: string; // the category it was tagged under
+  sub: string;
+}

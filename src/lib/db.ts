@@ -8,6 +8,8 @@ import type {
   CategoryRule,
   ImportResult,
   KeywordRule,
+  SubOverride,
+  SubRule,
   Transaction,
 } from '../types';
 
@@ -29,10 +31,18 @@ interface CashFlowDB extends DBSchema {
     key: string; // KeywordRule.keyword
     value: KeywordRule;
   };
+  subRules: {
+    key: string; // SubRule.id
+    value: SubRule;
+  };
+  subOverrides: {
+    key: string; // SubOverride.id (transaction id)
+    value: SubOverride;
+  };
 }
 
 const DB_NAME = 'cashflow';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
 
@@ -61,6 +71,10 @@ function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
         }
         if (oldVersion < 3) {
           db.createObjectStore('keywordRules', { keyPath: 'keyword' });
+        }
+        if (oldVersion < 4) {
+          db.createObjectStore('subRules', { keyPath: 'id' });
+          db.createObjectStore('subOverrides', { keyPath: 'id' });
         }
       },
     });
@@ -135,6 +149,8 @@ export async function clearAll(): Promise<void> {
     db.clear('rules'),
     db.clear('overrides'),
     db.clear('keywordRules'),
+    db.clear('subRules'),
+    db.clear('subOverrides'),
   ]);
 }
 
@@ -183,7 +199,13 @@ export async function deleteOverride(id: string): Promise<void> {
 /** Reset all user categorization (keeps transactions). */
 export async function clearCategorization(): Promise<void> {
   const db = await getDB();
-  await Promise.all([db.clear('rules'), db.clear('overrides'), db.clear('keywordRules')]);
+  await Promise.all([
+    db.clear('rules'),
+    db.clear('overrides'),
+    db.clear('keywordRules'),
+    db.clear('subRules'),
+    db.clear('subOverrides'),
+  ]);
 }
 
 // --- Keyword refinement rules ------------------------------------------------
@@ -202,4 +224,36 @@ export async function saveKeywordRule(rule: KeywordRule): Promise<void> {
 export async function deleteKeywordRule(keyword: string): Promise<void> {
   const db = await getDB();
   await db.delete('keywordRules', keyword);
+}
+
+// --- Sub-category rules & overrides ------------------------------------------
+
+export async function getSubRules(): Promise<SubRule[]> {
+  const db = await getDB();
+  return db.getAll('subRules');
+}
+
+export async function getSubOverrides(): Promise<SubOverride[]> {
+  const db = await getDB();
+  return db.getAll('subOverrides');
+}
+
+export async function saveSubRule(rule: SubRule): Promise<void> {
+  const db = await getDB();
+  await db.put('subRules', rule);
+}
+
+export async function deleteSubRule(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('subRules', id);
+}
+
+export async function saveSubOverride(override: SubOverride): Promise<void> {
+  const db = await getDB();
+  await db.put('subOverrides', override);
+}
+
+export async function deleteSubOverride(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('subOverrides', id);
 }

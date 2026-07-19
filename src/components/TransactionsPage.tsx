@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORY, categoryColor } from '../lib/categorize';
+import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
 
@@ -9,9 +10,11 @@ interface Props {
   categoryOf: (tx: Transaction) => string;
   overriddenIds: Set<string>;
   customCategories: string[];
+  sub: SubResolver;
   onSetCategory: (id: string, category: string) => void;
   onClearCategory: (id: string) => void;
   onCreateCategory: (name: string) => void;
+  onSetSubCategory: (id: string, parent: string, subName: string) => void;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -27,9 +30,11 @@ export default function TransactionsPage({
   categoryOf,
   overriddenIds,
   customCategories,
+  sub,
   onSetCategory,
   onClearCategory,
   onCreateCategory,
+  onSetSubCategory,
 }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -183,22 +188,37 @@ export default function TransactionsPage({
                 </td>
                 <td className="tx-cat">
                   {t.amount < 0 ? (
-                    <div className="tx-cat-edit">
-                      <CategoryPicker
-                        value={cat}
-                        onChange={(c) => onSetCategory(t.id, c)}
-                        options={options}
-                        onCreate={onCreateCategory}
-                      />
-                      {overriddenIds.has(t.id) && (
-                        <button
-                          type="button"
-                          className="tx-reset"
-                          title="Revert to automatic category"
-                          onClick={() => onClearCategory(t.id)}
-                        >
-                          ↺
-                        </button>
+                    <div className="tx-cat-cell">
+                      <div className="tx-cat-edit">
+                        <CategoryPicker
+                          value={cat}
+                          onChange={(c) => onSetCategory(t.id, c)}
+                          options={options}
+                          onCreate={onCreateCategory}
+                        />
+                        {overriddenIds.has(t.id) && (
+                          <button
+                            type="button"
+                            className="tx-reset"
+                            title="Revert to automatic category"
+                            onClick={() => onClearCategory(t.id)}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
+                      {sub.splitParents.has(cat) && (
+                        <div className="tx-sub-edit">
+                          <span className="tx-sub-arrow">↳</span>
+                          <CategoryPicker
+                            value={sub.subOf(t, cat)}
+                            onChange={(s) => onSetSubCategory(t.id, cat, s)}
+                            options={sub.subsForParent(cat)}
+                            onCreate={(name) => onSetSubCategory(t.id, cat, name)}
+                            keepValue={UNSORTED}
+                            keepLabel={UNSORTED}
+                          />
+                        </div>
                       )}
                     </div>
                   ) : (

@@ -189,6 +189,159 @@ main.container {
   border-bottom-color: var(--accent);
 }
 
+/* ---------- Categories page ---------- */
+.cats-page {
+  display: grid;
+  gap: 20px;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.crumb {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.crumb:hover {
+  background: #eef2ff;
+}
+.crumb-current {
+  color: var(--text);
+  cursor: default;
+}
+.crumb-sep {
+  color: var(--muted);
+  font-size: 11px;
+}
+.leaf-list {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.leaf-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.leaf-table {
+  max-height: 300px;
+}
+
+.sub-stats {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.sub-stats .linklike {
+  margin-left: 8px;
+}
+.sub-rules {
+  margin-bottom: 18px;
+}
+.sub-rules h3,
+.sub-suggest-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.sub-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f1f3f6;
+  font-size: 13px;
+}
+.sub-rule-name {
+  font-weight: 600;
+}
+.sub-rule .muted {
+  margin-left: auto;
+}
+.sub-suggests {
+  display: grid;
+  gap: 10px;
+}
+.sub-suggest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+.sub-suggest-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sub-suggest-info strong {
+  font-size: 14px;
+}
+.sub-samples {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+}
+.sub-suggest-add {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.sub-suggest-add input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  width: 150px;
+  outline: none;
+}
+.sub-suggest-add input:focus {
+  border-color: var(--accent);
+}
+
+/* sub-category picker inside the transactions table */
+.tx-cat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tx-sub-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 4px;
+}
+.tx-sub-arrow {
+  color: var(--muted);
+  font-size: 12px;
+}
+.tx-sub-edit select {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 150px;
+}
+
 /* ---------- Transactions page ---------- */
 .tx-controls {
   display: flex;
