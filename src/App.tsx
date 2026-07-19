@@ -323,8 +323,6 @@ export default function App() {
             {hasData ? (
               <Dashboard
                 overview={overview}
-                transactions={transactions}
-                categoryOf={categoryOf}
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}

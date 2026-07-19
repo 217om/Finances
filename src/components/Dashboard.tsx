@@ -1,23 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Overview } from '../lib/aggregate';
-import { withMovingAverage } from '../lib/aggregate';
-import type { Transaction } from '../types';
 import { monthLabel } from '../lib/format';
 import KpiCards from './KpiCards';
-import NetCashflowChart from './NetCashflowChart';
-import IncomeExpenseChart from './IncomeExpenseChart';
-import MonthTable from './MonthTable';
-import Sources from './Sources';
+import MonthlyCashflowChart from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
-import CategoryTrends from './CategoryTrends';
-import CalendarHeatmap from './CalendarHeatmap';
 import Insights from './Insights';
-import TransactionExplorer from './TransactionExplorer';
 
 interface Props {
   overview: Overview;
-  transactions: Transaction[];
-  categoryOf: (tx: Transaction) => string;
   monthStartDay: number;
   pendingCount: number;
   onReview?: () => void;
@@ -41,8 +31,6 @@ function ordinal(d: number): string {
 
 export default function Dashboard({
   overview,
-  transactions,
-  categoryOf,
   monthStartDay,
   pendingCount,
   onReview,
@@ -56,29 +44,23 @@ export default function Dashboard({
   const [from, setFrom] = useState(first);
   const [to, setTo] = useState(last);
 
-  // Reset the window to the full range whenever the available span changes
-  // (new data imported, or the month-start day regrouped the periods).
+  // Reset the window to the full range whenever the available span changes.
   useEffect(() => {
     setFrom(first);
     setTo(last);
   }, [first, last]);
 
-  // Guard against an inverted selection.
   const lo = from <= to ? from : to;
   const hi = from <= to ? to : from;
 
-  const visible = useMemo(() => {
-    // Moving average is computed over the full series so the left edge of the
-    // visible window still reflects prior months.
-    return withMovingAverage(overview.months).filter((m) => m.month >= lo && m.month <= hi);
-  }, [overview.months, lo, hi]);
+  const visible = useMemo(
+    () => overview.months.filter((m) => m.month >= lo && m.month <= hi),
+    [overview.months, lo, hi],
+  );
 
   const applyPreset = (count: number | 'all') => {
-    if (count === 'all' || keys.length <= count) {
-      setFrom(keys[0]);
-    } else {
-      setFrom(keys[keys.length - count]);
-    }
+    if (count === 'all' || keys.length <= count) setFrom(keys[0]);
+    else setFrom(keys[keys.length - count]);
     setTo(keys[keys.length - 1]);
   };
 
@@ -88,11 +70,11 @@ export default function Dashboard({
     return lo === keys[Math.max(0, keys.length - count)] && keys.length > count;
   };
 
+  const rangedNote =
+    lo === first && hi === last ? 'All time' : `${monthLabel(lo)} – ${monthLabel(hi)}`;
   const cycleNote =
     monthStartDay > 1
-      ? `Months run from the ${ordinal(monthStartDay)} to the ${ordinal(
-          monthStartDay === 1 ? 31 : monthStartDay - 1,
-        )}.`
+      ? `Months run from the ${ordinal(monthStartDay)} to the ${ordinal(monthStartDay - 1)}.`
       : null;
 
   return (
@@ -138,121 +120,61 @@ export default function Dashboard({
         {cycleNote && <p className="muted controls-note">{cycleNote}</p>}
       </section>
 
+      <div className="section-label">
+        <span>Overview</span>
+        <span className="muted">All time</span>
+      </div>
       <KpiCards overview={overview} />
 
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Net cashflow by month</h2>
-            <p className="muted">Money in minus money out. The line is a 3-month average.</p>
-          </div>
-        </div>
-        <NetCashflowChart months={visible} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Income vs. expenses</h2>
-            <p className="muted">How much came in and went out each month.</p>
-          </div>
-        </div>
-        <IncomeExpenseChart months={visible} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Category trends</h2>
-            <p className="muted">Spending per category over time — toggle categories to focus.</p>
-          </div>
-        </div>
-        <CategoryTrends months={visible} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Spending calendar</h2>
-            <p className="muted">Each month colored by amount — spot seasonal patterns across years.</p>
-          </div>
-        </div>
-        <CalendarHeatmap overview={overview} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Explore transactions</h2>
+            <h2>Monthly cashflow</h2>
             <p className="muted">
-              Slice your spending by category and the selected date range, and dig into the details.
+              Money in, money out, and the net each month · {rangedNote}
             </p>
           </div>
         </div>
-        <TransactionExplorer
-          transactions={transactions}
-          categoryOf={categoryOf}
-          lo={lo}
-          hi={hi}
-          monthStartDay={monthStartDay}
-        />
+        <MonthlyCashflowChart months={visible} />
       </section>
 
-      <div className="two-col">
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Where your money goes</h2>
-              <p className="muted">Spending by category over the selected range.</p>
-            </div>
-            <div className="panel-actions">
-              {onRefine && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={onRefine}>
-                  Refine
-                </button>
-              )}
-              {onReset && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
-                  Start over
-                </button>
-              )}
-              {onReview && (
-                <button type="button" className="btn btn-primary btn-sm" onClick={onReview}>
-                  Review categories
-                  {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
-                </button>
-              )}
-            </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Where your money goes</h2>
+            <p className="muted">Spending by category · {rangedNote}</p>
           </div>
-          <CategoryBreakdown months={visible} />
-        </section>
+          <div className="panel-actions">
+            {onRefine && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onRefine}>
+                Refine
+              </button>
+            )}
+            {onReset && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
+                Start over
+              </button>
+            )}
+            {onReview && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={onReview}>
+                Review categories
+                {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+              </button>
+            )}
+          </div>
+        </div>
+        <CategoryBreakdown months={visible} />
+      </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Insights</h2>
-              <p className="muted">Recurring items and alerts, from your full history.</p>
-            </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Insights</h2>
+            <p className="muted">Recurring items and alerts, from your full history.</p>
           </div>
-          <Insights overview={overview} />
-        </section>
-      </div>
-
-      <div className="two-col">
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Monthly breakdown</h2>
-          </div>
-          <MonthTable months={visible} />
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Imported statements</h2>
-          </div>
-          <Sources sources={overview.sources} />
-        </section>
-      </div>
+        </div>
+        <Insights overview={overview} />
+      </section>
     </div>
   );
 }

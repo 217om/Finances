@@ -353,6 +353,23 @@ main.container {
   grid-template-columns: 1.2fr 0.8fr;
   gap: 20px;
 }
+.section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px;
+  margin: -4px 0 -6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.section-label .muted {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
 
 /* ---------- Range controls ---------- */
 .controls {
