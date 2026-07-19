@@ -34,6 +34,8 @@ export default function TransactionsPage({
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [category, setCategory] = useState('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [visible, setVisible] = useState(PAGE);
 
   const options = useMemo(() => {
@@ -63,6 +65,11 @@ export default function TransactionsPage({
     return [...set].sort();
   }, [base]);
 
+  const dateBounds = useMemo(() => {
+    if (base.length === 0) return { min: '', max: '' };
+    return { min: base[base.length - 1].t.date, max: base[0].t.date };
+  }, [base]);
+
   const needle = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
@@ -70,16 +77,18 @@ export default function TransactionsPage({
         if (typeFilter === 'expense' && r.t.amount >= 0) return false;
         if (typeFilter === 'income' && r.t.amount < 0) return false;
         if (category !== 'all' && r.cat !== category) return false;
+        if (fromDate && r.t.date < fromDate) return false;
+        if (toDate && r.t.date > toDate) return false;
         if (needle && !r.t.description.toLowerCase().includes(needle)) return false;
         return true;
       }),
-    [base, typeFilter, category, needle],
+    [base, typeFilter, category, fromDate, toDate, needle],
   );
 
   // Keep the rendered list bounded whenever the filters change.
   useEffect(() => {
     setVisible(PAGE);
-  }, [search, typeFilter, category]);
+  }, [search, typeFilter, category, fromDate, toDate]);
 
   const shown = filtered.slice(0, visible);
   const total = filtered.reduce((a, r) => a + r.t.amount, 0);
@@ -116,6 +125,38 @@ export default function TransactionsPage({
             ))}
           </select>
         </label>
+        <label className="picker">
+          <span className="picker-label">From</span>
+          <input
+            type="date"
+            value={fromDate}
+            min={dateBounds.min}
+            max={dateBounds.max}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+        </label>
+        <label className="picker">
+          <span className="picker-label">To</span>
+          <input
+            type="date"
+            value={toDate}
+            min={dateBounds.min}
+            max={dateBounds.max}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </label>
+        {(fromDate || toDate) && (
+          <button
+            type="button"
+            className="linklike"
+            onClick={() => {
+              setFromDate('');
+              setToDate('');
+            }}
+          >
+            Clear dates
+          </button>
+        )}
       </div>
 
       <div className="tx-summary muted">
@@ -123,7 +164,7 @@ export default function TransactionsPage({
         <span className={total >= 0 ? 'pos' : 'neg'}>{money(total)}</span> net
       </div>
 
-      <div className="table-wrap tx-table-wrap">
+      <div className="tx-table-wrap">
         <table className="data-table tx-table">
           <thead>
             <tr>

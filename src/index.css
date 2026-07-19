@@ -202,13 +202,25 @@ main.container {
   font-size: 13px;
 }
 .tx-table-wrap {
-  max-height: none;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+.tx-table {
+  min-width: 640px;
 }
 .tx-table th {
+  position: static;
+  background: var(--surface);
+}
+.tx-controls input[type='date'] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  color: var(--text);
   background: var(--surface);
 }
 .tx-date {
