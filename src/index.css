@@ -163,6 +163,107 @@ main.container {
   color: var(--muted);
 }
 
+/* ---------- Tabs ---------- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs button {
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tabs button:hover {
+  color: var(--text);
+}
+.tabs button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- Transactions page ---------- */
+.tx-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.tx-summary {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.tx-table-wrap {
+  max-height: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.tx-table th {
+  background: var(--surface);
+}
+.tx-date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.tx-cat {
+  min-width: 190px;
+}
+.tx-cat-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tx-cat-edit select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  max-width: 170px;
+}
+.tx-reset {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 7px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  color: var(--muted);
+  flex: none;
+}
+.tx-reset:hover {
+  background: #f1f3f6;
+  color: var(--text);
+}
+.tx-income-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.tx-empty {
+  text-align: center;
+  padding: 28px 0;
+}
+.tx-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
 /* ---------- Dropzone ---------- */
 .dropzone {
   border: 2px dashed #cbd5e1;

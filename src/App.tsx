@@ -14,12 +14,14 @@ import {
   clearAll,
   clearCategorization,
   deleteKeywordRule,
+  deleteOverride,
   getAllTransactions,
   getKeywordRules,
   getOverrides,
   getRules,
   saveCategorization,
   saveKeywordRule,
+  saveOverride,
 } from './lib/db';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
@@ -34,6 +36,7 @@ import EmptyState from './components/EmptyState';
 import Toast from './components/Toast';
 import CategorizeWizard from './components/CategorizeWizard';
 import RefineCategories from './components/RefineCategories';
+import TransactionsPage from './components/TransactionsPage';
 
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
@@ -54,6 +57,7 @@ export default function App() {
   const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
+  const [view, setView] = useState<'dashboard' | 'transactions'>('dashboard');
 
   // Restore preferences and load stored data on first mount. Everything here is
   // defensive: reading localStorage can throw on some browsers/privacy modes,
@@ -150,6 +154,19 @@ export default function App() {
     setKeywordRules([]);
     setWizardOpen(true);
     setToast('Categorization reset — reclassify from scratch.');
+  }, []);
+
+  const overriddenIds = useMemo(() => new Set(overrides.map((o) => o.id)), [overrides]);
+
+  const handleSetCategory = useCallback((id: string, category: string) => {
+    const o: CategoryOverride = { id, category };
+    saveOverride(o);
+    setOverrides((prev) => [...prev.filter((x) => x.id !== id), o]);
+  }, []);
+
+  const handleClearCategory = useCallback((id: string) => {
+    deleteOverride(id);
+    setOverrides((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
   const handleCreateKeywordRule = useCallback((keyword: string, category: string) => {
@@ -305,7 +322,26 @@ export default function App() {
           <div className="loading">Loading your data…</div>
         ) : (
           <>
-            <UploadPanel onFiles={handleFiles} compact={hasData} />
+            {hasData && (
+              <nav className="tabs">
+                <button
+                  type="button"
+                  className={view === 'dashboard' ? 'on' : ''}
+                  onClick={() => setView('dashboard')}
+                >
+                  Dashboard
+                </button>
+                <button
+                  type="button"
+                  className={view === 'transactions' ? 'on' : ''}
+                  onClick={() => setView('transactions')}
+                >
+                  Transactions
+                </button>
+              </nav>
+            )}
+
+            {view === 'dashboard' && <UploadPanel onFiles={handleFiles} compact={hasData} />}
 
             {error && (
               <div className="banner banner-error">
@@ -320,7 +356,19 @@ export default function App() {
               </div>
             )}
 
-            {hasData ? (
+            {!hasData ? (
+              <EmptyState />
+            ) : view === 'transactions' ? (
+              <TransactionsPage
+                transactions={transactions}
+                categoryOf={categoryOf}
+                overriddenIds={overriddenIds}
+                customCategories={customCategories}
+                onSetCategory={handleSetCategory}
+                onClearCategory={handleClearCategory}
+                onCreateCategory={handleCreateCategory}
+              />
+            ) : (
               <Dashboard
                 overview={overview}
                 monthStartDay={monthStartDay}
@@ -329,8 +377,6 @@ export default function App() {
                 onReset={hasCategorization ? handleResetCategorization : undefined}
                 onRefine={() => setRefineOpen(true)}
               />
-            ) : (
-              <EmptyState />
             )}
           </>
         )}

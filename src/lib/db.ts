@@ -168,6 +168,18 @@ export async function deleteRule(signature: string): Promise<void> {
   await db.delete('rules', signature);
 }
 
+/** Upsert a single per-transaction category override. */
+export async function saveOverride(override: CategoryOverride): Promise<void> {
+  const db = await getDB();
+  await db.put('overrides', override);
+}
+
+/** Remove a per-transaction override (revert to auto categorization). */
+export async function deleteOverride(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('overrides', id);
+}
+
 /** Reset all user categorization (keeps transactions). */
 export async function clearCategorization(): Promise<void> {
   const db = await getDB();
