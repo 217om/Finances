@@ -23,6 +23,7 @@ import {
   getRules,
   getSubOverrides,
   getSubRules,
+  onDatabaseBlocked,
   saveCategorization,
   saveKeywordRule,
   saveOverride,
@@ -96,11 +97,23 @@ export default function App() {
       setTimeout(() => reject(new Error('timed-out')), 20000),
     );
 
+    // If another tab is holding the database open (e.g. blocking an update),
+    // say so immediately instead of spinning for 20 seconds.
+    onDatabaseBlocked(() => {
+      if (cancelled) return;
+      setError(
+        'This app is open in another tab or window, and it’s blocking an update. Close the other ' +
+          'tabs (or fully quit and reopen your browser), then Reload. Your data is safe.',
+      );
+      setLoading(false);
+    });
+
     (async () => {
       try {
         // Transactions are the critical data; guard against a hung DB open.
         const txs = (await Promise.race([getAllTransactions(), timeout])) as Transaction[];
         if (cancelled) return;
+        setError(null); // opened successfully after all
         setTransactions(txs);
 
         // Categorization is non-critical: tolerate a failure of any one store.
@@ -131,6 +144,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      onDatabaseBlocked(null);
     };
   }, []);
 

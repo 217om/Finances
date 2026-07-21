@@ -45,18 +45,36 @@ const DB_NAME = 'cashflow';
 const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
+let activeDb: IDBPDatabase<CashFlowDB> | null = null;
+let blockedListener: (() => void) | null = null;
+
+/** Notified when opening the DB is blocked by another tab holding it open. */
+export function onDatabaseBlocked(fn: (() => void) | null): void {
+  blockedListener = fn;
+}
 
 function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
   if (!dbPromise) {
     dbPromise = openDB<CashFlowDB>(DB_NAME, DB_VERSION, {
       blocked() {
+        // Another (older) tab is holding the DB open and blocking our upgrade.
         console.warn('CashFlow: opening the database is blocked by another open tab.');
+        blockedListener?.();
       },
       blocking() {
-        // Another tab needs to upgrade; nothing to release here.
+        // A newer version wants to upgrade in another tab — release our
+        // connection so it can proceed instead of blocking it.
+        try {
+          activeDb?.close();
+        } catch {
+          /* ignore */
+        }
+        activeDb = null;
+        dbPromise = null;
       },
       terminated() {
         // Let the next call re-open instead of reusing a dead connection.
+        activeDb = null;
         dbPromise = null;
       },
       upgrade(db, oldVersion) {
