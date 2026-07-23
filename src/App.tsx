@@ -28,8 +28,10 @@ import {
   saveKeywordRule,
   saveOverride,
   saveSubOverride,
+  saveSubOverrides,
   saveSubRule,
   deleteSubOverride,
+  deleteSubOverrides,
   deleteSubRule,
 } from './lib/db';
 import { buildOverview } from './lib/aggregate';
@@ -217,6 +219,25 @@ export default function App() {
     saveSubOverride(o);
     setSubOverrides((prev) => [...prev.filter((x) => x.id !== id), o]);
   }, []);
+
+  const handleBulkSetSubCategory = useCallback(
+    (ids: string[], parent: string, subName: string) => {
+      if (subName === UNSORTED) {
+        deleteSubOverrides(ids);
+        const idSet = new Set(ids);
+        setSubOverrides((prev) => prev.filter((o) => !idSet.has(o.id)));
+        return;
+      }
+      const newOverrides = ids.map((id) => ({ id, parent, sub: subName }));
+      saveSubOverrides(newOverrides);
+      setSubOverrides((prev) => {
+        const idSet = new Set(ids);
+        return [...prev.filter((o) => !idSet.has(o.id)), ...newOverrides];
+      });
+      setToast(`Sub-category applied · ${ids.length} transaction${ids.length === 1 ? '' : 's'} → ${subName}`);
+    },
+    [],
+  );
 
   const handleSetCategory = useCallback((id: string, category: string) => {
     const o: CategoryOverride = { id, category };
@@ -435,6 +456,7 @@ export default function App() {
                 subRules={subRules}
                 onAddSubRule={handleAddSubRule}
                 onDeleteSubRule={handleDeleteSubRule}
+                onBulkSetSubCategory={handleBulkSetSubCategory}
               />
             ) : view === 'transactions' ? (
               <TransactionsPage

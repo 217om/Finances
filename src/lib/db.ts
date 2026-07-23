@@ -271,6 +271,22 @@ export async function saveSubOverride(override: SubOverride): Promise<void> {
   await db.put('subOverrides', override);
 }
 
+/** Bulk upsert sub-overrides in one transaction (for multi-select assignment). */
+export async function saveSubOverrides(overrides: SubOverride[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction('subOverrides', 'readwrite');
+  for (const o of overrides) void tx.store.put(o);
+  await tx.done;
+}
+
+/** Bulk delete sub-overrides in one transaction (revert to automatic/Unsorted). */
+export async function deleteSubOverrides(ids: string[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction('subOverrides', 'readwrite');
+  for (const id of ids) void tx.store.delete(id);
+  await tx.done;
+}
+
 export async function deleteSubOverride(id: string): Promise<void> {
   const db = await getDB();
   await db.delete('subOverrides', id);

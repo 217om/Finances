@@ -4,6 +4,7 @@ import { categoryColor, signatureOf } from '../lib/categorize';
 import { UNSORTED, suggestSubGroups, type SubResolver } from '../lib/subcategory';
 import { money } from '../lib/format';
 import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
+import CategoryTxList from './CategoryTxList';
 
 interface Props {
   transactions: Transaction[];
@@ -12,6 +13,7 @@ interface Props {
   subRules: SubRule[];
   onAddSubRule: (parent: string, keyword: string, subName: string) => void;
   onDeleteSubRule: (id: string) => void;
+  onBulkSetSubCategory: (ids: string[], parent: string, subName: string) => void;
 }
 
 interface Tagged {
@@ -28,6 +30,7 @@ export default function CategoriesPage({
   subRules,
   onAddSubRule,
   onDeleteSubRule,
+  onBulkSetSubCategory,
 }: Props) {
   const expenses = useMemo<Tagged[]>(
     () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
@@ -37,6 +40,9 @@ export default function CategoriesPage({
   // --- Treemap drill state ---------------------------------------------------
   const [category, setCategory] = useState<string | null>(null);
   const [leaf, setLeaf] = useState<string | null>(null);
+  // Clicking the selected category's breadcrumb a second time (i.e. clicking
+  // the category again) shows every transaction in it, not just one sub-group.
+  const [viewAll, setViewAll] = useState(false);
 
   const categoriesPresent = useMemo(() => {
     const totals = new Map<string, number>();
@@ -105,9 +111,17 @@ export default function CategoriesPage({
     if (!category) {
       setCategory(name);
       setLeaf(null);
+      setViewAll(false);
     } else {
+      setViewAll(false);
       setLeaf((cur) => (cur === name ? null : name));
     }
+  };
+
+  const selectCategory = (c: string) => {
+    setCategory(c);
+    setLeaf(null);
+    setViewAll(false);
   };
 
   return (
@@ -117,8 +131,8 @@ export default function CategoriesPage({
           <div>
             <h2>Category map</h2>
             <p className="muted">
-              Sized by spending (all time). Click a category to break it down; split categories drill
-              into sub-categories.
+              Sized by spending (all time). Click a category to break it down; click it again to list
+              every transaction in it.
             </p>
           </div>
         </div>
@@ -130,6 +144,7 @@ export default function CategoriesPage({
             onClick={() => {
               setCategory(null);
               setLeaf(null);
+              setViewAll(false);
             }}
           >
             All categories
@@ -137,47 +152,73 @@ export default function CategoriesPage({
           {category && (
             <>
               <span className="crumb-sep">▸</span>
-              <button type="button" className="crumb" onClick={() => setLeaf(null)}>
+              <button
+                type="button"
+                className="crumb"
+                title="Click again to list every transaction in this category"
+                onClick={() => {
+                  if (leaf) {
+                    setLeaf(null);
+                  } else {
+                    setViewAll((v) => !v);
+                  }
+                }}
+              >
                 {category}
                 {isSplit ? '' : ' · merchants'}
               </button>
             </>
           )}
-          {category && leaf && (
+          {category && leaf && !viewAll && (
             <>
               <span className="crumb-sep">▸</span>
               <span className="crumb crumb-current">{leaf}</span>
             </>
           )}
+          {category && viewAll && (
+            <>
+              <span className="crumb-sep">▸</span>
+              <span className="crumb crumb-current">All transactions</span>
+            </>
+          )}
+          {category && !leaf && (
+            <button
+              type="button"
+              className="linklike crumbs-action"
+              onClick={() => setViewAll((v) => !v)}
+            >
+              {viewAll ? '◂ back to breakdown' : `view all ${inCategory.length} transactions`}
+            </button>
+          )}
         </div>
 
-        <CategoryTreemap data={cells} onSelect={onSelect} selected={leaf} />
+        {!viewAll && <CategoryTreemap data={cells} onSelect={onSelect} selected={leaf} />}
 
-        {category && leaf && (
+        {category && viewAll && (
+          <CategoryTxList
+            parent={category}
+            rows={inCategory.map((x) => x.t)}
+            sub={sub}
+            showSubFilter={isSplit}
+            onAssign={(ids, subName) => onBulkSetSubCategory(ids, category, subName)}
+          />
+        )}
+
+        {category && leaf && !viewAll && (
           <div className="leaf-list">
             <div className="leaf-list-head">
               <strong>
                 {leaf} · {leafTxs.length} transaction{leafTxs.length === 1 ? '' : 's'}
               </strong>
-              <span className="muted">
-                {money(leafTxs.reduce((a, t) => a + -t.amount, 0))}
-              </span>
+              <span className="muted">{money(leafTxs.reduce((a, t) => a + -t.amount, 0))}</span>
             </div>
-            <div className="table-wrap leaf-table">
-              <table className="data-table">
-                <tbody>
-                  {leafTxs.slice(0, 50).map((t) => (
-                    <tr key={t.id}>
-                      <td className="tx-date">{t.date}</td>
-                      <td className="desc" title={t.description}>
-                        {t.description || '—'}
-                      </td>
-                      <td className="num neg">{money(t.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <CategoryTxList
+              parent={category}
+              rows={leafTxs}
+              sub={sub}
+              showSubFilter={false}
+              onAssign={(ids, subName) => onBulkSetSubCategory(ids, category, subName)}
+            />
           </div>
         )}
       </section>
@@ -189,10 +230,7 @@ export default function CategoriesPage({
         subRules={subRules}
         onAddSubRule={onAddSubRule}
         onDeleteSubRule={onDeleteSubRule}
-        onFocusCategory={(c) => {
-          setCategory(c);
-          setLeaf(null);
-        }}
+        onFocusCategory={selectCategory}
       />
     </div>
   );
