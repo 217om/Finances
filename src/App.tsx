@@ -38,6 +38,15 @@ import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
 import { makeSubResolver, UNSORTED } from './lib/subcategory';
+import {
+  defaultCategoryFilter,
+  excludedCount,
+  isExcluded,
+  isValidCategoryFilter,
+  toggleCategory,
+  toggleSub,
+  type CategoryFilterState,
+} from './lib/categoryFilter';
 import { getCurrency, setCurrency } from './lib/format';
 import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
 import Header from './components/Header';
@@ -54,6 +63,7 @@ import CategoriesPage from './components/CategoriesPage';
 const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
 const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
+const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -70,6 +80,7 @@ export default function App() {
   const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([]);
   const [subRules, setSubRules] = useState<SubRule[]>([]);
   const [subOverrides, setSubOverrides] = useState<SubOverride[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilterState>(defaultCategoryFilter());
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
@@ -90,6 +101,8 @@ export default function App() {
       if (savedDay >= 1 && savedDay <= 28) setMonthStartDay(savedDay);
       const savedCats = JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) ?? '[]');
       if (Array.isArray(savedCats)) setCustomCategories(savedCats.filter((c) => typeof c === 'string'));
+      const savedFilter = JSON.parse(localStorage.getItem(CATEGORY_FILTER_KEY) ?? 'null');
+      if (isValidCategoryFilter(savedFilter)) setCategoryFilter(savedFilter);
     } catch {
       /* ignore unavailable / malformed localStorage */
     }
@@ -159,12 +172,34 @@ export default function App() {
     () => makeResolver(rulesMap, overridesMap, keywordRules),
     [rulesMap, overridesMap, keywordRules],
   );
-
-  const overview = useMemo(
-    () => buildOverview(transactions, monthStartDay, categoryOf),
-    [transactions, monthStartDay, categoryOf],
+  const subResolver = useMemo(
+    () => makeSubResolver(subRules, subOverrides),
+    [subRules, subOverrides],
   );
 
+  // Transactions in an excluded category/sub-category are treated as if they
+  // don't exist for every calculation (KPIs, charts, category breakdown,
+  // insights) — not just hidden from view. Income is never excludable.
+  const visibleTransactions = useMemo(() => {
+    if (categoryFilter.categories.length === 0 && Object.keys(categoryFilter.subs).length === 0) {
+      return transactions;
+    }
+    return transactions.filter((t) => {
+      if (t.amount >= 0) return true;
+      const cat = categoryOf(t);
+      const sub = subResolver.subOf(t, cat);
+      return !isExcluded(categoryFilter, cat, sub);
+    });
+  }, [transactions, categoryOf, subResolver, categoryFilter]);
+
+  const overview = useMemo(
+    () => buildOverview(visibleTransactions, monthStartDay, categoryOf),
+    [visibleTransactions, monthStartDay, categoryOf],
+  );
+
+  // Classification (the wizard's pending groups) is independent of the display
+  // filter above — you can still categorize everything even if some of it is
+  // excluded from the charts.
   const grouping = useMemo(
     () => buildGroups(transactions, rulesMap, overridesMap, keywordRules),
     [transactions, rulesMap, overridesMap, keywordRules],
@@ -191,10 +226,22 @@ export default function App() {
   }, []);
 
   const overriddenIds = useMemo(() => new Set(overrides.map((o) => o.id)), [overrides]);
-  const subResolver = useMemo(
-    () => makeSubResolver(subRules, subOverrides),
-    [subRules, subOverrides],
-  );
+
+  const handleToggleCategoryFilter = useCallback((category: string) => {
+    setCategoryFilter((prev) => {
+      const next = toggleCategory(prev, category);
+      localStorage.setItem(CATEGORY_FILTER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleToggleSubFilter = useCallback((category: string, subName: string) => {
+    setCategoryFilter((prev) => {
+      const next = toggleSub(prev, category, subName);
+      localStorage.setItem(CATEGORY_FILTER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const handleAddSubRule = useCallback((parent: string, keyword: string, subName: string) => {
     const kw = keyword.toLowerCase();
@@ -373,6 +420,7 @@ export default function App() {
     }
     await clearAll();
     localStorage.removeItem(CUSTOM_CATEGORIES_KEY);
+    localStorage.removeItem(CATEGORY_FILTER_KEY);
     setTransactions([]);
     setRules([]);
     setOverrides([]);
@@ -380,6 +428,7 @@ export default function App() {
     setSubRules([]);
     setSubOverrides([]);
     setCustomCategories([]);
+    setCategoryFilter(defaultCategoryFilter());
     setToast('All data cleared.');
   }, []);
 
@@ -457,6 +506,9 @@ export default function App() {
                 onAddSubRule={handleAddSubRule}
                 onDeleteSubRule={handleDeleteSubRule}
                 onBulkSetSubCategory={handleBulkSetSubCategory}
+                categoryFilter={categoryFilter}
+                onToggleCategoryFilter={handleToggleCategoryFilter}
+                onToggleSubFilter={handleToggleSubFilter}
               />
             ) : view === 'transactions' ? (
               <TransactionsPage
@@ -478,6 +530,8 @@ export default function App() {
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
                 onReset={hasCategorization ? handleResetCategorization : undefined}
                 onRefine={() => setRefineOpen(true)}
+                hiddenCount={excludedCount(categoryFilter)}
+                onManageHidden={() => setView('categories')}
               />
             )}
           </>

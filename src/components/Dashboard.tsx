@@ -13,6 +13,8 @@ interface Props {
   onReview?: () => void;
   onReset?: () => void;
   onRefine?: () => void;
+  hiddenCount?: number;
+  onManageHidden?: () => void;
 }
 
 const PRESETS: { count: number | 'all'; label: string }[] = [
@@ -36,6 +38,8 @@ export default function Dashboard({
   onReview,
   onReset,
   onRefine,
+  hiddenCount = 0,
+  onManageHidden,
 }: Props) {
   const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
   const first = keys[0];
@@ -124,6 +128,17 @@ export default function Dashboard({
         <span>Overview</span>
         <span className="muted">All time</span>
       </div>
+      {hiddenCount > 0 && (
+        <p className="muted hidden-note">
+          Excluding {hiddenCount} hidden categor{hiddenCount === 1 ? 'y' : 'ies'}/sub-categories from
+          all totals.
+          {onManageHidden && (
+            <button type="button" className="linklike" onClick={onManageHidden}>
+              manage in Categories
+            </button>
+          )}
+        </p>
+      )}
       <KpiCards overview={overview} />
 
       <section className="panel">
