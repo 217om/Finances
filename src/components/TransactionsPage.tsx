@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Transaction } from '../types';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORY, categoryColor } from '../lib/categorize';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/categorize';
 import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
@@ -47,6 +47,18 @@ export default function TransactionsPage({
     const seen = new Set<string>();
     const out: string[] = [];
     for (const c of [...EXPENSE_CATEGORIES, ...customCategories]) {
+      if (!seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    return out;
+  }, [customCategories]);
+
+  const incomeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...INCOME_CATEGORIES, ...customCategories]) {
       if (!seen.has(c)) {
         seen.add(c);
         out.push(c);
@@ -187,46 +199,39 @@ export default function TransactionsPage({
                   {t.description || '—'}
                 </td>
                 <td className="tx-cat">
-                  {t.amount < 0 ? (
-                    <div className="tx-cat-cell">
-                      <div className="tx-cat-edit">
-                        <CategoryPicker
-                          value={cat}
-                          onChange={(c) => onSetCategory(t.id, c)}
-                          options={options}
-                          onCreate={onCreateCategory}
-                        />
-                        {overriddenIds.has(t.id) && (
-                          <button
-                            type="button"
-                            className="tx-reset"
-                            title="Revert to automatic category"
-                            onClick={() => onClearCategory(t.id)}
-                          >
-                            ↺
-                          </button>
-                        )}
-                      </div>
-                      {sub.splitParents.has(cat) && (
-                        <div className="tx-sub-edit">
-                          <span className="tx-sub-arrow">↳</span>
-                          <CategoryPicker
-                            value={sub.subOf(t, cat)}
-                            onChange={(s) => onSetSubCategory(t.id, cat, s)}
-                            options={sub.subsForParent(cat)}
-                            onCreate={(name) => onSetSubCategory(t.id, cat, name)}
-                            keepValue={UNSORTED}
-                            keepLabel={UNSORTED}
-                          />
-                        </div>
+                  <div className="tx-cat-cell">
+                    <div className="tx-cat-edit">
+                      <CategoryPicker
+                        value={cat}
+                        onChange={(c) => onSetCategory(t.id, c)}
+                        options={t.amount < 0 ? options : incomeOptions}
+                        onCreate={onCreateCategory}
+                      />
+                      {overriddenIds.has(t.id) && (
+                        <button
+                          type="button"
+                          className="tx-reset"
+                          title="Revert to automatic category"
+                          onClick={() => onClearCategory(t.id)}
+                        >
+                          ↺
+                        </button>
                       )}
                     </div>
-                  ) : (
-                    <span className="tx-income-cat">
-                      <span className="catdot" style={{ background: categoryColor(INCOME_CATEGORY) }} />
-                      Income
-                    </span>
-                  )}
+                    {t.amount < 0 && sub.splitParents.has(cat) && (
+                      <div className="tx-sub-edit">
+                        <span className="tx-sub-arrow">↳</span>
+                        <CategoryPicker
+                          value={sub.subOf(t, cat)}
+                          onChange={(s) => onSetSubCategory(t.id, cat, s)}
+                          options={sub.subsForParent(cat)}
+                          onCreate={(name) => onSetSubCategory(t.id, cat, name)}
+                          keepValue={UNSORTED}
+                          keepLabel={UNSORTED}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className={`num ${t.amount >= 0 ? 'pos' : 'neg'}`}>{money(t.amount)}</td>
               </tr>

@@ -49,6 +49,30 @@ export function monthLabelShort(ym: string): string {
   return `${MONTH_NAMES[m - 1]} '${String(y).slice(2)}`;
 }
 
+/** "2024-03-05" -> "Mar 5, 2024". */
+export function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+}
+
+/** "2024-03-05" -> "Mar 5" for dense axes. */
+export function dayLabelShort(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return `${MONTH_NAMES[m - 1]} ${d}`;
+}
+
+/** "2024-03-04" (a Monday) -> "Week of Mar 4, 2024". */
+export function weekLabel(iso: string): string {
+  return `Week of ${dayLabel(iso)}`;
+}
+
+/** "2024-03-04" -> "Mar 4" for dense axes. */
+export function weekLabelShort(iso: string): string {
+  return dayLabelShort(iso);
+}
+
 export function percent(n: number | null, digits = 0): string {
   if (n === null || Number.isNaN(n)) return '—';
   return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`;

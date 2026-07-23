@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { KeywordRule, Transaction } from '../types';
-import { EXPENSE_CATEGORIES, categoryColor } from '../lib/categorize';
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
 
@@ -19,9 +19,9 @@ interface Props {
 const MAX_SHOWN = 25;
 
 /**
- * Refinement tool: search for a keyword and assign a category to every matching
- * (expense) transaction. The resulting keyword rule outranks grouped categories
- * and is applied to future imports automatically.
+ * Refinement tool: search for a keyword and assign a category to every
+ * matching transaction — income or expense. The resulting keyword rule
+ * outranks grouped categories and is applied to future imports automatically.
  */
 export default function RefineCategories({
   transactions,
@@ -39,7 +39,7 @@ export default function RefineCategories({
   const options = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const c of [...EXPENSE_CATEGORIES, ...customCategories]) {
+    for (const c of [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...customCategories]) {
       if (!seen.has(c)) {
         seen.add(c);
         out.push(c);
@@ -52,11 +52,12 @@ export default function RefineCategories({
   const matches = useMemo(() => {
     if (needle.length < 2) return [];
     return transactions
-      .filter((t) => t.amount < 0 && t.description.toLowerCase().includes(needle))
+      .filter((t) => t.description.toLowerCase().includes(needle))
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [transactions, needle]);
 
-  const total = matches.reduce((a, t) => a + -t.amount, 0);
+  // Signed total: income and expenses in the same match set net out correctly.
+  const total = matches.reduce((a, t) => a + t.amount, 0);
 
   const sortedRules = useMemo(
     () => [...keywordRules].sort((a, b) => b.createdAt - a.createdAt),
@@ -64,7 +65,7 @@ export default function RefineCategories({
   );
 
   const countFor = (keyword: string) =>
-    transactions.filter((t) => t.amount < 0 && t.description.toLowerCase().includes(keyword)).length;
+    transactions.filter((t) => t.description.toLowerCase().includes(keyword)).length;
 
   const apply = () => {
     if (!needle || !category) return;
@@ -103,7 +104,9 @@ export default function RefineCategories({
               <strong>
                 {matches.length} matching transaction{matches.length === 1 ? '' : 's'}
               </strong>
-              {matches.length > 0 && <span className="muted">{money(total)} total</span>}
+              {matches.length > 0 && (
+                <span className="muted">{money(total, { sign: true })} net</span>
+              )}
             </div>
 
             {matches.length > 0 && (
@@ -135,7 +138,9 @@ export default function RefineCategories({
                       <span className="wiz-desc" title={t.description}>
                         {t.description || '—'}
                       </span>
-                      <span className="wiz-amt neg">{money(t.amount)}</span>
+                      <span className={`wiz-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
+                        {money(t.amount, { sign: true })}
+                      </span>
                       <span className="refine-current">
                         <span className="catdot" style={{ background: categoryColor(categoryOf(t)) }} />
                         {categoryOf(t)}

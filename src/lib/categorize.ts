@@ -22,6 +22,19 @@ export const EXPENSE_CATEGORIES = [
 
 export const INCOME_CATEGORY = 'Income';
 
+// Specific income categories a user can assign (via override or keyword rule).
+// 'Income' itself remains the generic default — same relationship as 'Other'
+// is to the expense categories above.
+export const INCOME_CATEGORIES = [
+  'Salary',
+  'Bonus',
+  'Gift',
+  'Refund',
+  'Interest',
+  'Investment',
+  'Other Income',
+] as const;
+
 interface Rule {
   category: string;
   patterns: RegExp[];
@@ -149,10 +162,16 @@ interface MinimalTx {
 
 /**
  * Resolve a transaction's category with precedence:
- *   1. a manual per-transaction override
- *   2. a keyword refinement rule (newest matching one wins)
- *   3. a user rule matching its signature (unless this tx is excluded from it)
- *   4. the built-in keyword guess
+ *   1. a manual per-transaction override (income or expense)
+ *   2. a keyword refinement rule (newest matching one wins — income or expense)
+ *   3. a signature rule from the expense categorization wizard (expenses only)
+ *   4. the built-in guess (keyword match for expenses, "Income" for income)
+ *
+ * Signature rules are deliberately expense-only: they're built from grouping
+ * expense transactions by merchant signature, and applying one to an income
+ * transaction that happens to share a signature (e.g. both containing
+ * "Transfer") would be a confusing false positive. Overrides and keyword
+ * rules are more surgical/intentional, so they apply regardless of sign.
  *
  * `keywordRules` must be pre-sorted newest-first so the first substring match
  * is the highest-priority refinement.
@@ -165,15 +184,16 @@ export function resolveCategory(
 ): string {
   const o = overrides.get(tx.id);
   if (o) return o;
-  if (tx.amount >= 0) return INCOME_CATEGORY;
 
   const desc = tx.description.toLowerCase();
   for (const kr of keywordRules) {
     if (kr.keyword && desc.includes(kr.keyword)) return kr.category;
   }
 
-  const rule = rules.get(signatureOf(tx.description));
-  if (rule && !rule.excludedIds.includes(tx.id)) return rule.category;
+  if (tx.amount < 0) {
+    const rule = rules.get(signatureOf(tx.description));
+    if (rule && !rule.excludedIds.includes(tx.id)) return rule.category;
+  }
   return categorize(tx.description, tx.amount);
 }
 
@@ -190,6 +210,13 @@ export function makeResolver(
 // Stable colors so a category looks the same across every chart.
 export const CATEGORY_COLORS: Record<string, string> = {
   Income: '#16a34a',
+  Salary: '#15803d',
+  Bonus: '#65a30d',
+  Gift: '#db2777',
+  Refund: '#0d9488',
+  Interest: '#0284c7',
+  Investment: '#7c3aed',
+  'Other Income': '#65a30d',
   Housing: '#6366f1',
   Groceries: '#0ea5e9',
   Dining: '#f97316',

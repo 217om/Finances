@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Overview } from '../lib/aggregate';
+import { summarizeByDay, summarizeByWeek } from '../lib/aggregate';
+import type { Transaction } from '../types';
 import { monthLabel } from '../lib/format';
 import KpiCards from './KpiCards';
-import MonthlyCashflowChart from './MonthlyCashflowChart';
+import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
 import Insights from './Insights';
 
 interface Props {
   overview: Overview;
+  transactions: Transaction[];
+  categoryOf: (tx: Transaction) => string;
   monthStartDay: number;
   pendingCount: number;
   onReview?: () => void;
@@ -16,6 +20,15 @@ interface Props {
   hiddenCount?: number;
   onManageHidden?: () => void;
 }
+
+const GRANULARITIES: { key: Granularity; label: string }[] = [
+  { key: 'month', label: 'Monthly' },
+  { key: 'week', label: 'Weekly' },
+  { key: 'day', label: 'Daily' },
+];
+
+// Above this many bars the chart gets hard to read — just a nudge, not a limit.
+const DENSE_POINT_WARNING = 120;
 
 const PRESETS: { count: number | 'all'; label: string }[] = [
   { count: 12, label: '1Y' },
@@ -33,6 +46,8 @@ function ordinal(d: number): string {
 
 export default function Dashboard({
   overview,
+  transactions,
+  categoryOf,
   monthStartDay,
   pendingCount,
   onReview,
@@ -41,6 +56,7 @@ export default function Dashboard({
   hiddenCount = 0,
   onManageHidden,
 }: Props) {
+  const [granularity, setGranularity] = useState<Granularity>('month');
   const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
   const first = keys[0];
   const last = keys[keys.length - 1];
@@ -61,6 +77,19 @@ export default function Dashboard({
     () => overview.months.filter((m) => m.month >= lo && m.month <= hi),
     [overview.months, lo, hi],
   );
+
+  // Daily/weekly views are computed straight from transactions (not the
+  // monthly `overview`) and then clipped to the selected month range — the
+  // range's own From/To pickers stay month-grained regardless of chart mode.
+  const chartMonths = useMemo(() => {
+    if (granularity === 'month') return visible;
+    const buckets =
+      granularity === 'day' ? summarizeByDay(transactions, categoryOf) : summarizeByWeek(transactions, categoryOf);
+    return buckets.filter((b) => {
+      const monthPrefix = b.month.slice(0, 7);
+      return monthPrefix >= lo && monthPrefix <= hi;
+    });
+  }, [granularity, visible, transactions, categoryOf, lo, hi]);
 
   const applyPreset = (count: number | 'all') => {
     if (count === 'all' || keys.length <= count) setFrom(keys[0]);
@@ -144,13 +173,33 @@ export default function Dashboard({
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Monthly cashflow</h2>
+            <h2>
+              {granularity === 'day' ? 'Daily' : granularity === 'week' ? 'Weekly' : 'Monthly'}{' '}
+              cashflow
+            </h2>
             <p className="muted">
-              Money in, money out, and the net each month · {rangedNote}
+              Money in, money out, and the net each {granularity} · {rangedNote}
             </p>
           </div>
+          <div className="seg seg-sm">
+            {GRANULARITIES.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                className={granularity === g.key ? 'seg-on' : ''}
+                onClick={() => setGranularity(g.key)}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <MonthlyCashflowChart months={visible} />
+        {chartMonths.length > DENSE_POINT_WARNING && (
+          <p className="muted chart-dense-note">
+            {chartMonths.length} bars shown — narrow the date range above for a clearer view.
+          </p>
+        )}
+        <MonthlyCashflowChart months={chartMonths} granularity={granularity} />
       </section>
 
       <section className="panel">

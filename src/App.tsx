@@ -185,7 +185,6 @@ export default function App() {
       return transactions;
     }
     return transactions.filter((t) => {
-      if (t.amount >= 0) return true;
       const cat = categoryOf(t);
       const sub = subResolver.subOf(t, cat);
       return !isExcluded(categoryFilter, cat, sub);
@@ -525,6 +524,8 @@ export default function App() {
             ) : (
               <Dashboard
                 overview={overview}
+                transactions={visibleTransactions}
+                categoryOf={categoryOf}
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}

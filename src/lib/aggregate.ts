@@ -90,18 +90,22 @@ export function periodKey(dateISO: string, startDay: number): string {
   return addMonths(ym, -1);
 }
 
-/** Group transactions into per-period income / expense / net buckets. */
-export function summarizeByMonth(
+function emptySummary(key: string): MonthlySummary {
+  return { month: key, income: 0, expenses: 0, net: 0, txCount: 0, categories: {} };
+}
+
+/** Bucket transactions by an arbitrary string key (a day, a week-start, a pay-cycle month). */
+function bucketTransactions(
   txs: Transaction[],
-  startDay = 1,
-  categoryOf: CategoryOf = defaultCategoryOf,
-): MonthlySummary[] {
+  keyOf: (t: Transaction) => string,
+  categoryOf: CategoryOf,
+): Map<string, MonthlySummary> {
   const map = new Map<string, MonthlySummary>();
   for (const t of txs) {
-    const key = periodKey(t.date, startDay);
+    const key = keyOf(t);
     let s = map.get(key);
     if (!s) {
-      s = { month: key, income: 0, expenses: 0, net: 0, txCount: 0, categories: {} };
+      s = emptySummary(key);
       map.set(key, s);
     }
     if (t.amount >= 0) {
@@ -114,6 +118,16 @@ export function summarizeByMonth(
     s.net = s.income - s.expenses;
     s.txCount++;
   }
+  return map;
+}
+
+/** Group transactions into per-period income / expense / net buckets. */
+export function summarizeByMonth(
+  txs: Transaction[],
+  startDay = 1,
+  categoryOf: CategoryOf = defaultCategoryOf,
+): MonthlySummary[] {
+  const map = bucketTransactions(txs, (t) => periodKey(t.date, startDay), categoryOf);
 
   const present = [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
   if (present.length === 0) return [];
@@ -121,9 +135,83 @@ export function summarizeByMonth(
   // Fill gaps so a month with no statement shows as a flat zero rather than
   // silently collapsing the time axis.
   const all = monthsBetween(present[0].month, present[present.length - 1].month);
-  return all.map(
-    (m) => map.get(m) ?? { month: m, income: 0, expenses: 0, net: 0, txCount: 0, categories: {} },
-  );
+  return all.map((m) => map.get(m) ?? emptySummary(m));
+}
+
+// --- Day / week bucketing (for the chart's granularity toggle) --------------
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function toUTC(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function fromUTC(d: Date): string {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+function addDays(iso: string, delta: number): string {
+  const d = toUTC(iso);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return fromUTC(d);
+}
+
+/** The Monday that starts the ISO week containing this date. */
+export function startOfWeek(iso: string): string {
+  const d = toUTC(iso);
+  const day = d.getUTCDay(); // 0 = Sunday .. 6 = Saturday
+  const sinceMonday = day === 0 ? 6 : day - 1;
+  d.setUTCDate(d.getUTCDate() - sinceMonday);
+  return fromUTC(d);
+}
+
+function daysBetween(start: string, end: string): string[] {
+  const out: string[] = [];
+  let cur = start;
+  // Guard against pathological ranges (>20 years of days).
+  for (let i = 0; i < 7305 && cur <= end; i++) {
+    out.push(cur);
+    cur = addDays(cur, 1);
+  }
+  return out;
+}
+
+function weeksBetween(start: string, end: string): string[] {
+  const out: string[] = [];
+  let cur = start;
+  // Guard against pathological ranges (>60 years of weeks).
+  for (let i = 0; i < 3130 && cur <= end; i++) {
+    out.push(cur);
+    cur = addDays(cur, 7);
+  }
+  return out;
+}
+
+/** Group transactions per calendar day, gap-filled so quiet days show as zero. */
+export function summarizeByDay(
+  txs: Transaction[],
+  categoryOf: CategoryOf = defaultCategoryOf,
+): MonthlySummary[] {
+  const map = bucketTransactions(txs, (t) => t.date, categoryOf);
+  const present = [...map.keys()].sort();
+  if (present.length === 0) return [];
+  const all = daysBetween(present[0], present[present.length - 1]);
+  return all.map((d) => map.get(d) ?? emptySummary(d));
+}
+
+/** Group transactions per Monday-start week, gap-filled so quiet weeks show as zero. */
+export function summarizeByWeek(
+  txs: Transaction[],
+  categoryOf: CategoryOf = defaultCategoryOf,
+): MonthlySummary[] {
+  const map = bucketTransactions(txs, (t) => startOfWeek(t.date), categoryOf);
+  const present = [...map.keys()].sort();
+  if (present.length === 0) return [];
+  const all = weeksBetween(present[0], present[present.length - 1]);
+  return all.map((w) => map.get(w) ?? emptySummary(w));
 }
 
 function summarizeSources(txs: Transaction[]): SourceSummary[] {

@@ -4,6 +4,7 @@ import { categoryColor, signatureOf } from '../lib/categorize';
 import { UNSORTED, suggestSubGroups, type SubResolver } from '../lib/subcategory';
 import {
   isCategoryExcluded,
+  isExcluded,
   isSubExcluded,
   type CategoryFilterState,
 } from '../lib/categoryFilter';
@@ -47,14 +48,23 @@ export default function CategoriesPage({
     () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
     [transactions, categoryOf],
   );
+  // Income doesn't appear on the spend-sized treemap, but it can still be
+  // categorized (via the Transactions page or Refine) and excluded from totals
+  // the same way expense categories can — surfaced in the filter panel below.
+  const incomeTagged = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
 
-  // The chart/treemap respects the visibility filter; the management tools
-  // below (sub-category manager, transaction lists) always see everything so
-  // hidden categories/subs remain fully editable.
+  // The chart/treemap respects the visibility filter — both a fully-excluded
+  // category AND an excluded sub-category within an otherwise-visible one
+  // (e.g. hiding just "Transfers → Savings" shrinks the Transfers tile by that
+  // amount without hiding all of Transfers). The management tools below
+  // (sub-category manager, transaction lists) always see everything so hidden
+  // categories/subs remain fully editable.
   const visibleExpenses = useMemo(
-    () =>
-      expenses.filter((x) => !isCategoryExcluded(categoryFilter, x.cat)),
-    [expenses, categoryFilter],
+    () => expenses.filter((x) => !isExcluded(categoryFilter, x.cat, sub.subOf(x.t, x.cat))),
+    [expenses, categoryFilter, sub],
   );
 
   // --- Treemap drill state ---------------------------------------------------
@@ -86,7 +96,7 @@ export default function CategoriesPage({
   const visibleInCategory = useMemo(
     () =>
       category
-        ? inCategory.filter((x) => !isSubExcluded(categoryFilter, category, sub.subOf(x.t, category)))
+        ? inCategory.filter((x) => !isExcluded(categoryFilter, category, sub.subOf(x.t, category)))
         : [],
     [inCategory, category, categoryFilter, sub],
   );
@@ -253,6 +263,7 @@ export default function CategoriesPage({
 
       <CategoryFilterPanel
         expenses={expenses}
+        incomeTagged={incomeTagged}
         sub={sub}
         categoryFilter={categoryFilter}
         onToggleCategoryFilter={onToggleCategoryFilter}
@@ -276,12 +287,14 @@ export default function CategoriesPage({
 
 function CategoryFilterPanel({
   expenses,
+  incomeTagged,
   sub,
   categoryFilter,
   onToggleCategoryFilter,
   onToggleSubFilter,
 }: {
   expenses: Tagged[];
+  incomeTagged: Tagged[];
   sub: SubResolver;
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
@@ -292,6 +305,12 @@ function CategoryFilterPanel({
     for (const x of expenses) totals.set(x.cat, (totals.get(x.cat) ?? 0) + -x.t.amount);
     return [...totals.entries()].sort((a, b) => b[1] - a[1]);
   }, [expenses]);
+
+  const incomeTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const x of incomeTagged) totals.set(x.cat, (totals.get(x.cat) ?? 0) + x.t.amount);
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  }, [incomeTagged]);
 
   const subTotalsFor = (category: string) => {
     const totals = new Map<string, number>();
@@ -414,6 +433,33 @@ function CategoryFilterPanel({
           );
         })}
       </div>
+
+      {incomeTotals.length > 0 && (
+        <>
+          <h3 className="filter-income-head">Income categories</h3>
+          <div className="filter-list">
+            {incomeTotals.map(([cat, total]) => {
+              const catExcluded = isCategoryExcluded(categoryFilter, cat);
+              return (
+                <div key={cat} className="filter-row-group">
+                  <div className={`filter-row ${catExcluded ? 'filter-row-excluded' : ''}`}>
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={!catExcluded}
+                        onChange={() => onToggleCategoryFilter(cat)}
+                      />
+                    </label>
+                    <span className="catdot" style={{ background: categoryColor(cat) }} />
+                    <span className="filter-name">{cat}</span>
+                    <span className="muted filter-total pos">{money(total)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </section>
   );
 }

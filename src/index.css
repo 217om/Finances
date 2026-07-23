@@ -695,6 +695,9 @@ main.container {
 .controls-note {
   margin-top: 10px;
 }
+.chart-dense-note {
+  margin: -4px 0 10px;
+}
 .range-pickers select {
   padding: 6px 8px;
   font-size: 13px;
@@ -1505,6 +1508,15 @@ main.container {
 .filter-subrow .filter-name {
   font-weight: 400;
   color: var(--muted);
+}
+.filter-income-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 16px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 /* ---------- Refine categories ---------- */
