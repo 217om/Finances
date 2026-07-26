@@ -3,6 +3,32 @@ import { deleteNote, getAllNotes, makeNote, saveNote, type Note } from '../lib/n
 import { evalNote, formatResult } from '../lib/notesCalc';
 
 const SAVE_DEBOUNCE_MS = 400;
+const POSITION_KEY = 'cashflow.notesPosition';
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+function loadPosition(): Position | null {
+  try {
+    const raw = localStorage.getItem(POSITION_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function savePosition(pos: Position): void {
+  try {
+    localStorage.setItem(POSITION_KEY, JSON.stringify(pos));
+  } catch {
+    /* ignore */
+  }
+}
 
 /**
  * A floating notepad available on every page, independent of which card is
@@ -18,6 +44,9 @@ export default function NotesWidget() {
   const [bodyDraft, setBodyDraft] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // null = not yet moved, so the panel opens at its default spot (bottom-right,
+  // above the button) every time — only a completed drag overrides that.
+  const [position, setPosition] = useState<Position | null>(() => loadPosition());
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -27,6 +56,8 @@ export default function NotesWidget() {
   bodyDraftRef.current = bodyDraft;
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   // Load notes lazily — only once the widget is actually opened, so it never
   // adds to the app's critical startup path.
@@ -117,6 +148,39 @@ export default function NotesWidget() {
     });
   }
 
+  function clamp(pos: Position): Position {
+    const panel = panelRef.current;
+    const w = panel?.offsetWidth ?? 380;
+    const h = panel?.offsetHeight ?? 520;
+    const maxX = Math.max(8, window.innerWidth - w - 8);
+    const maxY = Math.max(8, window.innerHeight - h - 8);
+    return { x: Math.min(Math.max(8, pos.x), maxX), y: Math.min(Math.max(8, pos.y), maxY) };
+  }
+
+  function handleDragStart(e: React.PointerEvent<HTMLDivElement>) {
+    if ((e.target as HTMLElement).closest('button')) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: rect.left, originY: rect.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handleDragMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    const { startX, startY, originX, originY } = dragRef.current;
+    setPosition(clamp({ x: originX + (e.clientX - startX), y: originY + (e.clientY - startY) }));
+  }
+
+  function handleDragEnd() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setPosition((prev) => {
+      if (prev) savePosition(prev);
+      return prev;
+    });
+  }
+
   function toggleOpen() {
     setOpen((prev) => {
       if (prev) {
@@ -138,8 +202,18 @@ export default function NotesWidget() {
       </button>
 
       {open && (
-        <div className="notes-panel">
-          <div className="notes-panel-head">
+        <div
+          className="notes-panel"
+          ref={panelRef}
+          style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined}
+        >
+          <div
+            className="notes-panel-head"
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+          >
             <h2>Notes</h2>
             <button type="button" className="btn btn-ghost btn-sm" onClick={toggleOpen}>
               ✕

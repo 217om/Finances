@@ -1693,10 +1693,17 @@ main.container {
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
 }
 .notes-panel-head h2 {
   font-size: 15px;
   margin: 0;
+  pointer-events: none;
+}
+.notes-panel-head button {
+  cursor: pointer;
 }
 .notes-tabs {
   display: flex;
