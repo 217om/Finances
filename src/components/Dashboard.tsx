@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Overview } from '../lib/aggregate';
-import { summarizeByDay, summarizeByWeek } from '../lib/aggregate';
+import { summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
 import type { Transaction } from '../types';
-import { monthLabel } from '../lib/format';
+import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
 import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
@@ -30,11 +30,11 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 // Above this many bars the chart gets hard to read — just a nudge, not a limit.
 const DENSE_POINT_WARNING = 120;
 
-const PRESETS: { count: number | 'all'; label: string }[] = [
-  { count: 12, label: '1Y' },
-  { count: 24, label: '2Y' },
-  { count: 60, label: '5Y' },
-  { count: 'all', label: 'All' },
+const PRESETS: { years: number | 'all'; label: string }[] = [
+  { years: 1, label: '1Y' },
+  { years: 2, label: '2Y' },
+  { years: 5, label: '5Y' },
+  { years: 'all', label: 'All' },
 ];
 
 function ordinal(d: number): string {
@@ -42,6 +42,12 @@ function ordinal(d: number): string {
   if (d % 10 === 2 && d !== 12) return `${d}nd`;
   if (d % 10 === 3 && d !== 13) return `${d}rd`;
   return `${d}th`;
+}
+
+/** "2024-06-15" shifted by whole years, e.g. addYears(x, -1) -> "2023-06-15". */
+function addYears(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y + n, m - 1, d)).toISOString().slice(0, 10);
 }
 
 export default function Dashboard({
@@ -57,54 +63,72 @@ export default function Dashboard({
   onManageHidden,
 }: Props) {
   const [granularity, setGranularity] = useState<Granularity>('day');
-  const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
-  const first = keys[0];
-  const last = keys[keys.length - 1];
 
-  const [from, setFrom] = useState(first);
-  const [to, setTo] = useState(last);
+  // The exact first/last transaction dates — the date pickers below let the
+  // user pick any day in between, not just whole months.
+  const dateBounds = useMemo(() => {
+    if (transactions.length === 0) return { min: '', max: '' };
+    let min = transactions[0].date;
+    let max = transactions[0].date;
+    for (const t of transactions) {
+      if (t.date < min) min = t.date;
+      if (t.date > max) max = t.date;
+    }
+    return { min, max };
+  }, [transactions]);
+
+  const [from, setFrom] = useState(dateBounds.min);
+  const [to, setTo] = useState(dateBounds.max);
 
   // Reset the window to the full range whenever the available span changes.
   useEffect(() => {
-    setFrom(first);
-    setTo(last);
-  }, [first, last]);
+    setFrom(dateBounds.min);
+    setTo(dateBounds.max);
+  }, [dateBounds.min, dateBounds.max]);
 
   const lo = from <= to ? from : to;
   const hi = from <= to ? to : from;
 
-  const visible = useMemo(
-    () => overview.months.filter((m) => m.month >= lo && m.month <= hi),
-    [overview.months, lo, hi],
+  // Filter the raw transactions to the exact selected days first, then bucket
+  // — this keeps day/week/month views all honoring the same precise range,
+  // instead of only being able to clip at month boundaries.
+  const rangedTransactions = useMemo(
+    () => transactions.filter((t) => t.date >= lo && t.date <= hi),
+    [transactions, lo, hi],
   );
 
-  // Daily/weekly views are computed straight from transactions (not the
-  // monthly `overview`) and then clipped to the selected month range — the
-  // range's own From/To pickers stay month-grained regardless of chart mode.
-  const chartMonths = useMemo(() => {
-    if (granularity === 'month') return visible;
-    const buckets =
-      granularity === 'day' ? summarizeByDay(transactions, categoryOf) : summarizeByWeek(transactions, categoryOf);
-    return buckets.filter((b) => {
-      const monthPrefix = b.month.slice(0, 7);
-      return monthPrefix >= lo && monthPrefix <= hi;
-    });
-  }, [granularity, visible, transactions, categoryOf, lo, hi]);
+  const monthBuckets = useMemo(
+    () => summarizeByMonth(rangedTransactions, monthStartDay, categoryOf),
+    [rangedTransactions, monthStartDay, categoryOf],
+  );
 
-  const applyPreset = (count: number | 'all') => {
-    if (count === 'all' || keys.length <= count) setFrom(keys[0]);
-    else setFrom(keys[keys.length - count]);
-    setTo(keys[keys.length - 1]);
+  const chartMonths = useMemo(() => {
+    if (granularity === 'month') return monthBuckets;
+    return granularity === 'day'
+      ? summarizeByDay(rangedTransactions, categoryOf)
+      : summarizeByWeek(rangedTransactions, categoryOf);
+  }, [granularity, monthBuckets, rangedTransactions, categoryOf]);
+
+  const applyPreset = (years: number | 'all') => {
+    if (years === 'all') {
+      setFrom(dateBounds.min);
+    } else {
+      const candidate = addYears(dateBounds.max, -years);
+      setFrom(candidate < dateBounds.min ? dateBounds.min : candidate);
+    }
+    setTo(dateBounds.max);
   };
 
-  const activePreset = (count: number | 'all'): boolean => {
-    if (hi !== last) return false;
-    if (count === 'all') return lo === first;
-    return lo === keys[Math.max(0, keys.length - count)] && keys.length > count;
+  const activePreset = (years: number | 'all'): boolean => {
+    if (hi !== dateBounds.max) return false;
+    if (years === 'all') return lo === dateBounds.min;
+    const candidate = addYears(dateBounds.max, -years);
+    const expected = candidate < dateBounds.min ? dateBounds.min : candidate;
+    return lo === expected && dateBounds.min < expected;
   };
 
   const rangedNote =
-    lo === first && hi === last ? 'All time' : `${monthLabel(lo)} – ${monthLabel(hi)}`;
+    lo === dateBounds.min && hi === dateBounds.max ? 'All time' : `${dayLabel(lo)} – ${dayLabel(hi)}`;
   const cycleNote =
     monthStartDay > 1
       ? `Months run from the ${ordinal(monthStartDay)} to the ${ordinal(monthStartDay - 1)}.`
@@ -119,8 +143,8 @@ export default function Dashboard({
               <button
                 key={p.label}
                 type="button"
-                className={activePreset(p.count) ? 'seg-on' : ''}
-                onClick={() => applyPreset(p.count)}
+                className={activePreset(p.years) ? 'seg-on' : ''}
+                onClick={() => applyPreset(p.years)}
               >
                 {p.label}
               </button>
@@ -129,24 +153,24 @@ export default function Dashboard({
           <div className="range-pickers">
             <label className="picker">
               <span className="picker-label">From</span>
-              <select value={lo} onChange={(e) => setFrom(e.target.value)}>
-                {keys.map((k) => (
-                  <option key={k} value={k}>
-                    {monthLabel(k)}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="date"
+                value={lo}
+                min={dateBounds.min}
+                max={dateBounds.max}
+                onChange={(e) => setFrom(e.target.value)}
+              />
             </label>
             <span className="range-dash">→</span>
             <label className="picker">
               <span className="picker-label">To</span>
-              <select value={hi} onChange={(e) => setTo(e.target.value)}>
-                {keys.map((k) => (
-                  <option key={k} value={k}>
-                    {monthLabel(k)}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="date"
+                value={hi}
+                min={dateBounds.min}
+                max={dateBounds.max}
+                onChange={(e) => setTo(e.target.value)}
+              />
             </label>
           </div>
         </div>
@@ -227,7 +251,7 @@ export default function Dashboard({
             )}
           </div>
         </div>
-        <CategoryBreakdown months={visible} />
+        <CategoryBreakdown months={monthBuckets} />
       </section>
 
       <section className="panel">
