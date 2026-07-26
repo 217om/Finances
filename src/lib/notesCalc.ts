@@ -1,14 +1,17 @@
 // A tiny, safe (no eval) calculator for the notepad: each line can be plain
-// text, a bare expression ("12 * (3 + 4)"), or a variable assignment
-// ("rent = 500"). Variables assigned on earlier lines are available to every
-// line below them. Lines that don't parse as valid math are just prose.
+// text, a bare expression ("12 * (3 + 4)"), a variable assignment
+// ("rent = 500"), or a card lookup ("card1.get(\"Dining\")"). Variables
+// assigned on earlier lines are available to every line below them. Lines
+// that don't parse as valid math are just prose.
 
 type Token =
   | { type: 'num'; value: number }
   | { type: 'ident'; value: string }
+  | { type: 'string'; value: string }
   | { type: 'op'; value: '+' | '-' | '*' | '/' | '^' | '%' }
   | { type: 'lparen' }
-  | { type: 'rparen' };
+  | { type: 'rparen' }
+  | { type: 'dot' };
 
 function tokenize(src: string): Token[] {
   const tokens: Token[] = [];
@@ -19,7 +22,10 @@ function tokenize(src: string): Token[] {
       i++;
       continue;
     }
-    if (/[0-9.]/.test(ch)) {
+    // A number starts with a digit, or a "." immediately followed by a digit
+    // (so a lone "." — as in "card1.get(...)" — falls through to the dot
+    // token below instead of being mistaken for a malformed number).
+    if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
       let j = i;
       while (j < src.length && /[0-9.]/.test(src[j])) j++;
       const raw = src.slice(i, j);
@@ -33,6 +39,24 @@ function tokenize(src: string): Token[] {
       while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
       tokens.push({ type: 'ident', value: src.slice(i, j) });
       i = j;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      let j = i + 1;
+      let value = '';
+      while (j < src.length && src[j] !== quote) {
+        value += src[j];
+        j++;
+      }
+      if (j >= src.length) throw new Error('unterminated string');
+      tokens.push({ type: 'string', value });
+      i = j + 1;
+      continue;
+    }
+    if (ch === '.') {
+      tokens.push({ type: 'dot' });
+      i++;
       continue;
     }
     if (ch === '(') {
@@ -55,9 +79,17 @@ function tokenize(src: string): Token[] {
   return tokens;
 }
 
+/** Looks up a card's total for a category by the card's slug (e.g. "card1"
+ *  for a card named "Card 1"). Returns undefined if either is unknown. */
+export type CardGetter = (cardSlug: string, category: string) => number | undefined;
+
 class Parser {
   private pos = 0;
-  constructor(private tokens: Token[], private vars: Record<string, number>) {}
+  constructor(
+    private tokens: Token[],
+    private vars: Record<string, number>,
+    private cardGetter?: CardGetter,
+  ) {}
 
   private peek(): Token | undefined {
     return this.tokens[this.pos];
@@ -138,6 +170,23 @@ class Parser {
     const t = this.next();
     if (t.type === 'num') return t.value;
     if (t.type === 'ident') {
+      // Card lookup: identifier.get("category")
+      if (this.peek()?.type === 'dot') {
+        this.next(); // consume '.'
+        const method = this.next();
+        if (method.type !== 'ident' || method.value !== 'get') {
+          throw new Error('expected .get("category")');
+        }
+        const lp = this.next();
+        if (lp.type !== 'lparen') throw new Error('expected (');
+        const arg = this.next();
+        if (arg.type !== 'string') throw new Error('expected a quoted category name');
+        const rp = this.next();
+        if (rp.type !== 'rparen') throw new Error('expected )');
+        const value = this.cardGetter?.(t.value, arg.value);
+        if (value === undefined) throw new Error(`unknown card/category "${t.value}.get(${arg.value})"`);
+        return value;
+      }
       if (!(t.value in this.vars)) throw new Error(`unknown variable "${t.value}"`);
       return this.vars[t.value];
     }
@@ -151,10 +200,10 @@ class Parser {
   }
 }
 
-function evalExpr(src: string, vars: Record<string, number>): number {
+function evalExpr(src: string, vars: Record<string, number>, cardGetter?: CardGetter): number {
   const tokens = tokenize(src);
   if (tokens.length === 0) throw new Error('empty');
-  return new Parser(tokens, vars).parse();
+  return new Parser(tokens, vars, cardGetter).parse();
 }
 
 export interface LineResult {
@@ -166,28 +215,32 @@ const ASSIGNMENT = /^([a-zA-Z_]\w*)\s*=\s*(.+)$/;
 
 /** Evaluate one line against the running variable table. Returns null for
  *  lines that are plain prose (don't parse as math), never throws. */
-export function evalLine(line: string, vars: Record<string, number>): LineResult | null {
+export function evalLine(
+  line: string,
+  vars: Record<string, number>,
+  cardGetter?: CardGetter,
+): LineResult | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   try {
     const m = ASSIGNMENT.exec(trimmed);
     if (m) {
       const [, name, exprStr] = m;
-      const value = evalExpr(exprStr, vars);
+      const value = evalExpr(exprStr, vars, cardGetter);
       return { assign: name, value };
     }
-    return { value: evalExpr(trimmed, vars) };
+    return { value: evalExpr(trimmed, vars, cardGetter) };
   } catch {
     return null;
   }
 }
 
 /** Evaluate every line of a note top-to-bottom, threading variables through. */
-export function evalNote(body: string): (LineResult | null)[] {
+export function evalNote(body: string, cardGetter?: CardGetter): (LineResult | null)[] {
   const vars: Record<string, number> = {};
   const results: (LineResult | null)[] = [];
   for (const line of body.split('\n')) {
-    const result = evalLine(line, vars);
+    const result = evalLine(line, vars, cardGetter);
     if (result) {
       if (result.assign) vars[result.assign] = result.value;
       results.push(result);
@@ -203,4 +256,19 @@ export function formatResult(n: number): string {
   if (!Number.isFinite(n)) return n > 0 ? '∞' : '-∞';
   const rounded = Math.round(n * 1e9) / 1e9;
   return rounded.toLocaleString(undefined, { maximumFractionDigits: 9 });
+}
+
+/** Turn a card's display name into a valid bare identifier, e.g.
+ *  "Second Card" -> "secondCard", "Card 1" -> "card1". */
+export function cardSlug(name: string): string {
+  const words = name
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  if (words.length === 0) return 'card';
+  const joined = words
+    .map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join('');
+  return /^[0-9]/.test(joined) ? `c${joined}` : joined;
 }

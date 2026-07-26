@@ -1676,9 +1676,9 @@ main.container {
   right: 20px;
   bottom: 84px;
   width: 380px;
-  max-width: calc(100vw - 40px);
+  max-width: calc(100vw - 16px);
   height: 520px;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 16px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1767,10 +1767,63 @@ main.container {
   width: 90px;
 }
 .notes-editor {
+  position: relative;
   flex: 1;
   display: flex;
   overflow: hidden;
   min-height: 0;
+}
+.notes-autocomplete {
+  position: absolute;
+  z-index: 5;
+  min-width: 120px;
+  max-width: 220px;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.notes-ac-opt {
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notes-ac-opt-active,
+.notes-ac-opt:hover {
+  background: #dbeafe;
+}
+.notes-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.notes-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
 }
 .notes-lines {
   flex: 1;

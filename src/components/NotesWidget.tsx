@@ -1,13 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import { deleteNote, getAllNotes, makeNote, saveNote, type Note } from '../lib/notes';
-import { evalNote, formatResult } from '../lib/notesCalc';
+import { evalNote, formatResult, cardSlug, type CardGetter } from '../lib/notesCalc';
+import { loadCards, type Card } from '../lib/cards';
+import { loadCardCategoryTotals, type CardCategoryTotals } from '../lib/cardTotals';
 
 const SAVE_DEBOUNCE_MS = 400;
 const POSITION_KEY = 'cashflow.notesPosition';
+const SIZE_KEY = 'cashflow.notesSize';
+const LINE_HEIGHT = 20;
+const PAD_TOP = 10;
+const PAD_LEFT = 8;
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 260;
 
 interface Position {
   x: number;
   y: number;
+}
+interface Size {
+  width: number;
+  height: number;
+}
+interface AcOption {
+  label: string;
+  insertText: string;
+}
+interface AcState {
+  options: AcOption[];
+  start: number;
+  end: number;
+  selected: number;
 }
 
 function loadPosition(): Position | null {
@@ -30,11 +52,99 @@ function savePosition(pos: Position): void {
   }
 }
 
+function loadSize(): Size | null {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (typeof s?.width === 'number' && typeof s?.height === 'number') return s;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveSize(size: Size): void {
+  try {
+    localStorage.setItem(SIZE_KEY, JSON.stringify(size));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Measures the pixel width of one monospace character in the note editor's font. */
+function measureCharWidth(): number {
+  const span = document.createElement('span');
+  span.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+  span.style.fontSize = '13px';
+  span.style.whiteSpace = 'pre';
+  span.style.position = 'absolute';
+  span.style.visibility = 'hidden';
+  span.textContent = '0'.repeat(20);
+  document.body.appendChild(span);
+  const width = span.getBoundingClientRect().width / 20;
+  document.body.removeChild(span);
+  return width || 8;
+}
+
+/**
+ * Figures out what to suggest at the caret: a card identifier (e.g. "card1"),
+ * its ".get(" method, or a quoted category name inside an open .get("...").
+ */
+function computeAutocomplete(
+  body: string,
+  caret: number,
+  slugs: string[],
+  totalsBySlug: Map<string, CardCategoryTotals>,
+): { options: AcOption[]; start: number; end: number } | null {
+  const lineStart = body.lastIndexOf('\n', caret - 1) + 1;
+  const upToCaret = body.slice(lineStart, caret);
+
+  const inString = /([a-zA-Z_]\w*)\.get\(\s*["']([^"']*)$/.exec(upToCaret);
+  if (inString) {
+    const [, slug, partial] = inString;
+    const entry = totalsBySlug.get(slug);
+    if (!entry) return null;
+    const matches = entry.categories.filter((c) => c.toLowerCase().startsWith(partial.toLowerCase()));
+    if (matches.length === 0) return null;
+    const closeSuffix = /^["']/.test(body.slice(caret)) ? '' : '")';
+    return {
+      options: matches.map((c) => ({ label: c, insertText: c + closeSuffix })),
+      start: caret - partial.length,
+      end: caret,
+    };
+  }
+
+  const afterDot = /([a-zA-Z_]\w*)\.(\w*)$/.exec(upToCaret);
+  if (afterDot) {
+    const [, slug, partialMethod] = afterDot;
+    if (slugs.includes(slug) && 'get'.startsWith(partialMethod)) {
+      return { options: [{ label: 'get("…")', insertText: 'get("' }], start: caret - partialMethod.length, end: caret };
+    }
+    return null;
+  }
+
+  const bareIdent = /(?:^|[^.\w])([a-zA-Z_]\w*)$/.exec(upToCaret);
+  if (bareIdent) {
+    const partial = bareIdent[1];
+    const matches = slugs.filter((s) => s.toLowerCase().startsWith(partial.toLowerCase()));
+    if (matches.length === 0) return null;
+    return {
+      options: matches.map((s) => ({ label: s, insertText: s })),
+      start: caret - partial.length,
+      end: caret,
+    };
+  }
+
+  return null;
+}
+
 /**
  * A floating notepad available on every page, independent of which card is
- * active. Supports multiple notes and a small inline calculator: any line
- * like "rent = 500" or "total = rent + food" is evaluated live, with
- * variables carrying down through the rest of that note.
+ * active. Supports multiple notes, drag-to-move and drag-to-resize, and a
+ * small inline calculator: lines like "rent = 500" save a variable, later
+ * lines like "total = rent + food" can use it, and "card1.get(\"Dining\")"
+ * (with autocomplete) pulls a category total straight from a card.
  */
 export default function NotesWidget() {
   const [open, setOpen] = useState(false);
@@ -44,9 +154,12 @@ export default function NotesWidget() {
   const [bodyDraft, setBodyDraft] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  // null = not yet moved, so the panel opens at its default spot (bottom-right,
-  // above the button) every time — only a completed drag overrides that.
+  // null = not yet moved/resized, so the panel opens at its default spot and
+  // size every time — only a completed drag/resize overrides that.
   const [position, setPosition] = useState<Position | null>(() => loadPosition());
+  const [size, setSize] = useState<Size | null>(() => loadSize());
+  const [cardEntries, setCardEntries] = useState<{ card: Card; slug: string; data: CardCategoryTotals }[]>([]);
+  const [autocomplete, setAutocomplete] = useState<AcState | null>(null);
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -54,10 +167,15 @@ export default function NotesWidget() {
   activeIdRef.current = activeId;
   const bodyDraftRef = useRef(bodyDraft);
   bodyDraftRef.current = bodyDraft;
+  const cardEntriesRef = useRef(cardEntries);
+  cardEntriesRef.current = cardEntries;
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+  const charWidthRef = useRef<number | null>(null);
 
   // Load notes lazily — only once the widget is actually opened, so it never
   // adds to the app's critical startup path.
@@ -80,6 +198,23 @@ export default function NotesWidget() {
     })();
   }, [open, loaded]);
 
+  // Refresh the card-lookup snapshot every time the panel opens, so
+  // card1.get("Dining") reflects reasonably current numbers.
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const cards = loadCards();
+      const entries = await Promise.all(
+        cards.map(async (card) => {
+          const slug = cardSlug(card.name);
+          const data = await loadCardCategoryTotals(card, slug);
+          return { card, slug, data };
+        }),
+      );
+      setCardEntries(entries);
+    })();
+  }, [open]);
+
   function flushSave() {
     const id = activeIdRef.current;
     if (!id) return;
@@ -97,6 +232,49 @@ export default function NotesWidget() {
     saveTimer.current = window.setTimeout(flushSave, SAVE_DEBOUNCE_MS);
   }
 
+  function updateAutocomplete(el: HTMLTextAreaElement) {
+    if (charWidthRef.current === null) charWidthRef.current = measureCharWidth();
+    const slugs = cardEntriesRef.current.map((e) => e.slug);
+    const totalsBySlug = new Map(cardEntriesRef.current.map((e) => [e.slug, e.data]));
+    const ctx = computeAutocomplete(el.value, el.selectionStart, slugs, totalsBySlug);
+    setAutocomplete(ctx ? { ...ctx, selected: 0 } : null);
+  }
+
+  function acceptAutocomplete(option: AcOption) {
+    setAutocomplete((ac) => {
+      if (!ac) return null;
+      const value = bodyDraftRef.current;
+      const next = value.slice(0, ac.start) + option.insertText + value.slice(ac.end);
+      const newCaret = ac.start + option.insertText.length;
+      handleBodyChange(next);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(newCaret, newCaret);
+        updateAutocomplete(el);
+      });
+      return null;
+    });
+  }
+
+  function handleTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!autocomplete) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected + 1) % ac.options.length });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected - 1 + ac.options.length) % ac.options.length });
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      acceptAutocomplete(autocomplete.options[autocomplete.selected]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setAutocomplete(null);
+    }
+  }
+
   function selectNote(id: string) {
     if (id === activeId) return;
     flushSave();
@@ -104,6 +282,7 @@ export default function NotesWidget() {
     const note = notesRef.current.find((n) => n.id === id);
     setActiveId(id);
     setBodyDraft(note?.body ?? '');
+    setAutocomplete(null);
   }
 
   function addNote() {
@@ -113,6 +292,7 @@ export default function NotesWidget() {
     setNotes((prev) => [n, ...prev]);
     setActiveId(n.id);
     setBodyDraft('');
+    setAutocomplete(null);
   }
 
   function removeNote(id: string) {
@@ -124,6 +304,7 @@ export default function NotesWidget() {
         const fallback = next[0];
         setActiveId(fallback?.id ?? null);
         setBodyDraft(fallback?.body ?? '');
+        setAutocomplete(null);
       }
       return next;
     });
@@ -148,7 +329,7 @@ export default function NotesWidget() {
     });
   }
 
-  function clamp(pos: Position): Position {
+  function clampPosition(pos: Position): Position {
     const panel = panelRef.current;
     const w = panel?.offsetWidth ?? 380;
     const h = panel?.offsetHeight ?? 520;
@@ -169,7 +350,7 @@ export default function NotesWidget() {
   function handleDragMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragRef.current) return;
     const { startX, startY, originX, originY } = dragRef.current;
-    setPosition(clamp({ x: originX + (e.clientX - startX), y: originY + (e.clientY - startY) }));
+    setPosition(clampPosition({ x: originX + (e.clientX - startX), y: originY + (e.clientY - startY) }));
   }
 
   function handleDragEnd() {
@@ -181,11 +362,40 @@ export default function NotesWidget() {
     });
   }
 
+  function handleResizeStart(e: React.PointerEvent<HTMLDivElement>) {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, startW: rect.width, startH: rect.height };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  }
+
+  function handleResizeMove(e: React.PointerEvent<HTMLDivElement>) {
+    const d = resizeRef.current;
+    if (!d) return;
+    const maxW = window.innerWidth - 40;
+    const maxH = window.innerHeight - 40;
+    const width = Math.min(maxW, Math.max(MIN_WIDTH, d.startW + (e.clientX - d.startX)));
+    const height = Math.min(maxH, Math.max(MIN_HEIGHT, d.startH + (e.clientY - d.startY)));
+    setSize({ width, height });
+  }
+
+  function handleResizeEnd() {
+    if (!resizeRef.current) return;
+    resizeRef.current = null;
+    setSize((prev) => {
+      if (prev) saveSize(prev);
+      return prev;
+    });
+  }
+
   function toggleOpen() {
     setOpen((prev) => {
       if (prev) {
         if (saveTimer.current) window.clearTimeout(saveTimer.current);
         flushSave();
+        setAutocomplete(null);
       }
       return !prev;
     });
@@ -193,7 +403,23 @@ export default function NotesWidget() {
 
   const activeNote = notes.find((n) => n.id === activeId) ?? null;
   const lines = bodyDraft.split('\n');
-  const results = evalNote(bodyDraft);
+  const cardGetter: CardGetter = (slug, category) => {
+    const entry = cardEntriesRef.current.find((e) => e.slug === slug);
+    return entry?.data.totals[category.toLowerCase()];
+  };
+  const results = evalNote(bodyDraft, cardGetter);
+
+  const acStyle = (() => {
+    if (!autocomplete || !textareaRef.current) return undefined;
+    const el = textareaRef.current;
+    const charWidth = charWidthRef.current ?? 8;
+    const before = el.value.slice(0, autocomplete.start);
+    const lineIdx = before.split('\n').length - 1;
+    const col = before.slice(before.lastIndexOf('\n') + 1).length;
+    const top = PAD_TOP + lineIdx * LINE_HEIGHT - el.scrollTop + LINE_HEIGHT;
+    const left = Math.max(4, Math.min(PAD_LEFT + col * charWidth - el.scrollLeft, el.clientWidth - 160));
+    return { left, top };
+  })();
 
   return (
     <div className="notes-fab-wrap">
@@ -205,7 +431,10 @@ export default function NotesWidget() {
         <div
           className="notes-panel"
           ref={panelRef}
-          style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined}
+          style={{
+            ...(position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : {}),
+            ...(size ? { width: size.width, height: size.height } : {}),
+          }}
         >
           <div
             className="notes-panel-head"
@@ -265,13 +494,26 @@ export default function NotesWidget() {
             <>
               <div className="notes-editor">
                 <textarea
+                  ref={textareaRef}
                   className="notes-lines"
                   value={bodyDraft}
                   spellCheck={false}
-                  placeholder={'Write anything. Try:\nrent = 500\nfood = 200\ntotal = rent + food'}
-                  onChange={(e) => handleBodyChange(e.target.value)}
+                  placeholder={'Write anything. Try:\nrent = 500\ntotal = rent + food\ncard1.get("Dining")'}
+                  onChange={(e) => {
+                    handleBodyChange(e.target.value);
+                    updateAutocomplete(e.target);
+                  }}
+                  onKeyDown={handleTextareaKeyDown}
+                  onKeyUp={(e) => {
+                    if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
+                      updateAutocomplete(e.currentTarget);
+                    }
+                  }}
+                  onClick={(e) => updateAutocomplete(e.currentTarget)}
+                  onBlur={() => setAutocomplete(null)}
                   onScroll={(e) => {
                     if (resultsRef.current) resultsRef.current.scrollTop = e.currentTarget.scrollTop;
+                    setAutocomplete(null);
                   }}
                 />
                 <div className="notes-results" ref={resultsRef}>
@@ -284,9 +526,32 @@ export default function NotesWidget() {
                     );
                   })}
                 </div>
+                {autocomplete && acStyle && (
+                  <div className="notes-autocomplete" style={acStyle}>
+                    {autocomplete.options.map((opt, i) => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        className={`notes-ac-opt ${i === autocomplete.selected ? 'notes-ac-opt-active' : ''}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          acceptAutocomplete(opt);
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <p className="muted notes-hint">
-                Lines like “rent = 500” save a variable; later lines (e.g. “total = rent + food”) can use it.
+                “rent = 500” saves a variable; {cardEntries.length > 0 && (
+                  <>
+                    “{cardEntries[0].slug}.get(&quot;{cardEntries[0].data.categories[0] ?? 'Category'}&quot;)” reads
+                    a number from {cardEntries[0].card.name};{' '}
+                  </>
+                )}
+                type “.” after a card name for autocomplete.
               </p>
             </>
           ) : (
@@ -297,6 +562,15 @@ export default function NotesWidget() {
               </button>
             </div>
           )}
+
+          <div
+            className="notes-resize-handle"
+            onPointerDown={handleResizeStart}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+            title="Drag to resize"
+          />
         </div>
       )}
     </div>
