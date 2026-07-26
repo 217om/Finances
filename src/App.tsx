@@ -540,7 +540,8 @@ export default function App() {
       if (id === activeCardId) return;
       setActiveCardId(id);
       saveActiveCardId(id);
-      setView('dashboard');
+      // Keep whichever tab (Dashboard/Categories/Transactions) the user was
+      // already on — switching cards shouldn't reset where you're looking.
       setWizardOpen(false);
       setRefineOpen(false);
     },
@@ -586,7 +587,6 @@ export default function App() {
         saveCards(next);
         setActiveCardId(card.id);
         saveActiveCardId(card.id);
-        setView('dashboard');
         setWizardOpen(false);
         setRefineOpen(false);
         setCardManagerOpen(false);
@@ -632,7 +632,6 @@ export default function App() {
         const fallback = next[0];
         setActiveCardId(fallback.id);
         saveActiveCardId(fallback.id);
-        setView('dashboard');
         setWizardOpen(false);
         setRefineOpen(false);
       }
