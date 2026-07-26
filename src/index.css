@@ -1647,17 +1647,171 @@ main.container {
   background: var(--surface);
 }
 
-.combine-row {
+/* ---------- Notes (floating, global) ---------- */
+.notes-fab-wrap {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 39;
+}
+.notes-fab {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  justify-content: center;
 }
-.combine-note {
+.notes-fab:hover {
+  background: #1d4ed8;
+}
+.notes-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: 380px;
+  max-width: calc(100vw - 40px);
+  height: 520px;
+  max-height: calc(100vh - 120px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.notes-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-panel-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.notes-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.notes-tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 2px 4px 2px 8px;
+}
+.notes-tab-active {
+  background: #dbeafe;
+}
+.notes-tab-btn {
+  background: none;
+  border: none;
   font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}
+.notes-tab-del {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.notes-tab-del:hover {
+  color: var(--neg);
+}
+.notes-tab-add {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.notes-rename-input {
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 2px 6px;
+  width: 90px;
+}
+.notes-editor {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+.notes-lines {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 10px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+  overflow: auto;
+  color: var(--text);
+}
+.notes-results {
+  width: 88px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  padding: 10px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--accent);
+  text-align: right;
+  background: var(--bg);
+}
+.notes-result-row {
+  height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.notes-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+}
+.notes-hint {
+  font-size: 11px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  margin: 0;
+  flex-shrink: 0;
 }
 
 /* ---------- Cards (multi-account) ---------- */

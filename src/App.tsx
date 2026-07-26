@@ -47,7 +47,6 @@ import {
   scopedKey,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
-import { combineSnapshots, type CardSnapshot } from './lib/combine';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
@@ -63,6 +62,7 @@ import {
 } from './lib/categoryFilter';
 import { getCurrency, setCurrency } from './lib/format';
 import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
+import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
 import ColumnMapper from './components/ColumnMapper';
@@ -79,18 +79,6 @@ const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
 const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
-const COMBINE_KEY = 'cashflow.combineCards';
-
-interface OtherCardData {
-  transactions: Transaction[];
-  rules: CategoryRule[];
-  overrides: CategoryOverride[];
-  keywordRules: KeywordRule[];
-  subRules: SubRule[];
-  subOverrides: SubOverride[];
-  currency: string;
-  filter: CategoryFilterState;
-}
 
 export default function App() {
   const [cards, setCards] = useState<Card[]>(() => loadCards());
@@ -124,66 +112,6 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
-
-  // Combine-across-cards is a dashboard-only display mode: each card still
-  // categorizes and filters its own transactions with its own rules, this
-  // just merges the results afterward for the charts.
-  const [combineEnabled, setCombineEnabled] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(COMBINE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [otherCardsData, setOtherCardsData] = useState<Record<string, OtherCardData>>({});
-
-  useEffect(() => {
-    if (!combineEnabled) {
-      setOtherCardsData({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const others = cards.filter((c) => c.id !== activeCardId);
-      const entries = await Promise.all(
-        others.map(async (c) => {
-          const [txs, r, o, kr, sr, so] = await Promise.all([
-            getAllTransactions(c.dbName).catch(() => [] as Transaction[]),
-            getRules(c.dbName).catch(() => [] as CategoryRule[]),
-            getOverrides(c.dbName).catch(() => [] as CategoryOverride[]),
-            getKeywordRules(c.dbName).catch(() => [] as KeywordRule[]),
-            getSubRules(c.dbName).catch(() => [] as SubRule[]),
-            getSubOverrides(c.dbName).catch(() => [] as SubOverride[]),
-          ]);
-          let cur = 'OMR';
-          let filter = defaultCategoryFilter();
-          try {
-            cur = localStorage.getItem(scopedKey(CURRENCY_KEY, c.id)) || 'OMR';
-            const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, c.id)) ?? 'null');
-            if (isValidCategoryFilter(savedFilter)) filter = savedFilter;
-          } catch {
-            /* ignore */
-          }
-          const data: OtherCardData = {
-            transactions: txs,
-            rules: r,
-            overrides: o,
-            keywordRules: kr,
-            subRules: sr,
-            subOverrides: so,
-            currency: cur,
-            filter,
-          };
-          return [c.id, data] as const;
-        }),
-      );
-      if (cancelled) return;
-      setOtherCardsData(Object.fromEntries(entries));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [combineEnabled, cards, activeCardId]);
 
   // Restore preferences and load stored data whenever the active card changes
   // (including on first mount). Everything here is defensive: reading
@@ -306,79 +234,6 @@ export default function App() {
     () => buildOverview(visibleTransactions, monthStartDay, categoryOf),
     [visibleTransactions, monthStartDay, categoryOf],
   );
-
-  // When combining, every other card gets its own resolver/filter built from
-  // its own rules — a card's transactions are always categorized and
-  // filtered by that card's own rules, never the active card's.
-  const combinedSnapshots = useMemo<CardSnapshot[]>(() => {
-    if (!combineEnabled || !activeCard) return [];
-    const activeSnap: CardSnapshot = {
-      cardId: activeCard.id,
-      cardName: activeCard.name,
-      currency,
-      transactions,
-      categoryOf,
-      subOf: subResolver.subOf,
-      filter: categoryFilter,
-    };
-    const others = cards
-      .filter((c) => c.id !== activeCardId)
-      .map((c) => {
-        const raw = otherCardsData[c.id];
-        if (!raw) return null;
-        const rMap = new Map(raw.rules.map((r) => [r.signature, r]));
-        const oMap = new Map(raw.overrides.map((o) => [o.id, o.category]));
-        const snap: CardSnapshot = {
-          cardId: c.id,
-          cardName: c.name,
-          currency: raw.currency,
-          transactions: raw.transactions,
-          categoryOf: makeResolver(rMap, oMap, raw.keywordRules),
-          subOf: makeSubResolver(raw.subRules, raw.subOverrides).subOf,
-          filter: raw.filter,
-        };
-        return snap;
-      })
-      .filter((s): s is CardSnapshot => s !== null);
-    return [activeSnap, ...others];
-  }, [
-    combineEnabled,
-    activeCard,
-    activeCardId,
-    currency,
-    transactions,
-    categoryOf,
-    subResolver,
-    categoryFilter,
-    cards,
-    otherCardsData,
-  ]);
-
-  const combinedData = useMemo(
-    () => (combineEnabled ? combineSnapshots(combinedSnapshots) : null),
-    [combineEnabled, combinedSnapshots],
-  );
-
-  const combinedOverview = useMemo(
-    () => (combinedData ? buildOverview(combinedData.transactions, monthStartDay, combinedData.categoryOf) : null),
-    [combinedData, monthStartDay],
-  );
-
-  const dashboardTransactions = combineEnabled && combinedData ? combinedData.transactions : visibleTransactions;
-  const dashboardCategoryOf = combineEnabled && combinedData ? combinedData.categoryOf : categoryOf;
-  const dashboardOverview = combineEnabled && combinedOverview ? combinedOverview : overview;
-
-  const handleToggleCombine = useCallback(() => {
-    setCombineEnabled((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COMBINE_KEY, next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
 
   // Classification (the wizard's pending groups) is independent of the display
   // filter above — you can still categorize everything even if some of it is
@@ -882,9 +737,9 @@ export default function App() {
               />
             ) : (
               <Dashboard
-                overview={dashboardOverview}
-                transactions={dashboardTransactions}
-                categoryOf={dashboardCategoryOf}
+                overview={overview}
+                transactions={visibleTransactions}
+                categoryOf={categoryOf}
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
@@ -892,11 +747,6 @@ export default function App() {
                 onRefine={() => setRefineOpen(true)}
                 hiddenCount={excludedCount(categoryFilter)}
                 onManageHidden={() => setView('categories')}
-                combineAvailable={cards.length > 1}
-                combineEnabled={combineEnabled}
-                onToggleCombine={handleToggleCombine}
-                combinedCardNames={combineEnabled ? combinedSnapshots.map((s) => s.cardName) : []}
-                mixedCurrency={combineEnabled ? combinedData?.mixedCurrency ?? false : false}
               />
             )}
           </>
@@ -957,6 +807,8 @@ export default function App() {
       <footer className="footer">
         Your statements never leave this browser — all parsing and storage happens on your device.
       </footer>
+
+      <NotesWidget />
     </div>
   );
 }
