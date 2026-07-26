@@ -19,6 +19,11 @@ interface Props {
   onRefine?: () => void;
   hiddenCount?: number;
   onManageHidden?: () => void;
+  combineAvailable?: boolean;
+  combineEnabled?: boolean;
+  onToggleCombine?: () => void;
+  combinedCardNames?: string[];
+  mixedCurrency?: boolean;
 }
 
 const GRANULARITIES: { key: Granularity; label: string }[] = [
@@ -55,8 +60,13 @@ export default function Dashboard({
   onRefine,
   hiddenCount = 0,
   onManageHidden,
+  combineAvailable = false,
+  combineEnabled = false,
+  onToggleCombine,
+  combinedCardNames = [],
+  mixedCurrency = false,
 }: Props) {
-  const [granularity, setGranularity] = useState<Granularity>('month');
+  const [granularity, setGranularity] = useState<Granularity>('day');
   const keys = useMemo(() => overview.months.map((m) => m.month), [overview.months]);
   const first = keys[0];
   const last = keys[keys.length - 1];
@@ -151,6 +161,20 @@ export default function Dashboard({
           </div>
         </div>
         {cycleNote && <p className="muted controls-note">{cycleNote}</p>}
+        {combineAvailable && (
+          <div className="combine-row">
+            <label className="filter-check">
+              <input type="checkbox" checked={combineEnabled} onChange={() => onToggleCombine?.()} />
+              Combine all cards in these charts
+            </label>
+            {combineEnabled && (
+              <span className="muted combine-note">
+                Showing {combinedCardNames.join(', ')} together.
+                {mixedCurrency && ' These cards use different currencies — totals mix units.'}
+              </span>
+            )}
+          </div>
+        )}
       </section>
 
       <div className="section-label">
