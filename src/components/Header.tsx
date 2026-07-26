@@ -1,3 +1,4 @@
+import type { Card } from '../lib/cards';
 import { currencyOptions } from '../lib/format';
 import DataMenu from './DataMenu';
 
@@ -10,6 +11,10 @@ interface Props {
   onClearAll: () => void;
   onExportJSON: () => void;
   onExportCSV: () => void;
+  cards: Card[];
+  activeCardId: string;
+  onSwitchCard: (id: string) => void;
+  onManageCards: () => void;
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
@@ -23,6 +28,10 @@ export default function Header({
   onClearAll,
   onExportJSON,
   onExportCSV,
+  cards,
+  activeCardId,
+  onSwitchCard,
+  onManageCards,
 }: Props) {
   return (
     <header className="header">
@@ -38,6 +47,19 @@ export default function Header({
         </div>
 
         <div className="header-actions">
+          <label className="picker" title="Which card/account you're analyzing">
+            <span className="picker-label">Card</span>
+            <select value={activeCardId} onChange={(e) => onSwitchCard(e.target.value)}>
+              {cards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onManageCards}>
+            Manage cards
+          </button>
           <label className="picker" title="The day each month starts on, e.g. your payday">
             <span className="picker-label">Month starts</span>
             <select

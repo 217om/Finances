@@ -1,6 +1,11 @@
 // IndexedDB persistence. Transactions accumulate here across months and years,
 // so the user only ever uploads the *latest* statement — never their history.
 // Everything stays on the user's device; nothing is sent to a server.
+//
+// Each "card" (account) the user analyzes gets its own physically separate
+// database, so transactions, rules, and overrides never mix between cards.
+// The very first card keeps the original database name ('cashflow') so
+// existing users' data loads with no migration.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type {
@@ -41,41 +46,41 @@ interface CashFlowDB extends DBSchema {
   };
 }
 
-const DB_NAME = 'cashflow';
 const DB_VERSION = 4;
 
-let dbPromise: Promise<IDBPDatabase<CashFlowDB>> | null = null;
-let activeDb: IDBPDatabase<CashFlowDB> | null = null;
-let blockedListener: (() => void) | null = null;
+const dbCache = new Map<string, Promise<IDBPDatabase<CashFlowDB>>>();
+const activeDbs = new Map<string, IDBPDatabase<CashFlowDB>>();
+let blockedListener: ((dbName: string) => void) | null = null;
 
-/** Notified when opening the DB is blocked by another tab holding it open. */
-export function onDatabaseBlocked(fn: (() => void) | null): void {
+/** Notified when opening a database is blocked by another tab holding it open. */
+export function onDatabaseBlocked(fn: ((dbName: string) => void) | null): void {
   blockedListener = fn;
 }
 
-function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
-  if (!dbPromise) {
-    dbPromise = openDB<CashFlowDB>(DB_NAME, DB_VERSION, {
+function getDB(dbName: string): Promise<IDBPDatabase<CashFlowDB>> {
+  let promise = dbCache.get(dbName);
+  if (!promise) {
+    promise = openDB<CashFlowDB>(dbName, DB_VERSION, {
       blocked() {
-        // Another (older) tab is holding the DB open and blocking our upgrade.
-        console.warn('CashFlow: opening the database is blocked by another open tab.');
-        blockedListener?.();
+        // Another (older) tab is holding this database open and blocking our upgrade.
+        console.warn(`CashFlow: opening "${dbName}" is blocked by another open tab.`);
+        blockedListener?.(dbName);
       },
       blocking() {
         // A newer version wants to upgrade in another tab — release our
         // connection so it can proceed instead of blocking it.
         try {
-          activeDb?.close();
+          activeDbs.get(dbName)?.close();
         } catch {
           /* ignore */
         }
-        activeDb = null;
-        dbPromise = null;
+        activeDbs.delete(dbName);
+        dbCache.delete(dbName);
       },
       terminated() {
         // Let the next call re-open instead of reusing a dead connection.
-        activeDb = null;
-        dbPromise = null;
+        activeDbs.delete(dbName);
+        dbCache.delete(dbName);
       },
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
@@ -96,13 +101,29 @@ function getDB(): Promise<IDBPDatabase<CashFlowDB>> {
         }
       },
     });
+    dbCache.set(dbName, promise);
+    promise.then((db) => activeDbs.set(dbName, db)).catch(() => dbCache.delete(dbName));
   }
-  return dbPromise;
+  return promise;
+}
+
+/** Permanently delete a card's database (used when deleting a card). */
+export async function deleteCardDatabase(dbName: string): Promise<void> {
+  const active = activeDbs.get(dbName);
+  active?.close();
+  activeDbs.delete(dbName);
+  dbCache.delete(dbName);
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(dbName);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve(); // best-effort; it'll finish once tabs close
+  });
 }
 
 /** Load every stored transaction, sorted by date ascending. */
-export async function getAllTransactions(): Promise<Transaction[]> {
-  const db = await getDB();
+export async function getAllTransactions(dbName: string): Promise<Transaction[]> {
+  const db = await getDB(dbName);
   const all = await db.getAll('transactions');
   // ISO date strings sort correctly with a plain comparison, which is far
   // faster than localeCompare across tens of thousands of rows.
@@ -116,10 +137,11 @@ export async function getAllTransactions(): Promise<Transaction[]> {
  * and won't double-count.
  */
 export async function addTransactions(
+  dbName: string,
   txs: Transaction[],
   fileName: string,
 ): Promise<ImportResult> {
-  const db = await getDB();
+  const db = await getDB(dbName);
   const tx = db.transaction('transactions', 'readwrite');
   const store = tx.objectStore('transactions');
 
@@ -144,8 +166,8 @@ export async function addTransactions(
 }
 
 /** Remove every transaction imported from a given file name. */
-export async function deleteBySource(source: string): Promise<number> {
-  const db = await getDB();
+export async function deleteBySource(dbName: string, source: string): Promise<number> {
+  const db = await getDB(dbName);
   const all = await db.getAll('transactions');
   const tx = db.transaction('transactions', 'readwrite');
   let removed = 0;
@@ -160,8 +182,8 @@ export async function deleteBySource(source: string): Promise<number> {
 }
 
 /** Wipe all stored data, including category rules and overrides. */
-export async function clearAll(): Promise<void> {
-  const db = await getDB();
+export async function clearAll(dbName: string): Promise<void> {
+  const db = await getDB(dbName);
   await Promise.all([
     db.clear('transactions'),
     db.clear('rules'),
@@ -174,22 +196,23 @@ export async function clearAll(): Promise<void> {
 
 // --- Category rules & overrides ----------------------------------------------
 
-export async function getRules(): Promise<CategoryRule[]> {
-  const db = await getDB();
+export async function getRules(dbName: string): Promise<CategoryRule[]> {
+  const db = await getDB(dbName);
   return db.getAll('rules');
 }
 
-export async function getOverrides(): Promise<CategoryOverride[]> {
-  const db = await getDB();
+export async function getOverrides(dbName: string): Promise<CategoryOverride[]> {
+  const db = await getDB(dbName);
   return db.getAll('overrides');
 }
 
 /** Upsert rules and overrides in one transaction. */
 export async function saveCategorization(
+  dbName: string,
   rules: CategoryRule[],
   overrides: CategoryOverride[],
 ): Promise<void> {
-  const db = await getDB();
+  const db = await getDB(dbName);
   const tx = db.transaction(['rules', 'overrides'], 'readwrite');
   for (const r of rules) await tx.objectStore('rules').put(r);
   for (const o of overrides) await tx.objectStore('overrides').put(o);
@@ -197,26 +220,26 @@ export async function saveCategorization(
 }
 
 /** Remove a single rule by signature. */
-export async function deleteRule(signature: string): Promise<void> {
-  const db = await getDB();
+export async function deleteRule(dbName: string, signature: string): Promise<void> {
+  const db = await getDB(dbName);
   await db.delete('rules', signature);
 }
 
 /** Upsert a single per-transaction category override. */
-export async function saveOverride(override: CategoryOverride): Promise<void> {
-  const db = await getDB();
+export async function saveOverride(dbName: string, override: CategoryOverride): Promise<void> {
+  const db = await getDB(dbName);
   await db.put('overrides', override);
 }
 
 /** Remove a per-transaction override (revert to auto categorization). */
-export async function deleteOverride(id: string): Promise<void> {
-  const db = await getDB();
+export async function deleteOverride(dbName: string, id: string): Promise<void> {
+  const db = await getDB(dbName);
   await db.delete('overrides', id);
 }
 
 /** Reset all user categorization (keeps transactions). */
-export async function clearCategorization(): Promise<void> {
-  const db = await getDB();
+export async function clearCategorization(dbName: string): Promise<void> {
+  const db = await getDB(dbName);
   await Promise.all([
     db.clear('rules'),
     db.clear('overrides'),
@@ -228,66 +251,82 @@ export async function clearCategorization(): Promise<void> {
 
 // --- Keyword refinement rules ------------------------------------------------
 
-export async function getKeywordRules(): Promise<KeywordRule[]> {
-  const db = await getDB();
+export async function getKeywordRules(dbName: string): Promise<KeywordRule[]> {
+  const db = await getDB(dbName);
   return db.getAll('keywordRules');
 }
 
 /** Upsert a keyword rule (keyed by keyword). */
-export async function saveKeywordRule(rule: KeywordRule): Promise<void> {
-  const db = await getDB();
+export async function saveKeywordRule(dbName: string, rule: KeywordRule): Promise<void> {
+  const db = await getDB(dbName);
   await db.put('keywordRules', rule);
 }
 
-export async function deleteKeywordRule(keyword: string): Promise<void> {
-  const db = await getDB();
+/** Bulk upsert keyword rules in one transaction (e.g. copying from another card). */
+export async function saveKeywordRules(dbName: string, rules: KeywordRule[]): Promise<void> {
+  const db = await getDB(dbName);
+  const tx = db.transaction('keywordRules', 'readwrite');
+  for (const r of rules) void tx.store.put(r);
+  await tx.done;
+}
+
+export async function deleteKeywordRule(dbName: string, keyword: string): Promise<void> {
+  const db = await getDB(dbName);
   await db.delete('keywordRules', keyword);
 }
 
 // --- Sub-category rules & overrides ------------------------------------------
 
-export async function getSubRules(): Promise<SubRule[]> {
-  const db = await getDB();
+export async function getSubRules(dbName: string): Promise<SubRule[]> {
+  const db = await getDB(dbName);
   return db.getAll('subRules');
 }
 
-export async function getSubOverrides(): Promise<SubOverride[]> {
-  const db = await getDB();
+export async function getSubOverrides(dbName: string): Promise<SubOverride[]> {
+  const db = await getDB(dbName);
   return db.getAll('subOverrides');
 }
 
-export async function saveSubRule(rule: SubRule): Promise<void> {
-  const db = await getDB();
+export async function saveSubRule(dbName: string, rule: SubRule): Promise<void> {
+  const db = await getDB(dbName);
   await db.put('subRules', rule);
 }
 
-export async function deleteSubRule(id: string): Promise<void> {
-  const db = await getDB();
+/** Bulk upsert sub-rules in one transaction (e.g. copying from another card). */
+export async function saveSubRules(dbName: string, rules: SubRule[]): Promise<void> {
+  const db = await getDB(dbName);
+  const tx = db.transaction('subRules', 'readwrite');
+  for (const r of rules) void tx.store.put(r);
+  await tx.done;
+}
+
+export async function deleteSubRule(dbName: string, id: string): Promise<void> {
+  const db = await getDB(dbName);
   await db.delete('subRules', id);
 }
 
-export async function saveSubOverride(override: SubOverride): Promise<void> {
-  const db = await getDB();
+export async function saveSubOverride(dbName: string, override: SubOverride): Promise<void> {
+  const db = await getDB(dbName);
   await db.put('subOverrides', override);
 }
 
 /** Bulk upsert sub-overrides in one transaction (for multi-select assignment). */
-export async function saveSubOverrides(overrides: SubOverride[]): Promise<void> {
-  const db = await getDB();
+export async function saveSubOverrides(dbName: string, overrides: SubOverride[]): Promise<void> {
+  const db = await getDB(dbName);
   const tx = db.transaction('subOverrides', 'readwrite');
   for (const o of overrides) void tx.store.put(o);
   await tx.done;
 }
 
 /** Bulk delete sub-overrides in one transaction (revert to automatic/Unsorted). */
-export async function deleteSubOverrides(ids: string[]): Promise<void> {
-  const db = await getDB();
+export async function deleteSubOverrides(dbName: string, ids: string[]): Promise<void> {
+  const db = await getDB(dbName);
   const tx = db.transaction('subOverrides', 'readwrite');
   for (const id of ids) void tx.store.delete(id);
   await tx.done;
 }
 
-export async function deleteSubOverride(id: string): Promise<void> {
-  const db = await getDB();
+export async function deleteSubOverride(dbName: string, id: string): Promise<void> {
+  const db = await getDB(dbName);
   await db.delete('subOverrides', id);
 }
