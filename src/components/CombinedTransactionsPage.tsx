@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CombinedRow } from '../lib/combine';
+import type { TransactionsJump } from './TransactionsPage';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { money } from '../lib/format';
 
 interface Props {
   rows: CombinedRow[];
+  /** Set when arriving from a chart-click drill-down; pre-fills the date range. */
+  jump?: TransactionsJump | null;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -18,13 +21,22 @@ const PAGE = 100;
  * Category edits require a specific card's rule set, so there's no editing
  * here — switch to a single card in the selector above to reclassify.
  */
-export default function CombinedTransactionsPage({ rows }: Props) {
+export default function CombinedTransactionsPage({ rows, jump }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [category, setCategory] = useState('all');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(jump?.from ?? '');
+  const [toDate, setToDate] = useState(jump?.to ?? '');
   const [visible, setVisible] = useState(PAGE);
+
+  // A fresh chart-click jump pre-fills the date range, same as the
+  // single-card Transactions tab.
+  useEffect(() => {
+    if (!jump) return;
+    setFromDate(jump.from);
+    setToDate(jump.to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump?.token]);
 
   const categoriesPresent = useMemo(() => {
     const set = new Set<string>();

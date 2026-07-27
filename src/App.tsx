@@ -955,7 +955,7 @@ export default function App() {
               </nav>
             )}
 
-            {(view === 'dashboard' || !hasData) && (
+            {(view === 'dashboard' || !hasData) && !combineEnabled && (
               <UploadPanel onFiles={handleFiles} compact={hasData} />
             )}
 
@@ -998,7 +998,7 @@ export default function App() {
               )
             ) : view === 'transactions' ? (
               combineEnabled ? (
-                <CombinedTransactionsPage rows={combinedRows} />
+                <CombinedTransactionsPage rows={combinedRows} jump={txJump} />
               ) : (
                 <TransactionsPage
                   transactions={transactions}
