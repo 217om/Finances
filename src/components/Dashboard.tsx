@@ -136,6 +136,7 @@ export default function Dashboard({
   }, [granularity, monthBuckets, rangedTransactions, categoryOf]);
 
   const applyPreset = (years: number | 'all') => {
+    if (!dateBounds.max) return; // nothing to range over — see the empty-state below
     if (years === 'all') {
       setFrom(dateBounds.min);
     } else {
@@ -146,7 +147,7 @@ export default function Dashboard({
   };
 
   const activePreset = (years: number | 'all'): boolean => {
-    if (hi !== dateBounds.max) return false;
+    if (!dateBounds.max || hi !== dateBounds.max) return false;
     if (years === 'all') return lo === dateBounds.min;
     const candidate = addYears(dateBounds.max, -years);
     const expected = candidate < dateBounds.min ? dateBounds.min : candidate;
@@ -159,6 +160,26 @@ export default function Dashboard({
     monthStartDay > 1
       ? `Months run from the ${ordinal(monthStartDay)} to the ${ordinal(monthStartDay - 1)}.`
       : null;
+
+  // This card has transactions, but every one of them is currently in a
+  // hidden category/sub-category — nothing left to chart or total.
+  if (transactions.length === 0) {
+    return (
+      <div className="dashboard">
+        <section className="panel">
+          <p className="muted">
+            Every transaction on this card is currently hidden by your category filter, so there’s
+            nothing to show here.{' '}
+            {onManageHidden && (
+              <button type="button" className="linklike" onClick={onManageHidden}>
+                Manage hidden categories
+              </button>
+            )}
+          </p>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard">
