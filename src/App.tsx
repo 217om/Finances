@@ -79,8 +79,40 @@ const CURRENCY_KEY = 'cashflow.currency';
 const MONTH_START_KEY = 'cashflow.monthStartDay';
 const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
+const THEME_KEY = 'cashflow.theme';
+
+type Theme = 'light' | 'dark';
 
 export default function App() {
+  // Global, independent of which card is active — same as Notes.
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [theme]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem(THEME_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
   const [cards, setCards] = useState<Card[]>(() => loadCards());
   const [activeCardId, setActiveCardId] = useState<string>(() => loadActiveCardId(loadCards()));
   const [cardManagerOpen, setCardManagerOpen] = useState(false);
@@ -659,6 +691,8 @@ export default function App() {
         activeCardId={activeCardId}
         onSwitchCard={handleSwitchCard}
         onManageCards={() => setCardManagerOpen(true)}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       <main className="container">

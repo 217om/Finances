@@ -63,7 +63,7 @@ function TreeCell(props: any) {
         height={height}
         fill={fill}
         fillOpacity={isSelected ? 1 : 0.9}
-        stroke={isSelected ? '#EBDCC4' : '#181818'}
+        stroke={isSelected ? 'var(--accent)' : 'var(--surface)'}
         strokeWidth={isSelected ? 2.5 : 2}
         rx={3}
       />

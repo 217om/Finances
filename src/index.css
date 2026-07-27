@@ -1,4 +1,33 @@
 :root {
+  /* Light is the default theme. */
+  --bg: #F7F3EC;
+  --surface: #FFFFFF;
+  --surface-2: rgba(43, 36, 32, 0.03);
+  --border: #E1D4C2;
+  --divider: #EDE4D6;
+  --text: #2B2420;
+  --muted: #6B5F53;
+  --pos: #3F7A4C;
+  --neg: #AA3B2B;
+  --accent: #C2673E;
+  --accent-hover: #A85631;
+  --accent-ink: #FFFFFF;
+  --chart-grid: #EBE1D2;
+  --danger-text: #A6402F;
+  --warn-text: #92650F;
+  --toast-bg: #2B2420;
+  --toast-text: #F7F3EC;
+  --pos-ink: #FFFFFF;
+  --shadow: 0 1px 2px rgba(43, 36, 32, 0.05), 0 8px 24px rgba(43, 36, 32, 0.07);
+  --radius: 10px;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Space Grotesk', var(--font-body);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
   --bg: #181818;
   --surface: #1F1B19;
   --surface-2: rgba(235, 220, 196, 0.04);
@@ -11,12 +40,13 @@
   --accent: #DC9F85;
   --accent-hover: #C98A6F;
   --accent-ink: #181818;
+  --chart-grid: #2A211D;
+  --danger-text: #E39C8B;
+  --warn-text: #E3B85C;
+  --toast-bg: #2A211D;
+  --toast-text: #EBDCC4;
+  --pos-ink: #181818;
   --shadow: 0 4px 28px rgba(0, 0, 0, 0.45);
-  --radius: 10px;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-display: 'Space Grotesk', var(--font-body);
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-family: var(--font-body);
   color-scheme: dark;
 }
 
@@ -31,7 +61,6 @@ textarea {
   color: var(--text);
   border: 1px solid var(--border);
   font-family: inherit;
-  color-scheme: dark;
 }
 input[type='checkbox'],
 input[type='radio'] {
@@ -42,8 +71,10 @@ textarea::placeholder {
   color: var(--border);
 }
 input[type='date']::-webkit-calendar-picker-indicator {
-  filter: invert(0.75) sepia(0.3) saturate(2) hue-rotate(320deg);
   cursor: pointer;
+}
+[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.75) sepia(0.3) saturate(2) hue-rotate(320deg);
 }
 
 html,
@@ -80,9 +111,9 @@ body::before {
 
 .container {
   width: 100%;
-  max-width: 1080px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 32px;
 }
 
 .sr-only {
@@ -144,6 +175,23 @@ body::before {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 .picker {
   display: inline-flex;
@@ -583,7 +631,7 @@ main.container {
 }
 .banner-error {
   background: rgba(193, 88, 75, 0.12);
-  color: #E39C8B;
+  color: var(--danger-text);
   border: 1px solid rgba(193, 88, 75, 0.4);
   display: flex;
   align-items: center;
@@ -595,8 +643,8 @@ main.container {
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
-  background: #2A211D;
-  color: var(--text);
+  background: var(--toast-bg);
+  color: var(--toast-text);
   border: 1px solid var(--border);
   padding: 12px 18px;
   border-radius: 10px;
@@ -670,6 +718,7 @@ main.container {
   font-weight: 600;
   margin-top: 6px;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .kpi-sub {
   font-size: 11px;
@@ -1313,6 +1362,7 @@ main.container {
 }
 .alert-good .alert-icon {
   background: var(--pos);
+  color: var(--pos-ink);
 }
 .alert-warn {
   background: rgba(201, 162, 39, 0.10);
@@ -1327,6 +1377,7 @@ main.container {
 }
 .alert-info .alert-icon {
   background: var(--accent);
+  color: var(--accent-ink);
 }
 .recurring-group h3 {
   font-size: 12px;
@@ -1528,7 +1579,7 @@ main.container {
 }
 .hidden-chip:hover {
   border-color: rgba(201, 162, 39, 0.4);
-  color: #E3B85C;
+  color: var(--warn-text);
 }
 .filter-list {
   display: grid;
@@ -2027,6 +2078,9 @@ main.container {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 880px) {
+  .container {
+    padding: 0 16px;
+  }
   .kpis {
     grid-template-columns: repeat(2, 1fr);
   }

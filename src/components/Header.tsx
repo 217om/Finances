@@ -15,6 +15,8 @@ interface Props {
   activeCardId: string;
   onSwitchCard: (id: string) => void;
   onManageCards: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
@@ -32,6 +34,8 @@ export default function Header({
   activeCardId,
   onSwitchCard,
   onManageCards,
+  theme,
+  onToggleTheme,
 }: Props) {
   return (
     <header className="header">
@@ -90,6 +94,34 @@ export default function Header({
               onClearAll={onClearAll}
             />
           )}
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle color theme"
+          >
+            {theme === 'dark' ? (
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="1.6" />
+                <path
+                  d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
+                <path
+                  d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </header>
