@@ -508,6 +508,10 @@ main.container {
   position: static;
   background: var(--surface);
 }
+.tx-table td {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
 .tx-controls input[type='date'] {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -549,6 +553,10 @@ main.container {
 .tx-reset:hover {
   background: rgba(235, 220, 196, 0.05);
   color: var(--text);
+}
+.tx-reset-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 .tx-income-cat {
   display: inline-flex;

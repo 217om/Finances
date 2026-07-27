@@ -243,16 +243,16 @@ export default function TransactionsPage({
                         options={t.amount < 0 ? options : incomeOptions}
                         onCreate={onCreateCategory}
                       />
-                      {overriddenIds.has(t.id) && (
-                        <button
-                          type="button"
-                          className="tx-reset"
-                          title="Revert to automatic category"
-                          onClick={() => onClearCategory(t.id)}
-                        >
-                          ↺
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className={`tx-reset ${overriddenIds.has(t.id) ? '' : 'tx-reset-hidden'}`}
+                        title="Revert to automatic category"
+                        aria-hidden={!overriddenIds.has(t.id)}
+                        tabIndex={overriddenIds.has(t.id) ? 0 : -1}
+                        onClick={() => onClearCategory(t.id)}
+                      >
+                        ↺
+                      </button>
                     </div>
                     {t.amount < 0 && sub.splitParents.has(cat) && (
                       <div className="tx-sub-edit">
