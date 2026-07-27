@@ -4,12 +4,8 @@
 // currently active in the main app.
 
 import type { Card } from './cards';
-import { scopedKey } from './cards';
 import { getAllTransactions, getKeywordRules, getOverrides, getRules } from './db';
 import { makeResolver } from './categorize';
-import { defaultCategoryFilter, isExcluded, isValidCategoryFilter, type CategoryFilterState } from './categoryFilter';
-
-const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
 
 export interface CardCategoryTotals {
   cardId: string;
@@ -21,20 +17,12 @@ export interface CardCategoryTotals {
   categories: string[];
 }
 
-function loadFilterFor(cardId: string): CategoryFilterState {
-  try {
-    const raw = localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, cardId));
-    const parsed = JSON.parse(raw ?? 'null');
-    if (isValidCategoryFilter(parsed)) return parsed;
-  } catch {
-    /* ignore */
-  }
-  return defaultCategoryFilter();
-}
-
-/** Sums each category's absolute total for one card, respecting that card's
- *  own "hidden from charts & totals" exclusions — same numbers you'd see on
- *  that card's own dashboard. */
+/**
+ * Sums each category's absolute total for one card, from every transaction —
+ * deliberately independent of that card's "hidden from charts & totals"
+ * filter, so a note variable always means the same thing regardless of what
+ * you've chosen to hide on the Categories tab.
+ */
 export async function loadCardCategoryTotals(card: Card, slug: string): Promise<CardCategoryTotals> {
   const [txs, rules, overrides, keywordRules] = await Promise.all([
     getAllTransactions(card.dbName).catch(() => []),
@@ -45,13 +33,11 @@ export async function loadCardCategoryTotals(card: Card, slug: string): Promise<
   const rulesMap = new Map(rules.map((r) => [r.signature, r]));
   const overridesMap = new Map(overrides.map((o) => [o.id, o.category]));
   const categoryOf = makeResolver(rulesMap, overridesMap, keywordRules);
-  const filter = loadFilterFor(card.id);
 
   const totals: Record<string, number> = {};
   const casing: Record<string, string> = {};
   for (const t of txs) {
     const cat = categoryOf(t);
-    if (isExcluded(filter, cat, null)) continue;
     const key = cat.toLowerCase();
     totals[key] = (totals[key] ?? 0) + Math.abs(t.amount);
     casing[key] = cat;
