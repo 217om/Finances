@@ -218,11 +218,23 @@ body::before {
   cursor: pointer;
 }
 /* Marks the Card selector as showing the "Combine all cards" pseudo-entry,
- * not an actual card, so it isn't mistaken for one. */
+ * not an actual card, so it isn't mistaken for one. Only the pseudo-entry's
+ * own <option> gets the accent color (it also colors the closed box once
+ * selected) — the select's border/background are the reliable cross-browser
+ * cue, since a color set on the <select> itself would bleed into every
+ * other option in the open dropdown, not just this one. */
 .card-select-combined {
   border-color: var(--accent) !important;
-  color: var(--accent) !important;
+  background: rgba(220, 159, 133, 0.08);
+}
+.card-select-combine-option {
+  color: var(--accent);
   font-weight: 600;
+  padding: 6px 8px;
+}
+.card-select-sep {
+  color: var(--border);
+  padding: 4px 8px;
 }
 
 /* ---------- Buttons ---------- */

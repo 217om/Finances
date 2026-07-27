@@ -71,8 +71,12 @@ export default function Header({
               ))}
               {cards.length > 1 && (
                 <>
-                  <option disabled>──────────</option>
-                  <option value={COMBINE_CARD_ID}>⬡ Combine all cards</option>
+                  <option disabled className="card-select-sep">
+                    ──────────
+                  </option>
+                  <option value={COMBINE_CARD_ID} className="card-select-combine-option">
+                    ⬡ Combine all cards
+                  </option>
                 </>
               )}
             </select>
