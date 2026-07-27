@@ -1,6 +1,7 @@
-import { COMBINE_CARD_ID, type Card } from '../lib/cards';
+import type { Card } from '../lib/cards';
 import { currencyOptions } from '../lib/format';
 import DataMenu from './DataMenu';
+import CardSelector from './CardSelector';
 
 interface Props {
   currency: string;
@@ -57,30 +58,12 @@ export default function Header({
         </div>
 
         <div className="header-actions">
-          <label className="picker" title="Which card/account you're analyzing">
-            <span className="picker-label">Card</span>
-            <select
-              className={combineEnabled ? 'card-select-combined' : ''}
-              value={combineEnabled ? COMBINE_CARD_ID : activeCardId}
-              onChange={(e) => onSwitchCard(e.target.value)}
-            >
-              {cards.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-              {cards.length > 1 && (
-                <>
-                  <option disabled className="card-select-sep">
-                    ──────────
-                  </option>
-                  <option value={COMBINE_CARD_ID} className="card-select-combine-option">
-                    ⬡ Combine all cards
-                  </option>
-                </>
-              )}
-            </select>
-          </label>
+          <CardSelector
+            cards={cards}
+            activeCardId={activeCardId}
+            combineEnabled={combineEnabled}
+            onSwitchCard={onSwitchCard}
+          />
           <button type="button" className="btn btn-ghost btn-sm" onClick={onManageCards}>
             Manage cards
           </button>

@@ -72,25 +72,32 @@ export interface CombinedRow {
   cardName: string;
   category: string;
   sub: string;
+  /** True if this transaction's own card hides this category/sub — i.e. it's
+   *  excluded from the combined charts/KPIs (see combineSnapshots above). */
+  hidden: boolean;
 }
 
 /**
- * Every transaction from every card, unfiltered by any card's hidden-category
- * filter — mirrors the single-card Transactions tab, which is deliberately
- * never affected by that filter either. Feeds the read-only merged
- * Transactions view shown while "Combine all cards" is selected.
+ * Every transaction from every card, tagged with whether its own card's
+ * filter hides it. The general-purpose merged Transactions view ignores
+ * that flag entirely (never affected by any card's hidden-category filter,
+ * mirroring the single-card Transactions tab) — but a chart-click
+ * drill-down applies it for that one visit, exactly like the single-card
+ * tab does, so the list matches what the chart actually counted.
  */
 export function combineAllRows(snapshots: CardSnapshot[]): CombinedRow[] {
   const rows: CombinedRow[] = [];
   for (const snap of snapshots) {
     for (const tx of snap.transactions) {
       const category = snap.categoryOf(tx);
+      const sub = snap.subOf(tx, category);
       rows.push({
         t: tx,
         cardId: snap.cardId,
         cardName: snap.cardName,
         category,
-        sub: snap.subOf(tx, category),
+        sub,
+        hidden: isExcluded(snap.filter, category, sub),
       });
     }
   }

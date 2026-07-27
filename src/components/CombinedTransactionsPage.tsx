@@ -28,13 +28,16 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
   const [fromDate, setFromDate] = useState(jump?.from ?? '');
   const [toDate, setToDate] = useState(jump?.to ?? '');
   const [visible, setVisible] = useState(PAGE);
+  const [hiddenActive, setHiddenActive] = useState(Boolean(jump));
 
-  // A fresh chart-click jump pre-fills the date range, same as the
-  // single-card Transactions tab.
+  // A fresh chart-click jump pre-fills the date range and (only this once)
+  // restricts to categories that aren't hidden on their own card — matching
+  // what the chart itself counted — same as the single-card Transactions tab.
   useEffect(() => {
     if (!jump) return;
     setFromDate(jump.from);
     setToDate(jump.to);
+    setHiddenActive(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jump?.token]);
 
@@ -65,9 +68,10 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
         if (fromDate && r.t.date < fromDate) return false;
         if (toDate && r.t.date > toDate) return false;
         if (needle && !r.t.description.toLowerCase().includes(needle)) return false;
+        if (hiddenActive && r.hidden) return false;
         return true;
       }),
-    [rows, typeFilter, category, fromDate, toDate, needle],
+    [rows, typeFilter, category, fromDate, toDate, needle, hiddenActive],
   );
 
   useEffect(() => {
@@ -146,6 +150,17 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
           </button>
         )}
       </div>
+
+      {hiddenActive && (
+        <div className="hidden-tray">
+          <span className="hidden-tray-label">
+            Showing only categories that aren’t hidden on their own card.
+          </span>
+          <button type="button" className="linklike" onClick={() => setHiddenActive(false)}>
+            Show all
+          </button>
+        </div>
+      )}
 
       <div className="tx-summary muted">
         {filtered.length.toLocaleString()} transaction{filtered.length === 1 ? '' : 's'} ·{' '}
