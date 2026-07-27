@@ -1,4 +1,4 @@
-import type { Card } from '../lib/cards';
+import { COMBINE_CARD_ID, type Card } from '../lib/cards';
 import { currencyOptions } from '../lib/format';
 import DataMenu from './DataMenu';
 
@@ -15,6 +15,7 @@ interface Props {
   onRestoreFullBackup: (file: File) => void;
   cards: Card[];
   activeCardId: string;
+  combineEnabled: boolean;
   onSwitchCard: (id: string) => void;
   onManageCards: () => void;
   theme: 'light' | 'dark';
@@ -36,6 +37,7 @@ export default function Header({
   onRestoreFullBackup,
   cards,
   activeCardId,
+  combineEnabled,
   onSwitchCard,
   onManageCards,
   theme,
@@ -57,12 +59,16 @@ export default function Header({
         <div className="header-actions">
           <label className="picker" title="Which card/account you're analyzing">
             <span className="picker-label">Card</span>
-            <select value={activeCardId} onChange={(e) => onSwitchCard(e.target.value)}>
+            <select
+              value={combineEnabled ? COMBINE_CARD_ID : activeCardId}
+              onChange={(e) => onSwitchCard(e.target.value)}
+            >
               {cards.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
+              {cards.length > 1 && <option value={COMBINE_CARD_ID}>Combine all cards</option>}
             </select>
           </label>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onManageCards}>

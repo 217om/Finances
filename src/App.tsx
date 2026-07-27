@@ -50,8 +50,11 @@ import {
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
   THEME_KEY,
+  COMBINE_KEY,
+  COMBINE_CARD_ID,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
+import { combineSnapshots, combineAllRows, type CardSnapshot } from './lib/combine';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
@@ -86,10 +89,22 @@ import Toast from './components/Toast';
 import CategorizeWizard from './components/CategorizeWizard';
 import RefineCategories from './components/RefineCategories';
 import TransactionsPage from './components/TransactionsPage';
+import CombinedTransactionsPage from './components/CombinedTransactionsPage';
 import CategoriesPage from './components/CategoriesPage';
 import CardManager from './components/CardManager';
 
 type Theme = 'light' | 'dark';
+
+interface OtherCardData {
+  transactions: Transaction[];
+  rules: CategoryRule[];
+  overrides: CategoryOverride[];
+  keywordRules: KeywordRule[];
+  subRules: SubRule[];
+  subOverrides: SubOverride[];
+  currency: string;
+  filter: CategoryFilterState;
+}
 
 export default function App() {
   // Global, independent of which card is active — same as Notes.
@@ -136,6 +151,68 @@ export default function App() {
     [cards, activeCardId],
   );
   const dbName = activeCard?.dbName ?? 'cashflow';
+
+  // "Combine all cards" is a display mode selected from the same dropdown as
+  // a real card (see Header) — it never changes activeCardId, which keeps
+  // pointing at whichever card Transactions-editing and Categories operate
+  // on. Each card still categorizes and filters its own transactions with
+  // its own rules; combining just merges the results afterward.
+  const [combineEnabled, setCombineEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMBINE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [otherCardsData, setOtherCardsData] = useState<Record<string, OtherCardData>>({});
+
+  useEffect(() => {
+    if (!combineEnabled) {
+      setOtherCardsData({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const others = cards.filter((c) => c.id !== activeCardId);
+      const entries = await Promise.all(
+        others.map(async (c) => {
+          const [txs, r, o, kr, sr, so] = await Promise.all([
+            getAllTransactions(c.dbName).catch(() => [] as Transaction[]),
+            getRules(c.dbName).catch(() => [] as CategoryRule[]),
+            getOverrides(c.dbName).catch(() => [] as CategoryOverride[]),
+            getKeywordRules(c.dbName).catch(() => [] as KeywordRule[]),
+            getSubRules(c.dbName).catch(() => [] as SubRule[]),
+            getSubOverrides(c.dbName).catch(() => [] as SubOverride[]),
+          ]);
+          let cur = 'OMR';
+          let filter = defaultCategoryFilter();
+          try {
+            cur = localStorage.getItem(scopedKey(CURRENCY_KEY, c.id)) || 'OMR';
+            const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, c.id)) ?? 'null');
+            if (isValidCategoryFilter(savedFilter)) filter = savedFilter;
+          } catch {
+            /* ignore */
+          }
+          const data: OtherCardData = {
+            transactions: txs,
+            rules: r,
+            overrides: o,
+            keywordRules: kr,
+            subRules: sr,
+            subOverrides: so,
+            currency: cur,
+            filter,
+          };
+          return [c.id, data] as const;
+        }),
+      );
+      if (cancelled) return;
+      setOtherCardsData(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [combineEnabled, cards, activeCardId]);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -291,6 +368,75 @@ export default function App() {
     () => buildOverview(visibleTransactions, monthStartDay, categoryOf),
     [visibleTransactions, monthStartDay, categoryOf],
   );
+
+  // When combining, every other card gets its own resolver/filter built from
+  // its own rules — a card's transactions are always categorized and
+  // filtered by that card's own rules, never the active card's.
+  const combinedSnapshots = useMemo<CardSnapshot[]>(() => {
+    if (!combineEnabled || !activeCard) return [];
+    const activeSnap: CardSnapshot = {
+      cardId: activeCard.id,
+      cardName: activeCard.name,
+      currency,
+      transactions,
+      categoryOf,
+      subOf: subResolver.subOf,
+      filter: categoryFilter,
+    };
+    const others = cards
+      .filter((c) => c.id !== activeCardId)
+      .map((c) => {
+        const raw = otherCardsData[c.id];
+        if (!raw) return null;
+        const rMap = new Map(raw.rules.map((r) => [r.signature, r]));
+        const oMap = new Map(raw.overrides.map((o) => [o.id, o.category]));
+        const snap: CardSnapshot = {
+          cardId: c.id,
+          cardName: c.name,
+          currency: raw.currency,
+          transactions: raw.transactions,
+          categoryOf: makeResolver(rMap, oMap, raw.keywordRules),
+          subOf: makeSubResolver(raw.subRules, raw.subOverrides).subOf,
+          filter: raw.filter,
+        };
+        return snap;
+      })
+      .filter((s): s is CardSnapshot => s !== null);
+    return [activeSnap, ...others];
+  }, [
+    combineEnabled,
+    activeCard,
+    activeCardId,
+    currency,
+    transactions,
+    categoryOf,
+    subResolver,
+    categoryFilter,
+    cards,
+    otherCardsData,
+  ]);
+
+  const combinedData = useMemo(
+    () => (combineEnabled ? combineSnapshots(combinedSnapshots) : null),
+    [combineEnabled, combinedSnapshots],
+  );
+
+  const combinedOverview = useMemo(
+    () => (combinedData ? buildOverview(combinedData.transactions, monthStartDay, combinedData.categoryOf) : null),
+    [combinedData, monthStartDay],
+  );
+
+  // The read-only merged Transactions view — every card's transactions
+  // together, unfiltered by any card's hidden-category filter (matching the
+  // single-card Transactions tab, which is likewise never affected by it).
+  const combinedRows = useMemo(
+    () => (combineEnabled ? combineAllRows(combinedSnapshots) : []),
+    [combineEnabled, combinedSnapshots],
+  );
+
+  const dashboardTransactions = combineEnabled && combinedData ? combinedData.transactions : visibleTransactions;
+  const dashboardCategoryOf = combineEnabled && combinedData ? combinedData.categoryOf : categoryOf;
+  const dashboardOverview = combineEnabled && combinedOverview ? combinedOverview : overview;
 
   // Classification (the wizard's pending groups) is independent of the display
   // filter above — you can still categorize everything even if some of it is
@@ -629,6 +775,25 @@ export default function App() {
 
   const handleSwitchCard = useCallback(
     (id: string) => {
+      if (id === COMBINE_CARD_ID) {
+        if (combineEnabled) return;
+        setCombineEnabled(true);
+        try {
+          localStorage.setItem(COMBINE_KEY, '1');
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      const wasCombined = combineEnabled;
+      if (wasCombined) {
+        setCombineEnabled(false);
+        try {
+          localStorage.setItem(COMBINE_KEY, '0');
+        } catch {
+          /* ignore */
+        }
+      }
       if (id === activeCardId) return;
       setActiveCardId(id);
       saveActiveCardId(id);
@@ -637,7 +802,7 @@ export default function App() {
       setWizardOpen(false);
       setRefineOpen(false);
     },
-    [activeCardId],
+    [activeCardId, combineEnabled],
   );
 
   const handleCreateCard = useCallback(
@@ -751,6 +916,7 @@ export default function App() {
         onRestoreFullBackup={handleRestoreFullBackup}
         cards={cards}
         activeCardId={activeCardId}
+        combineEnabled={combineEnabled}
         onSwitchCard={handleSwitchCard}
         onManageCards={() => setCardManagerOpen(true)}
         theme={theme}
@@ -821,24 +987,28 @@ export default function App() {
                 onToggleSubFilter={handleToggleSubFilter}
               />
             ) : view === 'transactions' ? (
-              <TransactionsPage
-                transactions={transactions}
-                categoryOf={categoryOf}
-                overriddenIds={overriddenIds}
-                customCategories={customCategories}
-                sub={subResolver}
-                categoryFilter={categoryFilter}
-                jump={txJump}
-                onSetCategory={handleSetCategory}
-                onClearCategory={handleClearCategory}
-                onCreateCategory={handleCreateCategory}
-                onSetSubCategory={handleSetSubCategory}
-              />
+              combineEnabled ? (
+                <CombinedTransactionsPage rows={combinedRows} />
+              ) : (
+                <TransactionsPage
+                  transactions={transactions}
+                  categoryOf={categoryOf}
+                  overriddenIds={overriddenIds}
+                  customCategories={customCategories}
+                  sub={subResolver}
+                  categoryFilter={categoryFilter}
+                  jump={txJump}
+                  onSetCategory={handleSetCategory}
+                  onClearCategory={handleClearCategory}
+                  onCreateCategory={handleCreateCategory}
+                  onSetSubCategory={handleSetSubCategory}
+                />
+              )
             ) : (
               <Dashboard
-                overview={overview}
-                transactions={visibleTransactions}
-                categoryOf={categoryOf}
+                overview={dashboardOverview}
+                transactions={dashboardTransactions}
+                categoryOf={dashboardCategoryOf}
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
@@ -847,6 +1017,9 @@ export default function App() {
                 hiddenCount={excludedCount(categoryFilter)}
                 onManageHidden={() => handleTabClick('categories')}
                 onDrillToTransactions={handleDrillToTransactions}
+                combineEnabled={combineEnabled}
+                combinedCardNames={combineEnabled ? combinedSnapshots.map((s) => s.cardName) : []}
+                mixedCurrency={combineEnabled ? combinedData?.mixedCurrency ?? false : false}
               />
             )}
           </>

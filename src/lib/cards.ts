@@ -22,10 +22,15 @@ export const MONTH_START_KEY = 'cashflow.monthStartDay';
 export const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
 export const THEME_KEY = 'cashflow.theme';
+export const COMBINE_KEY = 'cashflow.combineCards';
 
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */
 export const DEFAULT_CARD_ID = 'default';
+
+/** Sentinel value for the "Combine all cards" entry in the card selector —
+ *  never a real card id, so it can share the same <select> as real cards. */
+export const COMBINE_CARD_ID = '__combined__';
 
 function defaultCard(): Card {
   return { id: DEFAULT_CARD_ID, name: 'Card 1', dbName: 'cashflow', createdAt: Date.now() };

@@ -20,6 +20,11 @@ interface Props {
   hiddenCount?: number;
   onManageHidden?: () => void;
   onDrillToTransactions?: (from: string, to: string) => void;
+  /** True while "Combine all cards" is selected — these props then describe
+   *  the combined data instead of a single card's. */
+  combineEnabled?: boolean;
+  combinedCardNames?: string[];
+  mixedCurrency?: boolean;
 }
 
 const GRANULARITIES: { key: Granularity; label: string }[] = [
@@ -87,6 +92,9 @@ export default function Dashboard({
   hiddenCount = 0,
   onManageHidden,
   onDrillToTransactions,
+  combineEnabled = false,
+  combinedCardNames = [],
+  mixedCurrency = false,
 }: Props) {
   const [granularity, setGranularity] = useState<Granularity>('day');
 
@@ -222,6 +230,12 @@ export default function Dashboard({
           </div>
         </div>
         {cycleNote && <p className="muted controls-note">{cycleNote}</p>}
+        {combineEnabled && (
+          <p className="muted controls-note">
+            Combining {combinedCardNames.join(', ')} into these charts.
+            {mixedCurrency && ' These cards use different currencies — totals mix units.'}
+          </p>
+        )}
       </section>
 
       <div className="section-label">
