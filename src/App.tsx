@@ -91,6 +91,7 @@ import RefineCategories from './components/RefineCategories';
 import TransactionsPage from './components/TransactionsPage';
 import CombinedTransactionsPage from './components/CombinedTransactionsPage';
 import CategoriesPage from './components/CategoriesPage';
+import CombinedCategoriesPage from './components/CombinedCategoriesPage';
 import CardManager from './components/CardManager';
 
 type Theme = 'light' | 'dark';
@@ -974,18 +975,27 @@ export default function App() {
             {!hasData ? (
               <EmptyState />
             ) : view === 'categories' ? (
-              <CategoriesPage
-                transactions={transactions}
-                categoryOf={categoryOf}
-                sub={subResolver}
-                subRules={subRules}
-                onAddSubRule={handleAddSubRule}
-                onDeleteSubRule={handleDeleteSubRule}
-                onBulkSetSubCategory={handleBulkSetSubCategory}
-                categoryFilter={categoryFilter}
-                onToggleCategoryFilter={handleToggleCategoryFilter}
-                onToggleSubFilter={handleToggleSubFilter}
-              />
+              combineEnabled && combinedData ? (
+                <CombinedCategoriesPage
+                  transactions={combinedData.transactions}
+                  categoryOf={combinedData.categoryOf}
+                  subOf={combinedData.subOf}
+                  cardNameOf={combinedData.cardNameOf}
+                />
+              ) : (
+                <CategoriesPage
+                  transactions={transactions}
+                  categoryOf={categoryOf}
+                  sub={subResolver}
+                  subRules={subRules}
+                  onAddSubRule={handleAddSubRule}
+                  onDeleteSubRule={handleDeleteSubRule}
+                  onBulkSetSubCategory={handleBulkSetSubCategory}
+                  categoryFilter={categoryFilter}
+                  onToggleCategoryFilter={handleToggleCategoryFilter}
+                  onToggleSubFilter={handleToggleSubFilter}
+                />
+              )
             ) : view === 'transactions' ? (
               combineEnabled ? (
                 <CombinedTransactionsPage rows={combinedRows} />

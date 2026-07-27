@@ -6,6 +6,7 @@
 
 import type { Transaction } from '../types';
 import { isExcluded, type CategoryFilterState } from './categoryFilter';
+import { UNSORTED } from './subcategory';
 
 export interface CardSnapshot {
   cardId: string;
@@ -20,18 +21,26 @@ export interface CardSnapshot {
 export interface CombinedData {
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
+  subOf: (tx: Transaction, cat: string) => string;
+  cardNameOf: (tx: Transaction) => string;
   /** True if the combined cards don't all use the same currency, so summed
    *  totals mix units and should be shown with a caveat. */
   mixedCurrency: boolean;
 }
 
-/** Every transaction, category-filtered per its own card — feeds the
- *  dashboard's KPIs, cashflow chart, category breakdown, and insights. */
+/**
+ * Every transaction, category-filtered per its own card — feeds the
+ * dashboard's KPIs/chart/breakdown/insights AND the Categories tab's map,
+ * so a category hidden on one card is excluded from combined totals while a
+ * card that doesn't hide it still counts and shows its own contribution.
+ */
 export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
   const txs: Transaction[] = [];
   // Keyed by object identity (not tx.id) so two different cards' transactions
   // that happen to hash to the same id never overwrite each other's category.
   const categoryByTx = new Map<Transaction, string>();
+  const subByTx = new Map<Transaction, string>();
+  const cardNameByTx = new Map<Transaction, string>();
 
   for (const snap of snapshots) {
     for (const tx of snap.transactions) {
@@ -40,6 +49,8 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
       if (isExcluded(snap.filter, cat, sub)) continue;
       txs.push(tx);
       categoryByTx.set(tx, cat);
+      subByTx.set(tx, sub);
+      cardNameByTx.set(tx, snap.cardName);
     }
   }
   txs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -49,6 +60,8 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
   return {
     transactions: txs,
     categoryOf: (tx) => categoryByTx.get(tx) ?? 'Other',
+    subOf: (tx) => subByTx.get(tx) ?? UNSORTED,
+    cardNameOf: (tx) => cardNameByTx.get(tx) ?? '',
     mixedCurrency: currencies.size > 1,
   };
 }

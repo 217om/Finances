@@ -60,6 +60,7 @@ export default function Header({
           <label className="picker" title="Which card/account you're analyzing">
             <span className="picker-label">Card</span>
             <select
+              className={combineEnabled ? 'card-select-combined' : ''}
               value={combineEnabled ? COMBINE_CARD_ID : activeCardId}
               onChange={(e) => onSwitchCard(e.target.value)}
             >
@@ -68,7 +69,12 @@ export default function Header({
                   {c.name}
                 </option>
               ))}
-              {cards.length > 1 && <option value={COMBINE_CARD_ID}>Combine all cards</option>}
+              {cards.length > 1 && (
+                <>
+                  <option disabled>──────────</option>
+                  <option value={COMBINE_CARD_ID}>⬡ Combine all cards</option>
+                </>
+              )}
             </select>
           </label>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onManageCards}>
