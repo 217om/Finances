@@ -11,6 +11,8 @@ interface Props {
   onClearAll: () => void;
   onExportJSON: () => void;
   onExportCSV: () => void;
+  onExportFullBackup: () => void;
+  onRestoreFullBackup: (file: File) => void;
   cards: Card[];
   activeCardId: string;
   onSwitchCard: (id: string) => void;
@@ -30,6 +32,8 @@ export default function Header({
   onClearAll,
   onExportJSON,
   onExportCSV,
+  onExportFullBackup,
+  onRestoreFullBackup,
   cards,
   activeCardId,
   onSwitchCard,
@@ -87,13 +91,14 @@ export default function Header({
               ))}
             </select>
           </label>
-          {hasData && (
-            <DataMenu
-              onExportJSON={onExportJSON}
-              onExportCSV={onExportCSV}
-              onClearAll={onClearAll}
-            />
-          )}
+          <DataMenu
+            hasData={hasData}
+            onExportJSON={onExportJSON}
+            onExportCSV={onExportCSV}
+            onClearAll={onClearAll}
+            onExportFullBackup={onExportFullBackup}
+            onRestoreFullBackup={onRestoreFullBackup}
+          />
           <button
             type="button"
             className="theme-toggle"

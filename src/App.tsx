@@ -45,6 +45,11 @@ import {
   saveActiveCardId,
   saveCards,
   scopedKey,
+  CURRENCY_KEY,
+  MONTH_START_KEY,
+  CUSTOM_CATEGORIES_KEY,
+  CATEGORY_FILTER_KEY,
+  THEME_KEY,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
 import { buildOverview } from './lib/aggregate';
@@ -61,7 +66,16 @@ import {
   type CategoryFilterState,
 } from './lib/categoryFilter';
 import { getCurrency, setCurrency } from './lib/format';
-import { downloadBackup, downloadCSV, isBackupFile, parseBackup } from './lib/exportData';
+import {
+  downloadBackup,
+  downloadCSV,
+  downloadFullBackup,
+  isBackupFile,
+  buildFullBackup,
+  parseFullBackup,
+  restoreFullBackup,
+  parseBackup,
+} from './lib/exportData';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
@@ -74,12 +88,6 @@ import RefineCategories from './components/RefineCategories';
 import TransactionsPage from './components/TransactionsPage';
 import CategoriesPage from './components/CategoriesPage';
 import CardManager from './components/CardManager';
-
-const CURRENCY_KEY = 'cashflow.currency';
-const MONTH_START_KEY = 'cashflow.monthStartDay';
-const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
-const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
-const THEME_KEY = 'cashflow.theme';
 
 type Theme = 'light' | 'dark';
 
@@ -115,6 +123,9 @@ export default function App() {
 
   const [cards, setCards] = useState<Card[]>(() => loadCards());
   const [activeCardId, setActiveCardId] = useState<string>(() => loadActiveCardId(loadCards()));
+  // Bumped after a full-backup restore so the load effect below re-fetches
+  // this card's data even when the restore didn't change activeCardId.
+  const [reloadToken, setReloadToken] = useState(0);
   const [cardManagerOpen, setCardManagerOpen] = useState(false);
   const [cardBusy, setCardBusy] = useState(false);
   const cardsRef = useRef(cards);
@@ -246,7 +257,7 @@ export default function App() {
       cancelled = true;
       onDatabaseBlocked(null);
     };
-  }, [activeCardId]);
+  }, [activeCardId, reloadToken]);
 
   const rulesMap = useMemo(() => new Map(rules.map((r) => [r.signature, r])), [rules]);
   const overridesMap = useMemo(
@@ -532,6 +543,41 @@ export default function App() {
   const handleExportJSON = useCallback(() => downloadBackup(transactions), [transactions]);
   const handleExportCSV = useCallback(() => downloadCSV(transactions), [transactions]);
 
+  const handleExportFullBackup = useCallback(async () => {
+    try {
+      const backup = await buildFullBackup(cards, activeCardId, theme);
+      downloadFullBackup(backup);
+    } catch (e) {
+      setToast(`Could not build the full backup. ${(e as Error).message ?? ''}`.trim());
+    }
+  }, [cards, activeCardId, theme]);
+
+  const handleRestoreFullBackup = useCallback(
+    async (file: File) => {
+      try {
+        const backup = parseFullBackup(await file.text());
+        const txCount = backup.cards.reduce((a, c) => a + c.transactions.length, 0);
+        const ok = confirm(
+          `Restore this backup (from ${backup.exportedAt.slice(0, 10)})? It covers ${txCount} ` +
+            `transaction${txCount === 1 ? '' : 's'} across ${backup.cards.length} card` +
+            `${backup.cards.length === 1 ? '' : 's'} and ${backup.notes.length} note` +
+            `${backup.notes.length === 1 ? '' : 's'}. Existing data is kept — matching cards are ` +
+            'merged by id, and any cards not already present are added.',
+        );
+        if (!ok) return;
+        const result = await restoreFullBackup(backup, cards);
+        setCards(result.cards);
+        setActiveCardId(result.activeCardId);
+        setTheme(result.theme);
+        setReloadToken((n) => n + 1);
+        setToast('Full backup restored.');
+      } catch (e) {
+        setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
+      }
+    },
+    [cards],
+  );
+
   const handleConfirmMapping = useCallback(
     async (parsed: ParsedFile, mapping: ColumnMapping) => {
       setBusy(true);
@@ -701,6 +747,8 @@ export default function App() {
         onClearAll={handleClearAll}
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
+        onExportFullBackup={handleExportFullBackup}
+        onRestoreFullBackup={handleRestoreFullBackup}
         cards={cards}
         activeCardId={activeCardId}
         onSwitchCard={handleSwitchCard}
@@ -740,7 +788,9 @@ export default function App() {
               </nav>
             )}
 
-            {view === 'dashboard' && <UploadPanel onFiles={handleFiles} compact={hasData} />}
+            {(view === 'dashboard' || !hasData) && (
+              <UploadPanel onFiles={handleFiles} compact={hasData} />
+            )}
 
             {error && (
               <div className="banner banner-error">

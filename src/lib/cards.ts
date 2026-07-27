@@ -14,6 +14,15 @@ export interface Card {
 const CARDS_KEY = 'cashflow.cards';
 const ACTIVE_CARD_KEY = 'cashflow.activeCardId';
 
+// Per-card preference keys (namespaced via scopedKey) and the one global,
+// card-independent preference — exported here so both App.tsx and the full
+// backup/restore code share a single source of truth for the literal strings.
+export const CURRENCY_KEY = 'cashflow.currency';
+export const MONTH_START_KEY = 'cashflow.monthStartDay';
+export const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
+export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
+export const THEME_KEY = 'cashflow.theme';
+
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */
 export const DEFAULT_CARD_ID = 'default';
