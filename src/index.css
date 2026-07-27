@@ -977,8 +977,13 @@ main.container {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(235, 220, 196, 0.05);
 }
-.num {
-  text-align: right;
+/* `th.num` repeats the class to match `.data-table th`'s specificity (a
+ * class + a type selector) — otherwise that rule's `text-align: left` wins
+ * over plain `.num` regardless of source order, leaving Amount headers
+ * misaligned with their (correctly centered) values below. */
+.num,
+th.num {
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .strong {

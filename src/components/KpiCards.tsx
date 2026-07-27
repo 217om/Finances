@@ -47,7 +47,7 @@ export default function KpiCards({ overview }: Props) {
       <Kpi
         label="Best month"
         value={bestMonth ? money(bestMonth.net) : '—'}
-        tone="pos"
+        tone={bestMonth && bestMonth.net < 0 ? 'neg' : 'pos'}
         sub={bestMonth ? monthLabel(bestMonth.month) : ''}
       />
       <Kpi
