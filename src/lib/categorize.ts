@@ -207,37 +207,38 @@ export function makeResolver(
   return (tx) => resolveCategory(tx, rules, overrides, sorted);
 }
 
-// Stable colors so a category looks the same across every chart.
+// Stable colors so a category looks the same across every chart. Muted,
+// earthy tones tuned to sit well on the app's dark charcoal/beige/coral theme.
 export const CATEGORY_COLORS: Record<string, string> = {
-  Income: '#16a34a',
-  Salary: '#15803d',
-  Bonus: '#65a30d',
-  Gift: '#db2777',
-  Refund: '#0d9488',
-  Interest: '#0284c7',
-  Investment: '#7c3aed',
-  'Other Income': '#65a30d',
-  Housing: '#6366f1',
-  Groceries: '#0ea5e9',
-  Dining: '#f97316',
-  Transport: '#14b8a6',
-  Utilities: '#eab308',
-  Shopping: '#ec4899',
-  Health: '#ef4444',
-  Entertainment: '#a855f7',
-  Travel: '#06b6d4',
-  Education: '#8b5cf6',
-  'Fees & Charges': '#dc2626',
-  Transfers: '#64748b',
-  Cash: '#78716c',
-  Other: '#94a3b8',
+  Income: '#9CB88F',
+  Salary: '#7C9473',
+  Bonus: '#C9A227',
+  Gift: '#B6798A',
+  Refund: '#6E9B8C',
+  Interest: '#7C93A3',
+  Investment: '#A98BC4',
+  'Other Income': '#8FA377',
+  Housing: '#A87A5B',
+  Groceries: '#8CA69E',
+  Dining: '#C1704F',
+  Transport: '#6F8FA0',
+  Utilities: '#C9A876',
+  Shopping: '#B48A9E',
+  Health: '#C77B5E',
+  Entertainment: '#9B7FAE',
+  Travel: '#93A3B0',
+  Education: '#A3A25A',
+  'Fees & Charges': '#C1584B',
+  Transfers: '#8A7A6E',
+  Cash: '#B0855A',
+  Other: '#7A6F63',
 };
 
 // Palette used to give user-created categories a stable, distinct color.
 const PALETTE = [
-  '#6366f1', '#0ea5e9', '#f97316', '#14b8a6', '#eab308', '#ec4899', '#ef4444',
-  '#a855f7', '#06b6d4', '#8b5cf6', '#22c55e', '#f43f5e', '#0891b2', '#84cc16',
-  '#d946ef', '#fb7185', '#2dd4bf', '#f59e0b',
+  '#9CB88F', '#C9A227', '#B6798A', '#6E9B8C', '#7C93A3', '#A98BC4', '#A87A5B',
+  '#C1704F', '#8CA69E', '#C9A876', '#B48A9E', '#C77B5E', '#93A3B0', '#A3A25A',
+  '#C1584B', '#8A7A6E', '#B0855A', '#9B7FAE',
 ];
 
 function hashString(s: string): number {

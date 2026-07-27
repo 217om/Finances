@@ -16,13 +16,13 @@ interface Props {
 /** Pick readable text color (black/white) for a given hex background. */
 function textColor(hex: string): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return '#fff';
+  if (!m) return '#EBDCC4';
   const n = parseInt(m[1], 16);
   const r = (n >> 16) & 255;
   const g = (n >> 8) & 255;
   const b = n & 255;
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return lum > 0.6 ? '#1e293b' : '#ffffff';
+  return lum > 0.6 ? '#181818' : '#F5EFE4';
 }
 
 export default function CategoryTreemap({ data, onSelect, selected }: Props) {
@@ -47,7 +47,7 @@ export default function CategoryTreemap({ data, onSelect, selected }: Props) {
 function TreeCell(props: any) {
   const { x, y, width, height, name, value, color, onSelect, selected } = props;
   if (width <= 0 || height <= 0 || !name) return null;
-  const fill = color || '#94a3b8';
+  const fill = color || '#7A6F63';
   const fg = textColor(fill);
   const showLabel = width > 54 && height > 22;
   const isSelected = selected && name === selected;
@@ -63,7 +63,7 @@ function TreeCell(props: any) {
         height={height}
         fill={fill}
         fillOpacity={isSelected ? 1 : 0.9}
-        stroke={isSelected ? '#0f172a' : '#ffffff'}
+        stroke={isSelected ? '#EBDCC4' : '#181818'}
         strokeWidth={isSelected ? 2.5 : 2}
         rx={3}
       />

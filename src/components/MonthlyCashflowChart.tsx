@@ -27,9 +27,9 @@ interface Props {
   granularity?: Granularity;
 }
 
-const INCOME = '#0ea5e9';
-const EXPENSE = '#f97316';
-const NET = '#0f172a';
+const INCOME = '#9CB88F';
+const EXPENSE = '#DC9F85';
+const NET = '#EBDCC4';
 
 const FULL_LABEL: Record<Granularity, (key: string) => string> = {
   month: monthLabel,
@@ -59,24 +59,24 @@ export default function MonthlyCashflowChart({ months, granularity = 'month' }: 
     <div className="chart">
       <ResponsiveContainer width="100%" height={340}>
         <ComposedChart data={months} margin={{ top: 10, right: 8, bottom: 4, left: 8 }} barGap={2}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef1f5" />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#2A211D" />
           <XAxis
             dataKey="month"
             tickFormatter={shortLabel}
-            tick={{ fontSize: 11, fill: '#64748b' }}
+            tick={{ fontSize: 11, fill: '#B6A596' }}
             interval="preserveStartEnd"
             minTickGap={24}
           />
           <YAxis
             tickFormatter={(v) => money(v, { compact: true })}
-            tick={{ fontSize: 11, fill: '#64748b' }}
+            tick={{ fontSize: 11, fill: '#B6A596' }}
             width={64}
           />
           <Tooltip
             content={<CashflowTooltip granularity={granularity} />}
-            cursor={{ fill: 'rgba(15,23,42,0.04)' }}
+            cursor={{ fill: 'rgba(220,159,133,0.08)' }}
           />
-          <ReferenceLine y={0} stroke="#cbd5e1" />
+          <ReferenceLine y={0} stroke="#66473B" />
           <Bar dataKey="income" name="Income" fill={INCOME} radius={[3, 3, 0, 0]} maxBarSize={22} />
           <Bar dataKey="expenses" name="Expenses" fill={EXPENSE} radius={[3, 3, 0, 0]} maxBarSize={22} />
           <Line

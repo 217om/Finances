@@ -115,7 +115,7 @@ export default function CategoriesPage({
         .map(([name, value]) => ({
           name,
           value,
-          color: name === UNSORTED ? '#cbd5e1' : categoryColor(`${category}/${name}`),
+          color: name === UNSORTED ? '#7A6F63' : categoryColor(`${category}/${name}`),
         }))
         .sort((a, b) => b.value - a.value);
     }
@@ -132,7 +132,7 @@ export default function CategoriesPage({
       value,
       color: categoryColor(`${category}/${name}`),
     }));
-    if (rest > 0) cells.push({ name: 'Other', value: rest, color: '#cbd5e1' });
+    if (rest > 0) cells.push({ name: 'Other', value: rest, color: '#7A6F63' });
     return cells;
   }, [category, visibleInCategory, isSplit, sub]);
 
