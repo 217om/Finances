@@ -1,29 +1,30 @@
-// Loads a read-only snapshot of one card's category totals, for the notes
-// calculator's card lookups (e.g. `card1.get("Dining")`). This only reads
-// data — it never writes anything, and it's independent of which card is
-// currently active in the main app.
+// Loads a read-only snapshot of one card's transactions (categorized), for
+// the notes calculator's card lookups (e.g. `card1.get("Dining")` or
+// `card1.get("Dining", "2026-06-01", "2026-06-30")`). This only reads data —
+// it never writes anything, and it's independent of which card is currently
+// active in the main app. Deliberately ignores that card's "hidden from
+// charts & totals" filter, so a note variable always means the same thing.
 
 import type { Card } from './cards';
 import { getAllTransactions, getKeywordRules, getOverrides, getRules } from './db';
 import { makeResolver } from './categorize';
 
-export interface CardCategoryTotals {
+export interface CardCategoryRow {
+  date: string; // ISO YYYY-MM-DD
+  category: string;
+  amount: number; // absolute value
+}
+
+export interface CardCategoryData {
   cardId: string;
   cardName: string;
   slug: string;
-  /** Absolute total per category, keyed by lowercased category name. */
-  totals: Record<string, number>;
+  rows: CardCategoryRow[];
   /** Canonical-cased category names present, for display/autocomplete. */
   categories: string[];
 }
 
-/**
- * Sums each category's absolute total for one card, from every transaction —
- * deliberately independent of that card's "hidden from charts & totals"
- * filter, so a note variable always means the same thing regardless of what
- * you've chosen to hide on the Categories tab.
- */
-export async function loadCardCategoryTotals(card: Card, slug: string): Promise<CardCategoryTotals> {
+export async function loadCardCategoryTotals(card: Card, slug: string): Promise<CardCategoryData> {
   const [txs, rules, overrides, keywordRules] = await Promise.all([
     getAllTransactions(card.dbName).catch(() => []),
     getRules(card.dbName).catch(() => []),
@@ -34,14 +35,26 @@ export async function loadCardCategoryTotals(card: Card, slug: string): Promise<
   const overridesMap = new Map(overrides.map((o) => [o.id, o.category]));
   const categoryOf = makeResolver(rulesMap, overridesMap, keywordRules);
 
-  const totals: Record<string, number> = {};
-  const casing: Record<string, string> = {};
+  const rows: CardCategoryRow[] = [];
+  const seen = new Set<string>();
   for (const t of txs) {
-    const cat = categoryOf(t);
-    const key = cat.toLowerCase();
-    totals[key] = (totals[key] ?? 0) + Math.abs(t.amount);
-    casing[key] = cat;
+    const category = categoryOf(t);
+    rows.push({ date: t.date, category, amount: Math.abs(t.amount) });
+    seen.add(category);
   }
 
-  return { cardId: card.id, cardName: card.name, slug, totals, categories: Object.values(casing).sort() };
+  return { cardId: card.id, cardName: card.name, slug, rows, categories: [...seen].sort() };
+}
+
+/** Sum a category's amounts, optionally restricted to an inclusive date range. */
+export function sumCategory(data: CardCategoryData, category: string, from?: string, to?: string): number {
+  const key = category.toLowerCase();
+  let total = 0;
+  for (const r of data.rows) {
+    if (r.category.toLowerCase() !== key) continue;
+    if (from && r.date < from) continue;
+    if (to && r.date > to) continue;
+    total += r.amount;
+  }
+  return total;
 }

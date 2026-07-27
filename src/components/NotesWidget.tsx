@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { deleteNote, getAllNotes, makeNote, saveNote, type Note } from '../lib/notes';
 import { evalNote, formatResult, cardSlug, type CardGetter } from '../lib/notesCalc';
 import { loadCards, type Card } from '../lib/cards';
-import { loadCardCategoryTotals, type CardCategoryTotals } from '../lib/cardTotals';
+import { loadCardCategoryTotals, sumCategory, type CardCategoryData } from '../lib/cardTotals';
+import { RANGE_PRESETS, resolvePreset, type RangePreset } from '../lib/dateRanges';
 
 const SAVE_DEBOUNCE_MS = 400;
 const POSITION_KEY = 'cashflow.notesPosition';
@@ -30,6 +31,11 @@ interface AcState {
   start: number;
   end: number;
   selected: number;
+}
+interface CardEntry {
+  card: Card;
+  slug: string;
+  data: CardCategoryData;
 }
 
 function loadPosition(): Position | null {
@@ -95,7 +101,7 @@ function computeAutocomplete(
   body: string,
   caret: number,
   slugs: string[],
-  totalsBySlug: Map<string, CardCategoryTotals>,
+  dataBySlug: Map<string, CardCategoryData>,
 ): { options: AcOption[]; start: number; end: number } | null {
   const lineStart = body.lastIndexOf('\n', caret - 1) + 1;
   const upToCaret = body.slice(lineStart, caret);
@@ -103,7 +109,7 @@ function computeAutocomplete(
   const inString = /([a-zA-Z_]\w*)\.get\(\s*["']([^"']*)$/.exec(upToCaret);
   if (inString) {
     const [, slug, partial] = inString;
-    const entry = totalsBySlug.get(slug);
+    const entry = dataBySlug.get(slug);
     if (!entry) return null;
     const matches = entry.categories.filter((c) => c.toLowerCase().startsWith(partial.toLowerCase()));
     if (matches.length === 0) return null;
@@ -144,7 +150,9 @@ function computeAutocomplete(
  * active. Supports multiple notes, drag-to-move and drag-to-resize, and a
  * small inline calculator: lines like "rent = 500" save a variable, later
  * lines like "total = rent + food" can use it, and "card1.get(\"Dining\")"
- * (with autocomplete) pulls a category total straight from a card.
+ * pulls a category total straight from a card. The "Insert value" picker
+ * builds that expression for you (with a time range) so you never have to
+ * type the syntax by hand — notes stay ordinary free text otherwise.
  */
 export default function NotesWidget() {
   const [open, setOpen] = useState(false);
@@ -158,8 +166,15 @@ export default function NotesWidget() {
   // size every time — only a completed drag/resize overrides that.
   const [position, setPosition] = useState<Position | null>(() => loadPosition());
   const [size, setSize] = useState<Size | null>(() => loadSize());
-  const [cardEntries, setCardEntries] = useState<{ card: Card; slug: string; data: CardCategoryTotals }[]>([]);
+  const [cardEntries, setCardEntries] = useState<CardEntry[]>([]);
   const [autocomplete, setAutocomplete] = useState<AcState | null>(null);
+
+  const [insertOpen, setInsertOpen] = useState(false);
+  const [insertCardId, setInsertCardId] = useState('');
+  const [insertCategory, setInsertCategory] = useState('');
+  const [insertPreset, setInsertPreset] = useState<RangePreset>('all');
+  const [insertFrom, setInsertFrom] = useState('');
+  const [insertTo, setInsertTo] = useState('');
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -169,6 +184,7 @@ export default function NotesWidget() {
   bodyDraftRef.current = bodyDraft;
   const cardEntriesRef = useRef(cardEntries);
   cardEntriesRef.current = cardEntries;
+  const caretRef = useRef(0);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<number | null>(null);
@@ -212,8 +228,16 @@ export default function NotesWidget() {
         }),
       );
       setCardEntries(entries);
+      setInsertCardId((prev) => (prev && entries.some((e) => e.card.id === prev) ? prev : entries[0]?.card.id ?? ''));
     })();
   }, [open]);
+
+  // Keep the category picker valid whenever the chosen card changes.
+  useEffect(() => {
+    const entry = cardEntries.find((e) => e.card.id === insertCardId);
+    const cats = entry?.data.categories ?? [];
+    setInsertCategory((prev) => (prev && cats.includes(prev) ? prev : cats[0] ?? ''));
+  }, [insertCardId, cardEntries]);
 
   function flushSave() {
     const id = activeIdRef.current;
@@ -234,9 +258,10 @@ export default function NotesWidget() {
 
   function updateAutocomplete(el: HTMLTextAreaElement) {
     if (charWidthRef.current === null) charWidthRef.current = measureCharWidth();
+    caretRef.current = el.selectionStart;
     const slugs = cardEntriesRef.current.map((e) => e.slug);
-    const totalsBySlug = new Map(cardEntriesRef.current.map((e) => [e.slug, e.data]));
-    const ctx = computeAutocomplete(el.value, el.selectionStart, slugs, totalsBySlug);
+    const dataBySlug = new Map(cardEntriesRef.current.map((e) => [e.slug, e.data]));
+    const ctx = computeAutocomplete(el.value, el.selectionStart, slugs, dataBySlug);
     setAutocomplete(ctx ? { ...ctx, selected: 0 } : null);
   }
 
@@ -396,16 +421,52 @@ export default function NotesWidget() {
         if (saveTimer.current) window.clearTimeout(saveTimer.current);
         flushSave();
         setAutocomplete(null);
+        setInsertOpen(false);
       }
       return !prev;
     });
   }
 
+  /** Inserts text at the caret, starting a fresh line first if the caret
+   *  isn't already at the start of an empty line (so two inserts in a row,
+   *  or an insert after typed text, never get glued onto the same line). */
+  function insertAtCaret(text: string) {
+    const value = bodyDraftRef.current;
+    const pos = Math.min(caretRef.current, value.length);
+    const lineStart = value.lastIndexOf('\n', pos - 1) + 1;
+    const linePrefix = value.slice(lineStart, pos);
+    const insertion = linePrefix.trim().length > 0 ? `\n${text}` : text;
+    const next = value.slice(0, pos) + insertion + value.slice(pos);
+    const newCaret = pos + insertion.length;
+    handleBodyChange(next);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(newCaret, newCaret);
+      caretRef.current = newCaret;
+    });
+  }
+
+  function handleInsertValue() {
+    const entry = cardEntries.find((e) => e.card.id === insertCardId);
+    if (!entry || !insertCategory) return;
+    const range = insertPreset === 'custom' ? { from: insertFrom, to: insertTo } : resolvePreset(insertPreset);
+    const snippet =
+      range && range.from && range.to
+        ? `${entry.slug}.get("${insertCategory}", "${range.from}", "${range.to}")`
+        : `${entry.slug}.get("${insertCategory}")`;
+    insertAtCaret(snippet);
+    setInsertOpen(false);
+  }
+
   const activeNote = notes.find((n) => n.id === activeId) ?? null;
   const lines = bodyDraft.split('\n');
-  const cardGetter: CardGetter = (slug, category) => {
+  const cardGetter: CardGetter = (slug, category, from, to) => {
     const entry = cardEntriesRef.current.find((e) => e.slug === slug);
-    return entry?.data.totals[category.toLowerCase()];
+    if (!entry) return undefined;
+    if (!entry.data.categories.some((c) => c.toLowerCase() === category.toLowerCase())) return undefined;
+    return sumCategory(entry.data, category, from, to);
   };
   const results = evalNote(bodyDraft, cardGetter);
 
@@ -420,6 +481,9 @@ export default function NotesWidget() {
     const left = Math.max(4, Math.min(PAD_LEFT + col * charWidth - el.scrollLeft, el.clientWidth - 160));
     return { left, top };
   })();
+
+  const insertEntry = cardEntries.find((e) => e.card.id === insertCardId);
+  const insertCategories = insertEntry?.data.categories ?? [];
 
   return (
     <div className="notes-fab-wrap">
@@ -501,13 +565,102 @@ export default function NotesWidget() {
 
           {activeNote ? (
             <>
+              <div className="notes-toolbar">
+                <div className="notes-insert-wrap">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setInsertOpen((v) => !v)}
+                  >
+                    + Insert value
+                  </button>
+                  {insertOpen && (
+                    <div className="notes-insert-pop">
+                      {cardEntries.length === 0 ? (
+                        <p className="muted">No cards yet.</p>
+                      ) : (
+                        <>
+                          <label className="picker notes-insert-field">
+                            <span className="picker-label">Card</span>
+                            <select value={insertCardId} onChange={(e) => setInsertCardId(e.target.value)}>
+                              {cardEntries.map((e) => (
+                                <option key={e.card.id} value={e.card.id}>
+                                  {e.card.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="picker notes-insert-field">
+                            <span className="picker-label">Category</span>
+                            <select
+                              value={insertCategory}
+                              onChange={(e) => setInsertCategory(e.target.value)}
+                              disabled={insertCategories.length === 0}
+                            >
+                              {insertCategories.length === 0 ? (
+                                <option value="">No categories yet</option>
+                              ) : (
+                                insertCategories.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </label>
+                          <label className="picker notes-insert-field">
+                            <span className="picker-label">Time range</span>
+                            <select
+                              value={insertPreset}
+                              onChange={(e) => setInsertPreset(e.target.value as RangePreset)}
+                            >
+                              {RANGE_PRESETS.map((p) => (
+                                <option key={p.key} value={p.key}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {insertPreset === 'custom' && (
+                            <div className="notes-insert-range">
+                              <label className="picker notes-insert-field">
+                                <span className="picker-label">From</span>
+                                <input
+                                  type="date"
+                                  value={insertFrom}
+                                  onChange={(e) => setInsertFrom(e.target.value)}
+                                />
+                              </label>
+                              <label className="picker notes-insert-field">
+                                <span className="picker-label">To</span>
+                                <input type="date" value={insertTo} onChange={(e) => setInsertTo(e.target.value)} />
+                              </label>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={
+                              !insertCategory || (insertPreset === 'custom' && (!insertFrom || !insertTo))
+                            }
+                            onClick={handleInsertValue}
+                          >
+                            Insert
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="notes-editor">
                 <textarea
                   ref={textareaRef}
                   className="notes-lines"
                   value={bodyDraft}
                   spellCheck={false}
-                  placeholder={'Write anything. Try:\nrent = 500\ntotal = rent + food\ncard1.get("Dining")'}
+                  placeholder={'Write anything. Try:\nrent = 500\ntotal = rent + food\n\nOr click "+ Insert value" above to pull a number from a card.'}
                   onChange={(e) => {
                     handleBodyChange(e.target.value);
                     updateAutocomplete(e.target);
@@ -554,13 +707,8 @@ export default function NotesWidget() {
                 )}
               </div>
               <p className="muted notes-hint">
-                “rent = 500” saves a variable; {cardEntries.length > 0 && (
-                  <>
-                    “{cardEntries[0].slug}.get(&quot;{cardEntries[0].data.categories[0] ?? 'Category'}&quot;)” reads
-                    a number from {cardEntries[0].card.name};{' '}
-                  </>
-                )}
-                type “.” after a card name for autocomplete.
+                Write anything — “rent = 500” saves a number you can reuse, and “+ Insert value” pulls a number
+                straight from a card without typing any code.
               </p>
             </>
           ) : (

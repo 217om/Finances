@@ -11,7 +11,8 @@ type Token =
   | { type: 'op'; value: '+' | '-' | '*' | '/' | '^' | '%' }
   | { type: 'lparen' }
   | { type: 'rparen' }
-  | { type: 'dot' };
+  | { type: 'dot' }
+  | { type: 'comma' };
 
 function tokenize(src: string): Token[] {
   const tokens: Token[] = [];
@@ -59,6 +60,11 @@ function tokenize(src: string): Token[] {
       i++;
       continue;
     }
+    if (ch === ',') {
+      tokens.push({ type: 'comma' });
+      i++;
+      continue;
+    }
     if (ch === '(') {
       tokens.push({ type: 'lparen' });
       i++;
@@ -79,9 +85,18 @@ function tokenize(src: string): Token[] {
   return tokens;
 }
 
-/** Looks up a card's total for a category by the card's slug (e.g. "card1"
- *  for a card named "Card 1"). Returns undefined if either is unknown. */
-export type CardGetter = (cardSlug: string, category: string) => number | undefined;
+/**
+ * Looks up a card's total for a category by the card's slug (e.g. "card1"
+ * for a card named "Card 1"), optionally restricted to an inclusive date
+ * range (both ISO "YYYY-MM-DD"). Returns undefined if the card/category is
+ * unknown.
+ */
+export type CardGetter = (
+  cardSlug: string,
+  category: string,
+  from?: string,
+  to?: string,
+) => number | undefined;
 
 class Parser {
   private pos = 0;
@@ -170,7 +185,7 @@ class Parser {
     const t = this.next();
     if (t.type === 'num') return t.value;
     if (t.type === 'ident') {
-      // Card lookup: identifier.get("category")
+      // Card lookup: identifier.get("category" [, "from", "to"])
       if (this.peek()?.type === 'dot') {
         this.next(); // consume '.'
         const method = this.next();
@@ -179,12 +194,20 @@ class Parser {
         }
         const lp = this.next();
         if (lp.type !== 'lparen') throw new Error('expected (');
-        const arg = this.next();
-        if (arg.type !== 'string') throw new Error('expected a quoted category name');
+        const args: string[] = [];
+        const first = this.next();
+        if (first.type !== 'string') throw new Error('expected a quoted category name');
+        args.push(first.value);
+        while (this.peek()?.type === 'comma') {
+          this.next(); // consume ','
+          const arg = this.next();
+          if (arg.type !== 'string') throw new Error('expected a quoted date');
+          args.push(arg.value);
+        }
         const rp = this.next();
         if (rp.type !== 'rparen') throw new Error('expected )');
-        const value = this.cardGetter?.(t.value, arg.value);
-        if (value === undefined) throw new Error(`unknown card/category "${t.value}.get(${arg.value})"`);
+        const value = this.cardGetter?.(t.value, args[0], args[1], args[2]);
+        if (value === undefined) throw new Error(`unknown card/category "${t.value}.get(${args.join(', ')})"`);
         return value;
       }
       if (!(t.value in this.vars)) throw new Error(`unknown variable "${t.value}"`);
