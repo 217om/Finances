@@ -19,6 +19,7 @@ interface Props {
   onRefine?: () => void;
   hiddenCount?: number;
   onManageHidden?: () => void;
+  onDrillToTransactions?: (from: string, to: string) => void;
 }
 
 const GRANULARITIES: { key: Granularity; label: string }[] = [
@@ -50,6 +51,30 @@ function addYears(iso: string, n: number): string {
   return new Date(Date.UTC(y + n, m - 1, d)).toISOString().slice(0, 10);
 }
 
+function addDaysISO(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + delta);
+  return date.toISOString().slice(0, 10);
+}
+
+/** The inclusive [from, to] calendar span a clicked bucket key represents,
+ *  given the active granularity (and pay-cycle start day for months). */
+function periodBounds(key: string, granularity: Granularity, monthStartDay: number): { from: string; to: string } {
+  if (granularity === 'day') return { from: key, to: key };
+  if (granularity === 'week') return { from: key, to: addDaysISO(key, 6) };
+
+  const [y, m] = key.split('-').map(Number);
+  const startDay = Math.max(1, monthStartDay);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const from = `${y}-${pad(m)}-${pad(startDay)}`;
+  const nextIdx = y * 12 + (m - 1) + 1;
+  const ny = Math.floor(nextIdx / 12);
+  const nm = (nextIdx % 12) + 1;
+  const nextStart = `${ny}-${pad(nm)}-${pad(startDay)}`;
+  return { from, to: addDaysISO(nextStart, -1) };
+}
+
 export default function Dashboard({
   overview,
   transactions,
@@ -61,6 +86,7 @@ export default function Dashboard({
   onRefine,
   hiddenCount = 0,
   onManageHidden,
+  onDrillToTransactions,
 }: Props) {
   const [granularity, setGranularity] = useState<Granularity>('day');
 
@@ -223,7 +249,22 @@ export default function Dashboard({
             {chartMonths.length} bars shown — narrow the date range above for a clearer view.
           </p>
         )}
-        <MonthlyCashflowChart months={chartMonths} granularity={granularity} />
+        <MonthlyCashflowChart
+          months={chartMonths}
+          granularity={granularity}
+          onPeriodClick={
+            onDrillToTransactions &&
+            ((key) => {
+              const { from, to } = periodBounds(key, granularity, monthStartDay);
+              onDrillToTransactions(from, to);
+            })
+          }
+        />
+        {onDrillToTransactions && (
+          <p className="muted chart-hint">
+            Click a point on the chart to see that {granularity}’s transactions.
+          </p>
+        )}
       </section>
 
       <section className="panel">

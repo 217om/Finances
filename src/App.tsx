@@ -144,6 +144,20 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
+  // Set only when jumping in from a chart click (Dashboard -> a specific
+  // day/week/month's transactions); cleared on any normal tab navigation, so
+  // the Transactions tab is never affected by category filters otherwise.
+  const [txJump, setTxJump] = useState<{ from: string; to: string; token: number } | null>(null);
+
+  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories') => {
+    setTxJump(null);
+    setView(next);
+  }, []);
+
+  const handleDrillToTransactions = useCallback((from: string, to: string) => {
+    setTxJump({ from, to, token: Date.now() });
+    setView('transactions');
+  }, []);
 
   // Restore preferences and load stored data whenever the active card changes
   // (including on first mount). Everything here is defensive: reading
@@ -705,21 +719,21 @@ export default function App() {
                 <button
                   type="button"
                   className={view === 'dashboard' ? 'on' : ''}
-                  onClick={() => setView('dashboard')}
+                  onClick={() => handleTabClick('dashboard')}
                 >
                   Dashboard
                 </button>
                 <button
                   type="button"
                   className={view === 'categories' ? 'on' : ''}
-                  onClick={() => setView('categories')}
+                  onClick={() => handleTabClick('categories')}
                 >
                   Categories
                 </button>
                 <button
                   type="button"
                   className={view === 'transactions' ? 'on' : ''}
-                  onClick={() => setView('transactions')}
+                  onClick={() => handleTabClick('transactions')}
                 >
                   Transactions
                 </button>
@@ -763,6 +777,8 @@ export default function App() {
                 overriddenIds={overriddenIds}
                 customCategories={customCategories}
                 sub={subResolver}
+                categoryFilter={categoryFilter}
+                jump={txJump}
                 onSetCategory={handleSetCategory}
                 onClearCategory={handleClearCategory}
                 onCreateCategory={handleCreateCategory}
@@ -779,7 +795,8 @@ export default function App() {
                 onReset={hasCategorization ? handleResetCategorization : undefined}
                 onRefine={() => setRefineOpen(true)}
                 hiddenCount={excludedCount(categoryFilter)}
-                onManageHidden={() => setView('categories')}
+                onManageHidden={() => handleTabClick('categories')}
+                onDrillToTransactions={handleDrillToTransactions}
               />
             )}
           </>

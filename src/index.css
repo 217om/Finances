@@ -811,6 +811,10 @@ main.container {
 .chart-dense-note {
   margin: -4px 0 10px;
 }
+.chart-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
 .range-pickers select {
   padding: 6px 8px;
   font-size: 13px;

@@ -2,8 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/categorize';
 import { UNSORTED, type SubResolver } from '../lib/subcategory';
+import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
+
+export interface TransactionsJump {
+  from: string;
+  to: string;
+  /** Changes on every jump so identical dates still re-trigger the effect. */
+  token: number;
+}
 
 interface Props {
   transactions: Transaction[];
@@ -11,6 +19,11 @@ interface Props {
   overriddenIds: Set<string>;
   customCategories: string[];
   sub: SubResolver;
+  categoryFilter: CategoryFilterState;
+  /** Set when arriving from a chart-click drill-down; pre-fills the date
+   *  range and (only for this visit) applies the hidden-category filter —
+   *  the Transactions tab otherwise always shows every category. */
+  jump?: TransactionsJump | null;
   onSetCategory: (id: string, category: string) => void;
   onClearCategory: (id: string) => void;
   onCreateCategory: (name: string) => void;
@@ -31,6 +44,8 @@ export default function TransactionsPage({
   overriddenIds,
   customCategories,
   sub,
+  categoryFilter,
+  jump,
   onSetCategory,
   onClearCategory,
   onCreateCategory,
@@ -39,9 +54,20 @@ export default function TransactionsPage({
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [category, setCategory] = useState('all');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(jump?.from ?? '');
+  const [toDate, setToDate] = useState(jump?.to ?? '');
   const [visible, setVisible] = useState(PAGE);
+  const [hiddenActive, setHiddenActive] = useState(Boolean(jump));
+
+  // A fresh chart-click jump pre-fills the date range and (only this once)
+  // restricts to categories that aren't hidden elsewhere in the app.
+  useEffect(() => {
+    if (!jump) return;
+    setFromDate(jump.from);
+    setToDate(jump.to);
+    setHiddenActive(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump?.token]);
 
   const options = useMemo(() => {
     const seen = new Set<string>();
@@ -97,9 +123,10 @@ export default function TransactionsPage({
         if (fromDate && r.t.date < fromDate) return false;
         if (toDate && r.t.date > toDate) return false;
         if (needle && !r.t.description.toLowerCase().includes(needle)) return false;
+        if (hiddenActive && isExcluded(categoryFilter, r.cat, sub.subOf(r.t, r.cat))) return false;
         return true;
       }),
-    [base, typeFilter, category, fromDate, toDate, needle],
+    [base, typeFilter, category, fromDate, toDate, needle, hiddenActive, categoryFilter, sub],
   );
 
   // Keep the rendered list bounded whenever the filters change.
@@ -175,6 +202,15 @@ export default function TransactionsPage({
           </button>
         )}
       </div>
+
+      {hiddenActive && (
+        <div className="hidden-tray">
+          <span className="hidden-tray-label">Showing only categories that aren’t hidden elsewhere in the app.</span>
+          <button type="button" className="linklike" onClick={() => setHiddenActive(false)}>
+            Show all
+          </button>
+        </div>
+      )}
 
       <div className="tx-summary muted">
         {filtered.length.toLocaleString()} transaction{filtered.length === 1 ? '' : 's'} ·{' '}

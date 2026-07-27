@@ -25,6 +25,9 @@ export type Granularity = 'month' | 'week' | 'day';
 interface Props {
   months: MonthlySummary[];
   granularity?: Granularity;
+  /** Called with the clicked bucket's key (a day, week-start, or pay-cycle
+   *  month) when the user clicks a point on the chart. */
+  onPeriodClick?: (key: string) => void;
 }
 
 const INCOME = 'var(--pos)';
@@ -48,7 +51,7 @@ const SHORT_LABEL: Record<Granularity, (key: string) => string> = {
  * top — components and result in a single view. Granularity controls whether
  * each bar is a month, a week, or a day.
  */
-export default function MonthlyCashflowChart({ months, granularity = 'month' }: Props) {
+export default function MonthlyCashflowChart({ months, granularity = 'month', onPeriodClick }: Props) {
   if (months.length === 0) {
     return <div className="chart-empty">No data to show in this range.</div>;
   }
@@ -58,7 +61,16 @@ export default function MonthlyCashflowChart({ months, granularity = 'month' }: 
   return (
     <div className="chart">
       <ResponsiveContainer width="100%" height={340}>
-        <ComposedChart data={months} margin={{ top: 10, right: 8, bottom: 4, left: 8 }} barGap={2}>
+        <ComposedChart
+          data={months}
+          margin={{ top: 10, right: 8, bottom: 4, left: 8 }}
+          barGap={2}
+          style={onPeriodClick ? { cursor: 'pointer' } : undefined}
+          onClick={(e) => {
+            const key = e?.activeLabel;
+            if (onPeriodClick && typeof key === 'string') onPeriodClick(key);
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
           <XAxis
             dataKey="month"
