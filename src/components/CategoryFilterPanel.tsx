@@ -3,6 +3,7 @@ import type { Transaction } from '../types';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { isCategoryExcluded, isSubExcluded, type CategoryFilterState } from '../lib/categoryFilter';
+import { sameFilter, type CategoryFilterPreset } from '../lib/categoryFilterPresets';
 import { money } from '../lib/format';
 
 export interface Tagged {
@@ -27,6 +28,11 @@ export default function CategoryFilterPanel({
   categoryFilter,
   onToggleCategoryFilter,
   onToggleSubFilter,
+  presets,
+  onSavePreset,
+  onRenamePreset,
+  onDeletePreset,
+  onApplyPreset,
 }: {
   expenses: Tagged[];
   incomeTagged: Tagged[];
@@ -34,6 +40,14 @@ export default function CategoryFilterPanel({
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
   onToggleSubFilter: (category: string, subName: string) => void;
+  /** Named, reusable filter snapshots — save the current selection, apply a
+   *  saved one, rename or delete. Shared globally, not scoped to this card
+   *  or view (see lib/categoryFilterPresets.ts). */
+  presets: CategoryFilterPreset[];
+  onSavePreset: (name: string) => void;
+  onRenamePreset: (id: string, name: string) => void;
+  onDeletePreset: (id: string) => void;
+  onApplyPreset: (filter: CategoryFilterState) => void;
 }) {
   const categoryTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -84,6 +98,33 @@ export default function CategoryFilterPanel({
       return next;
     });
 
+  const activePresetId = useMemo(
+    () => presets.find((p) => sameFilter(p.filter, categoryFilter))?.id ?? null,
+    [presets, categoryFilter],
+  );
+
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [creatingPreset, setCreatingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+
+  const startRename = (p: CategoryFilterPreset) => {
+    setRenamingId(p.id);
+    setRenameValue(p.name);
+  };
+  const commitRename = () => {
+    const id = renamingId;
+    setRenamingId(null);
+    if (!id) return;
+    const name = renameValue.trim();
+    if (name) onRenamePreset(id, name);
+  };
+  const commitNewPreset = () => {
+    setCreatingPreset(false);
+    const name = newPresetName.trim();
+    if (name) onSavePreset(name);
+  };
+
   return (
     <section className="panel">
       <div className="panel-head">
@@ -94,6 +135,73 @@ export default function CategoryFilterPanel({
             it from every chart, KPI, and total across the app — not just here.
           </p>
         </div>
+      </div>
+
+      <div className="filter-presets">
+        <span className="muted filter-presets-label">Presets:</span>
+        {presets.map((p) => (
+          <div
+            key={p.id}
+            className={`filter-preset ${activePresetId === p.id ? 'filter-preset-active' : ''}`}
+          >
+            {renamingId === p.id ? (
+              <input
+                autoFocus
+                className="filter-preset-rename-input"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="filter-preset-btn"
+                title="Click to apply, double-click to rename"
+                onClick={() => onApplyPreset(p.filter)}
+                onDoubleClick={() => startRename(p)}
+              >
+                {p.name}
+              </button>
+            )}
+            <button
+              type="button"
+              className="filter-preset-del"
+              title="Delete preset"
+              onClick={() => onDeletePreset(p.id)}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {creatingPreset ? (
+          <input
+            autoFocus
+            className="filter-preset-rename-input"
+            value={newPresetName}
+            placeholder="Preset name…"
+            onChange={(e) => setNewPresetName(e.target.value)}
+            onBlur={commitNewPreset}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitNewPreset();
+              if (e.key === 'Escape') setCreatingPreset(false);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="filter-preset-add"
+            onClick={() => {
+              setNewPresetName('');
+              setCreatingPreset(true);
+            }}
+          >
+            + Save current
+          </button>
+        )}
       </div>
 
       {hiddenChips.length > 0 && (

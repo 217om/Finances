@@ -26,6 +26,9 @@ export const COMBINE_KEY = 'cashflow.combineCards';
 /** Independent from any single card's own CATEGORY_FILTER_KEY — a hide/show
  *  filter that only applies while exploring the combined Categories view. */
 export const COMBINED_CATEGORY_FILTER_KEY = 'cashflow.combinedCategoryFilter';
+/** Named, reusable category filter snapshots — global, shared by every card
+ *  and the combined view alike (see lib/categoryFilterPresets.ts). */
+export const CATEGORY_FILTER_PRESETS_KEY = 'cashflow.categoryFilterPresets';
 
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */

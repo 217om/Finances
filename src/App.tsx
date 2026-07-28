@@ -50,6 +50,7 @@ import {
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
+  CATEGORY_FILTER_PRESETS_KEY,
   THEME_KEY,
   COMBINE_KEY,
   COMBINE_CARD_ID,
@@ -60,6 +61,7 @@ import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
 import { makeSubResolver, UNSORTED } from './lib/subcategory';
+import { makePreset, isValidPresetList, type CategoryFilterPreset } from './lib/categoryFilterPresets';
 import {
   defaultCategoryFilter,
   excludedCount,
@@ -238,6 +240,16 @@ export default function App() {
       return isValidCategoryFilter(saved) ? saved : defaultCategoryFilter();
     } catch {
       return defaultCategoryFilter();
+    }
+  });
+  // Global, named filter snapshots — shared by every card and the combined
+  // view alike. See handleSaveFilterPreset and friends below.
+  const [filterPresets, setFilterPresets] = useState<CategoryFilterPreset[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CATEGORY_FILTER_PRESETS_KEY) ?? '[]');
+      return isValidPresetList(saved) ? saved : [];
+    } catch {
+      return [];
     }
   });
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -542,6 +554,64 @@ export default function App() {
       }
       return next;
     });
+  }, []);
+
+  function persistPresets(next: CategoryFilterPreset[]) {
+    setFilterPresets(next);
+    try {
+      localStorage.setItem(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const handleSaveFilterPreset = useCallback((name: string, filter: CategoryFilterState) => {
+    setFilterPresets((prev) => {
+      const next = [...prev, makePreset(name, filter)];
+      try {
+        localStorage.setItem(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRenameFilterPreset = useCallback(
+    (id: string, name: string) => {
+      persistPresets(filterPresets.map((p) => (p.id === id ? { ...p, name } : p)));
+    },
+    [filterPresets],
+  );
+
+  const handleDeleteFilterPreset = useCallback(
+    (id: string) => {
+      persistPresets(filterPresets.filter((p) => p.id !== id));
+    },
+    [filterPresets],
+  );
+
+  // Applying a preset replaces the target filter outright (not a merge) —
+  // that's the whole point of a saved, named "this is what should be hidden".
+  const handleApplyCategoryFilterPreset = useCallback(
+    (filter: CategoryFilterState) => {
+      setCategoryFilter(filter);
+      try {
+        localStorage.setItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId), JSON.stringify(filter));
+      } catch {
+        /* ignore */
+      }
+    },
+    [activeCardId],
+  );
+
+  const handleApplyCombinedCategoryFilterPreset = useCallback((filter: CategoryFilterState) => {
+    setCombinedCategoryFilter(filter);
+    try {
+      localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(filter));
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const handleSetSubCategory = useCallback(
@@ -1062,6 +1132,11 @@ export default function App() {
                   onToggleCategoryFilter={handleToggleCombinedCategoryFilter}
                   onToggleSubFilter={handleToggleCombinedSubFilter}
                   onSetTxNote={handleSetTxNote}
+                  presets={filterPresets}
+                  onSavePreset={(name) => handleSaveFilterPreset(name, combinedCategoryFilter)}
+                  onRenamePreset={handleRenameFilterPreset}
+                  onDeletePreset={handleDeleteFilterPreset}
+                  onApplyPreset={handleApplyCombinedCategoryFilterPreset}
                 />
               ) : (
                 <CategoriesPage
@@ -1073,6 +1148,11 @@ export default function App() {
                   categoryFilter={categoryFilter}
                   onToggleCategoryFilter={handleToggleCategoryFilter}
                   onToggleSubFilter={handleToggleSubFilter}
+                  presets={filterPresets}
+                  onSavePreset={(name) => handleSaveFilterPreset(name, categoryFilter)}
+                  onRenamePreset={handleRenameFilterPreset}
+                  onDeletePreset={handleDeleteFilterPreset}
+                  onApplyPreset={handleApplyCategoryFilterPreset}
                 />
               )
             ) : view === 'transactions' ? (

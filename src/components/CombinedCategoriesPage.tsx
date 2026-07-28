@@ -3,6 +3,7 @@ import type { Transaction } from '../types';
 import { categoryColor, signatureOf } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
+import type { CategoryFilterPreset } from '../lib/categoryFilterPresets';
 import { money } from '../lib/format';
 import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
 import CategoryFilterPanel, { type MiniSubResolver, type Tagged } from './CategoryFilterPanel';
@@ -23,6 +24,11 @@ interface Props {
   onToggleCategoryFilter: (category: string) => void;
   onToggleSubFilter: (category: string, subName: string) => void;
   onSetTxNote: (cardId: string, id: string, note: string) => void;
+  presets: CategoryFilterPreset[];
+  onSavePreset: (name: string) => void;
+  onRenamePreset: (id: string, name: string) => void;
+  onDeletePreset: (id: string) => void;
+  onApplyPreset: (filter: CategoryFilterState) => void;
 }
 
 const MERCHANT_LIMIT = 12;
@@ -46,6 +52,11 @@ export default function CombinedCategoriesPage({
   onToggleCategoryFilter,
   onToggleSubFilter,
   onSetTxNote,
+  presets,
+  onSavePreset,
+  onRenamePreset,
+  onDeletePreset,
+  onApplyPreset,
 }: Props) {
   const expenses = useMemo<Tagged[]>(
     () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
@@ -302,6 +313,11 @@ export default function CombinedCategoriesPage({
         categoryFilter={categoryFilter}
         onToggleCategoryFilter={onToggleCategoryFilter}
         onToggleSubFilter={onToggleSubFilter}
+        presets={presets}
+        onSavePreset={onSavePreset}
+        onRenamePreset={onRenamePreset}
+        onDeletePreset={onDeletePreset}
+        onApplyPreset={onApplyPreset}
       />
     </div>
   );
