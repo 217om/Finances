@@ -1876,10 +1876,96 @@ th.num {
 .notes-toolbar {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   position: relative;
+}
+.notes-fmt-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.notes-fmt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.notes-fmt-btn:hover {
+  background: rgba(235, 220, 196, 0.05);
+  border-color: var(--accent);
+}
+.notes-fmt-bold {
+  font-weight: 700;
+}
+.notes-fmt-size-btn {
+  letter-spacing: 0;
+}
+.notes-insert-btn {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.notes-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 0;
+  background: var(--border);
+}
+.notes-fmt-wrap {
+  position: relative;
+}
+.notes-fmt-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  gap: 6px;
+}
+.notes-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+.notes-swatch:hover {
+  border-color: var(--accent);
+}
+.notes-fmt-size-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+}
+.notes-fmt-size-opt:hover {
+  border-color: var(--accent);
 }
 .notes-insert-wrap {
   position: relative;
@@ -1987,6 +2073,13 @@ th.num {
   white-space: pre;
   overflow: auto;
   color: var(--text);
+  cursor: text;
+}
+.notes-lines-empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+  white-space: pre;
 }
 .notes-results {
   width: 88px;

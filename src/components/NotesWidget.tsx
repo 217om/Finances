@@ -4,6 +4,15 @@ import { evalNote, formatResult, cardSlug, type CardGetter } from '../lib/notesC
 import { loadCards, type Card } from '../lib/cards';
 import { loadCardCategoryTotals, sumCategory, type CardCategoryData } from '../lib/cardTotals';
 import { RANGE_PRESETS, resolvePreset, type RangePreset } from '../lib/dateRanges';
+import {
+  isRichBody,
+  plainTextToHtml,
+  extractPlainText,
+  getCaretOffset,
+  setCaretOffset,
+  setSelectionRange,
+  wrapSelectionStyle,
+} from '../lib/richText';
 
 const SAVE_DEBOUNCE_MS = 400;
 const POSITION_KEY = 'cashflow.notesPosition';
@@ -13,6 +22,24 @@ const PAD_TOP = 10;
 const PAD_LEFT = 8;
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 260;
+
+// A handful of colors lifted straight from the app's existing category
+// palette, so note text stays legible and on-theme in both light and dark
+// mode without needing separate tuning.
+const TEXT_COLORS: { label: string; value: string }[] = [
+  { label: 'Default', value: 'inherit' },
+  { label: 'Red', value: '#C1584B' },
+  { label: 'Green', value: '#7C9473' },
+  { label: 'Blue', value: '#6F8FA0' },
+  { label: 'Amber', value: '#C9A227' },
+  { label: 'Purple', value: '#9B7FAE' },
+];
+
+const TEXT_SIZES: { label: string; title: string; value: string }[] = [
+  { label: 'S', title: 'Small text', value: '11px' },
+  { label: 'M', title: 'Normal text', value: 'inherit' },
+  { label: 'L', title: 'Large text', value: '16px' },
+];
 
 interface Position {
   x: number;
@@ -147,12 +174,13 @@ function computeAutocomplete(
 
 /**
  * A floating notepad available on every page, independent of which card is
- * active. Supports multiple notes, drag-to-move and drag-to-resize, and a
- * small inline calculator: lines like "rent = 500" save a variable, later
- * lines like "total = rent + food" can use it, and "card1.get(\"Dining\")"
- * pulls a category total straight from a card. The "Insert value" picker
- * builds that expression for you (with a time range) so you never have to
- * type the syntax by hand — notes stay ordinary free text otherwise.
+ * active. Supports multiple notes, drag-to-move and drag-to-resize, basic
+ * text formatting (bold/color/size), and a small inline calculator: lines
+ * like "rent = 500" save a variable, later lines like "total = rent + food"
+ * can use it, and "card1.get(\"Dining\")" pulls a category total straight
+ * from a card. The "Insert value" picker builds that expression for you (with
+ * a time range) so you never have to type the syntax by hand — notes stay
+ * ordinary free text otherwise.
  */
 export default function NotesWidget() {
   const [open, setOpen] = useState(false);
@@ -160,6 +188,7 @@ export default function NotesWidget() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [bodyDraft, setBodyDraft] = useState('');
+  const [isEmpty, setIsEmpty] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   // null = not yet moved/resized, so the panel opens at its default spot and
@@ -175,6 +204,8 @@ export default function NotesWidget() {
   const [insertPreset, setInsertPreset] = useState<RangePreset>('all');
   const [insertFrom, setInsertFrom] = useState('');
   const [insertTo, setInsertTo] = useState('');
+  const [colorOpen, setColorOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -186,7 +217,7 @@ export default function NotesWidget() {
   cardEntriesRef.current = cardEntries;
   const caretRef = useRef(0);
   const resultsRef = useRef<HTMLDivElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -205,14 +236,28 @@ export default function NotesWidget() {
         await saveNote(first).catch(() => {});
         setNotes([first]);
         setActiveId(first.id);
-        setBodyDraft('');
       } else {
         setNotes(all);
         setActiveId(all[0].id);
-        setBodyDraft(all[0].body);
       }
     })();
   }, [open, loaded]);
+
+  // The contentEditable's rendered HTML is the source of truth for
+  // formatting; React never re-renders its children while the user is
+  // editing (that would fight the browser's own cursor position), so it's
+  // synced imperatively here whenever the active note changes.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const note = notesRef.current.find((n) => n.id === activeId);
+    const body = note?.body ?? '';
+    el.innerHTML = isRichBody(body) ? body : plainTextToHtml(body);
+    const plain = extractPlainText(el);
+    setBodyDraft(plain);
+    setIsEmpty(plain.length === 0);
+    setAutocomplete(null);
+  }, [activeId, open]);
 
   // Refresh the card-lookup snapshot every time the panel opens, so
   // card1.get("Dining") reflects reasonably current numbers.
@@ -241,62 +286,82 @@ export default function NotesWidget() {
 
   function flushSave() {
     const id = activeIdRef.current;
-    if (!id) return;
-    const body = bodyDraftRef.current;
+    const el = editorRef.current;
+    if (!id || !el) return;
+    const html = el.innerHTML;
     const current = notesRef.current.find((n) => n.id === id);
-    if (!current || current.body === body) return;
-    const updated: Note = { ...current, body, updatedAt: Date.now() };
+    if (!current || current.body === html) return;
+    const updated: Note = { ...current, body: html, updatedAt: Date.now() };
     setNotes((prev) => prev.map((n) => (n.id === id ? updated : n)));
     void saveNote(updated);
   }
 
-  function handleBodyChange(value: string) {
-    setBodyDraft(value);
+  function scheduleSave() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(flushSave, SAVE_DEBOUNCE_MS);
   }
 
-  function updateAutocomplete(el: HTMLTextAreaElement) {
+  function updateAutocomplete(caret: number, plain: string) {
     if (charWidthRef.current === null) charWidthRef.current = measureCharWidth();
-    caretRef.current = el.selectionStart;
+    caretRef.current = caret;
     const slugs = cardEntriesRef.current.map((e) => e.slug);
     const dataBySlug = new Map(cardEntriesRef.current.map((e) => [e.slug, e.data]));
-    const ctx = computeAutocomplete(el.value, el.selectionStart, slugs, dataBySlug);
+    const ctx = computeAutocomplete(plain, caret, slugs, dataBySlug);
     setAutocomplete(ctx ? { ...ctx, selected: 0 } : null);
   }
 
+  /** Re-syncs React state from the live DOM after any edit (typed, pasted,
+   *  or programmatically inserted) and re-checks autocomplete. */
+  function handleEditorInput() {
+    const el = editorRef.current;
+    if (!el) return;
+    const plain = extractPlainText(el);
+    setBodyDraft(plain);
+    setIsEmpty(plain.length === 0);
+    scheduleSave();
+    updateAutocomplete(getCaretOffset(el), plain);
+  }
+
   function acceptAutocomplete(option: AcOption) {
-    setAutocomplete((ac) => {
-      if (!ac) return null;
-      const value = bodyDraftRef.current;
-      const next = value.slice(0, ac.start) + option.insertText + value.slice(ac.end);
-      const newCaret = ac.start + option.insertText.length;
-      handleBodyChange(next);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(newCaret, newCaret);
-        updateAutocomplete(el);
-      });
-      return null;
+    const el = editorRef.current;
+    const ac = autocomplete;
+    if (!el || !ac) return;
+    el.focus();
+    setSelectionRange(el, ac.start, ac.end);
+    document.execCommand('insertText', false, option.insertText);
+    setAutocomplete(null);
+    requestAnimationFrame(() => {
+      handleEditorInput();
     });
   }
 
-  function handleTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (!autocomplete) return;
-    if (e.key === 'ArrowDown') {
+  function handleEditorKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (autocomplete) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected + 1) % ac.options.length });
+        return;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected - 1 + ac.options.length) % ac.options.length });
+        return;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptAutocomplete(autocomplete.options[autocomplete.selected]);
+        return;
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setAutocomplete(null);
+        return;
+      }
+    }
+    // Normalize Enter to a single <br> — left to the browser, different
+    // engines insert <div>/<p> wrappers instead, which would desync the
+    // plain-text line count from the per-line results column.
+    if (e.key === 'Enter') {
       e.preventDefault();
-      setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected + 1) % ac.options.length });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setAutocomplete((ac) => ac && { ...ac, selected: (ac.selected - 1 + ac.options.length) % ac.options.length });
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      acceptAutocomplete(autocomplete.options[autocomplete.selected]);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setAutocomplete(null);
+      document.execCommand('insertLineBreak');
+      requestAnimationFrame(() => handleEditorInput());
     }
   }
 
@@ -304,10 +369,7 @@ export default function NotesWidget() {
     if (id === activeId) return;
     flushSave();
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    const note = notesRef.current.find((n) => n.id === id);
     setActiveId(id);
-    setBodyDraft(note?.body ?? '');
-    setAutocomplete(null);
   }
 
   function addNote() {
@@ -316,8 +378,6 @@ export default function NotesWidget() {
     void saveNote(n);
     setNotes((prev) => [n, ...prev]);
     setActiveId(n.id);
-    setBodyDraft('');
-    setAutocomplete(null);
   }
 
   function removeNote(id: string) {
@@ -328,8 +388,6 @@ export default function NotesWidget() {
       if (id === activeIdRef.current) {
         const fallback = next[0];
         setActiveId(fallback?.id ?? null);
-        setBodyDraft(fallback?.body ?? '');
-        setAutocomplete(null);
       }
       return next;
     });
@@ -422,6 +480,8 @@ export default function NotesWidget() {
         flushSave();
         setAutocomplete(null);
         setInsertOpen(false);
+        setColorOpen(false);
+        setSizeOpen(false);
       }
       return !prev;
     });
@@ -431,21 +491,19 @@ export default function NotesWidget() {
    *  isn't already at the start of an empty line (so two inserts in a row,
    *  or an insert after typed text, never get glued onto the same line). */
   function insertAtCaret(text: string) {
-    const value = bodyDraftRef.current;
-    const pos = Math.min(caretRef.current, value.length);
-    const lineStart = value.lastIndexOf('\n', pos - 1) + 1;
-    const linePrefix = value.slice(lineStart, pos);
-    const insertion = linePrefix.trim().length > 0 ? `\n${text}` : text;
-    const next = value.slice(0, pos) + insertion + value.slice(pos);
-    const newCaret = pos + insertion.length;
-    handleBodyChange(next);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(newCaret, newCaret);
-      caretRef.current = newCaret;
-    });
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const plain = extractPlainText(el);
+    const pos = Math.min(caretRef.current, plain.length);
+    const lineStart = plain.lastIndexOf('\n', pos - 1) + 1;
+    const linePrefix = plain.slice(lineStart, pos);
+    setCaretOffset(el, pos);
+    if (linePrefix.trim().length > 0) {
+      document.execCommand('insertLineBreak');
+    }
+    document.execCommand('insertText', false, text);
+    requestAnimationFrame(() => handleEditorInput());
   }
 
   function handleInsertValue() {
@@ -460,6 +518,32 @@ export default function NotesWidget() {
     setInsertOpen(false);
   }
 
+  function applyBold() {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    document.execCommand('bold');
+    handleEditorInput();
+  }
+
+  function applyColor(value: string) {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    wrapSelectionStyle(el, `color: ${value}`);
+    setColorOpen(false);
+    handleEditorInput();
+  }
+
+  function applySize(value: string) {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    wrapSelectionStyle(el, `font-size: ${value}`);
+    setSizeOpen(false);
+    handleEditorInput();
+  }
+
   const activeNote = notes.find((n) => n.id === activeId) ?? null;
   const lines = bodyDraft.split('\n');
   const cardGetter: CardGetter = (slug, category, from, to) => {
@@ -471,14 +555,15 @@ export default function NotesWidget() {
   const results = evalNote(bodyDraft, cardGetter);
 
   const acStyle = (() => {
-    if (!autocomplete || !textareaRef.current) return undefined;
-    const el = textareaRef.current;
+    if (!autocomplete || !editorRef.current) return undefined;
     const charWidth = charWidthRef.current ?? 8;
-    const before = el.value.slice(0, autocomplete.start);
+    const before = bodyDraft.slice(0, autocomplete.start);
     const lineIdx = before.split('\n').length - 1;
     const col = before.slice(before.lastIndexOf('\n') + 1).length;
-    const top = PAD_TOP + lineIdx * LINE_HEIGHT - el.scrollTop + LINE_HEIGHT;
-    const left = Math.max(4, Math.min(PAD_LEFT + col * charWidth - el.scrollLeft, el.clientWidth - 160));
+    const scrollTop = editorRef.current.scrollTop;
+    const scrollLeft = editorRef.current.scrollLeft;
+    const top = PAD_TOP + lineIdx * LINE_HEIGHT - scrollTop + LINE_HEIGHT;
+    const left = Math.max(4, Math.min(PAD_LEFT + col * charWidth - scrollLeft, editorRef.current.clientWidth - 160));
     return { left, top };
   })();
 
@@ -566,10 +651,90 @@ export default function NotesWidget() {
           {activeNote ? (
             <>
               <div className="notes-toolbar">
+                <div className="notes-fmt-group">
+                  <button
+                    type="button"
+                    className="notes-fmt-btn notes-fmt-bold"
+                    title="Bold (Ctrl+B)"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={applyBold}
+                  >
+                    B
+                  </button>
+
+                  <div className="notes-fmt-wrap">
+                    <button
+                      type="button"
+                      className="notes-fmt-btn"
+                      title="Text color"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setColorOpen((v) => !v);
+                        setSizeOpen(false);
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                        <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                        <path d="M8 2a6 6 0 0 1 0 12 3 3 0 0 1 0-6 2 2 0 0 0 0-4Z" fill="currentColor" />
+                      </svg>
+                    </button>
+                    {colorOpen && (
+                      <div className="notes-fmt-pop notes-fmt-pop-color">
+                        {TEXT_COLORS.map((c) => (
+                          <button
+                            key={c.label}
+                            type="button"
+                            className="notes-swatch"
+                            title={c.label}
+                            style={{ background: c.value === 'inherit' ? 'var(--text)' : c.value }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => applyColor(c.value)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="notes-fmt-wrap">
+                    <button
+                      type="button"
+                      className="notes-fmt-btn notes-fmt-size-btn"
+                      title="Text size"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSizeOpen((v) => !v);
+                        setColorOpen(false);
+                      }}
+                    >
+                      A▾
+                    </button>
+                    {sizeOpen && (
+                      <div className="notes-fmt-pop notes-fmt-pop-size">
+                        {TEXT_SIZES.map((s) => (
+                          <button
+                            key={s.label}
+                            type="button"
+                            className="notes-fmt-size-opt"
+                            title={s.title}
+                            style={{ fontSize: s.value === 'inherit' ? '13px' : s.value }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => applySize(s.value)}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="notes-toolbar-sep" />
+
                 <div className="notes-insert-wrap">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm"
+                    className="notes-fmt-btn notes-insert-btn"
+                    title="Insert a number from a card"
                     onClick={() => setInsertOpen((v) => !v)}
                   >
                     + Insert value
@@ -655,23 +820,33 @@ export default function NotesWidget() {
               </div>
 
               <div className="notes-editor">
-                <textarea
-                  ref={textareaRef}
-                  className="notes-lines"
-                  value={bodyDraft}
+                <div
+                  ref={editorRef}
+                  className={`notes-lines ${isEmpty ? 'notes-lines-empty' : ''}`}
+                  contentEditable
+                  suppressContentEditableWarning
                   spellCheck={false}
-                  placeholder={'Write anything. Try:\nrent = 500\ntotal = rent + food\n\nOr click "+ Insert value" above to pull a number from a card.'}
-                  onChange={(e) => {
-                    handleBodyChange(e.target.value);
-                    updateAutocomplete(e.target);
-                  }}
-                  onKeyDown={handleTextareaKeyDown}
+                  data-placeholder={
+                    'Write anything. Try:\nrent = 500\ntotal = rent + food\n\nOr click "+ Insert value" above to pull a number from a card.'
+                  }
+                  onInput={handleEditorInput}
+                  onKeyDown={handleEditorKeyDown}
                   onKeyUp={(e) => {
-                    if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
-                      updateAutocomplete(e.currentTarget);
+                    if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key) && editorRef.current) {
+                      updateAutocomplete(getCaretOffset(editorRef.current), extractPlainText(editorRef.current));
                     }
                   }}
-                  onClick={(e) => updateAutocomplete(e.currentTarget)}
+                  onClick={() => {
+                    if (editorRef.current) {
+                      updateAutocomplete(getCaretOffset(editorRef.current), extractPlainText(editorRef.current));
+                    }
+                  }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData('text/plain');
+                    document.execCommand('insertText', false, text);
+                    requestAnimationFrame(() => handleEditorInput());
+                  }}
                   onBlur={() => setAutocomplete(null)}
                   onScroll={(e) => {
                     if (resultsRef.current) resultsRef.current.scrollTop = e.currentTarget.scrollTop;
@@ -708,7 +883,7 @@ export default function NotesWidget() {
               </div>
               <p className="muted notes-hint">
                 Write anything — “rent = 500” saves a number you can reuse, and “+ Insert value” pulls a number
-                straight from a card without typing any code.
+                straight from a card without typing any code. Select text to bold, color, or resize it.
               </p>
             </>
           ) : (
