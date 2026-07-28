@@ -5,6 +5,7 @@ interface Props {
   onExportJSON: () => void;
   onExportCSV: () => void;
   onClearAll: () => void;
+  onClearTransactionsOnly: () => void;
   onExportFullBackup: () => void;
   onRestoreFullBackup: (file: File) => void;
 }
@@ -15,6 +16,7 @@ export default function DataMenu({
   onExportJSON,
   onExportCSV,
   onClearAll,
+  onClearTransactionsOnly,
   onExportFullBackup,
   onRestoreFullBackup,
 }: Props) {
@@ -63,6 +65,14 @@ export default function DataMenu({
                 Export transactions (CSV)
               </button>
               <div className="menu-sep" />
+              <button
+                type="button"
+                role="menuitem"
+                className="menu-danger"
+                onClick={pick(onClearTransactionsOnly)}
+              >
+                Clear transactions only…
+              </button>
               <button type="button" role="menuitem" className="menu-danger" onClick={pick(onClearAll)}>
                 Clear all data…
               </button>

@@ -194,6 +194,18 @@ export async function clearAll(dbName: string): Promise<void> {
   ]);
 }
 
+/**
+ * Remove only the transactions, keeping every rule/override/keyword/
+ * sub-category built up so far — a clean slate for re-importing statements
+ * without losing the categorization work already done. Manual per-
+ * transaction overrides are left in place too: since transaction ids are
+ * content hashes, re-importing the same statement later reactivates them.
+ */
+export async function clearTransactionsOnly(dbName: string): Promise<void> {
+  const db = await getDB(dbName);
+  await db.clear('transactions');
+}
+
 // --- Category rules & overrides ----------------------------------------------
 
 export async function getRules(dbName: string): Promise<CategoryRule[]> {

@@ -14,6 +14,7 @@ import { inspectFile, normalize } from './lib/parse';
 import {
   addTransactions,
   clearAll,
+  clearTransactionsOnly,
   clearCategorization,
   deleteCardDatabase,
   deleteKeywordRule,
@@ -751,6 +752,21 @@ export default function App() {
     setToast('All data cleared for this card.');
   }, [dbName, activeCardId]);
 
+  const handleClearTransactionsOnly = useCallback(async () => {
+    if (
+      !confirm(
+        'Remove all transactions from this card? Category rules, keyword rules, sub-categories, ' +
+          'custom categories, and the hidden-category filter are all kept — this just clears the ' +
+          'statements themselves.',
+      )
+    ) {
+      return;
+    }
+    await clearTransactionsOnly(dbName);
+    setTransactions([]);
+    setToast('Transactions cleared — categories and rules were kept.');
+  }, [dbName]);
+
   // --- Card management ---------------------------------------------------
 
   const handleSwitchCard = useCallback(
@@ -890,6 +906,7 @@ export default function App() {
         onMonthStartChange={handleMonthStartChange}
         hasData={hasData}
         onClearAll={handleClearAll}
+        onClearTransactionsOnly={handleClearTransactionsOnly}
         onExportJSON={handleExportJSON}
         onExportCSV={handleExportCSV}
         onExportFullBackup={handleExportFullBackup}

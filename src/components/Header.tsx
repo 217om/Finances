@@ -10,6 +10,7 @@ interface Props {
   onMonthStartChange: (day: number) => void;
   hasData: boolean;
   onClearAll: () => void;
+  onClearTransactionsOnly: () => void;
   onExportJSON: () => void;
   onExportCSV: () => void;
   onExportFullBackup: () => void;
@@ -32,6 +33,7 @@ export default function Header({
   onMonthStartChange,
   hasData,
   onClearAll,
+  onClearTransactionsOnly,
   onExportJSON,
   onExportCSV,
   onExportFullBackup,
@@ -95,6 +97,7 @@ export default function Header({
             onExportJSON={onExportJSON}
             onExportCSV={onExportCSV}
             onClearAll={onClearAll}
+            onClearTransactionsOnly={onClearTransactionsOnly}
             onExportFullBackup={onExportFullBackup}
             onRestoreFullBackup={onRestoreFullBackup}
           />
