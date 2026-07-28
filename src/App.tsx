@@ -31,11 +31,9 @@ import {
   saveOverride,
   saveSubOverride,
   saveSubOverrides,
-  saveSubRule,
   saveSubRules,
   deleteSubOverride,
   deleteSubOverrides,
-  deleteSubRule,
 } from './lib/db';
 import {
   type Card,
@@ -497,25 +495,6 @@ export default function App() {
       });
     },
     [activeCardId],
-  );
-
-  const handleAddSubRule = useCallback(
-    (parent: string, keyword: string, subName: string) => {
-      const kw = keyword.toLowerCase();
-      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
-      saveSubRule(dbName, rule);
-      setSubRules((prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
-      setToast(`Sub-category saved · ${parent} → ${subName}`);
-    },
-    [dbName],
-  );
-
-  const handleDeleteSubRule = useCallback(
-    (id: string) => {
-      deleteSubRule(dbName, id);
-      setSubRules((prev) => prev.filter((r) => r.id !== id));
-    },
-    [dbName],
   );
 
   const handleSetSubCategory = useCallback(
@@ -987,9 +966,6 @@ export default function App() {
                   transactions={transactions}
                   categoryOf={categoryOf}
                   sub={subResolver}
-                  subRules={subRules}
-                  onAddSubRule={handleAddSubRule}
-                  onDeleteSubRule={handleDeleteSubRule}
                   onBulkSetSubCategory={handleBulkSetSubCategory}
                   categoryFilter={categoryFilter}
                   onToggleCategoryFilter={handleToggleCategoryFilter}

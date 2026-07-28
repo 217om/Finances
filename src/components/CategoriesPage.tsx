@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import type { SubRule, Transaction } from '../types';
+import type { Transaction } from '../types';
 import { categoryColor, signatureOf } from '../lib/categorize';
-import { UNSORTED, suggestSubGroups, type SubResolver } from '../lib/subcategory';
+import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import {
   isCategoryExcluded,
   isExcluded,
@@ -16,9 +16,6 @@ interface Props {
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   sub: SubResolver;
-  subRules: SubRule[];
-  onAddSubRule: (parent: string, keyword: string, subName: string) => void;
-  onDeleteSubRule: (id: string) => void;
   onBulkSetSubCategory: (ids: string[], parent: string, subName: string) => void;
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
@@ -36,9 +33,6 @@ export default function CategoriesPage({
   transactions,
   categoryOf,
   sub,
-  subRules,
-  onAddSubRule,
-  onDeleteSubRule,
   onBulkSetSubCategory,
   categoryFilter,
   onToggleCategoryFilter,
@@ -59,9 +53,8 @@ export default function CategoriesPage({
   // The chart/treemap respects the visibility filter — both a fully-excluded
   // category AND an excluded sub-category within an otherwise-visible one
   // (e.g. hiding just "Transfers → Savings" shrinks the Transfers tile by that
-  // amount without hiding all of Transfers). The management tools below
-  // (sub-category manager, transaction lists) always see everything so hidden
-  // categories/subs remain fully editable.
+  // amount without hiding all of Transfers). The transaction lists below
+  // always see everything so hidden categories/subs remain fully editable.
   const visibleExpenses = useMemo(
     () => expenses.filter((x) => !isExcluded(categoryFilter, x.cat, sub.subOf(x.t, x.cat))),
     [expenses, categoryFilter, sub],
@@ -73,12 +66,6 @@ export default function CategoriesPage({
   // Clicking the selected category's breadcrumb a second time (i.e. clicking
   // the category again) shows every transaction in it, not just one sub-group.
   const [viewAll, setViewAll] = useState(false);
-
-  const categoriesPresent = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const x of expenses) totals.set(x.cat, (totals.get(x.cat) ?? 0) + -x.t.amount);
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
-  }, [expenses]);
 
   const rootCells = useMemo<TreemapCell[]>(() => {
     const totals = new Map<string, number>();
@@ -154,12 +141,6 @@ export default function CategoriesPage({
       setViewAll(false);
       setLeaf((cur) => (cur === name ? null : name));
     }
-  };
-
-  const selectCategory = (c: string) => {
-    setCategory(c);
-    setLeaf(null);
-    setViewAll(false);
   };
 
   return (
@@ -268,16 +249,6 @@ export default function CategoriesPage({
         categoryFilter={categoryFilter}
         onToggleCategoryFilter={onToggleCategoryFilter}
         onToggleSubFilter={onToggleSubFilter}
-      />
-
-      <SubcategoryManager
-        categoriesPresent={categoriesPresent}
-        expenses={expenses}
-        sub={sub}
-        subRules={subRules}
-        onAddSubRule={onAddSubRule}
-        onDeleteSubRule={onDeleteSubRule}
-        onFocusCategory={selectCategory}
       />
     </div>
   );
@@ -459,159 +430,6 @@ function CategoryFilterPanel({
             })}
           </div>
         </>
-      )}
-    </section>
-  );
-}
-
-// --- Sub-category manager -----------------------------------------------------
-
-function SubcategoryManager({
-  categoriesPresent,
-  expenses,
-  sub,
-  subRules,
-  onAddSubRule,
-  onDeleteSubRule,
-  onFocusCategory,
-}: {
-  categoriesPresent: string[];
-  expenses: Tagged[];
-  sub: SubResolver;
-  subRules: SubRule[];
-  onAddSubRule: (parent: string, keyword: string, subName: string) => void;
-  onDeleteSubRule: (id: string) => void;
-  onFocusCategory: (c: string) => void;
-}) {
-  const [parent, setParent] = useState('');
-  const active = parent || categoriesPresent[0] || '';
-
-  const inParent = useMemo(
-    () => expenses.filter((x) => x.cat === active).map((x) => x.t),
-    [expenses, active],
-  );
-  const unsorted = useMemo(
-    () => inParent.filter((t) => sub.subOf(t, active) === UNSORTED),
-    [inParent, active, sub],
-  );
-  const suggestions = useMemo(() => suggestSubGroups(unsorted), [unsorted]);
-  const parentRules = useMemo(
-    () => subRules.filter((r) => r.parent === active).sort((a, b) => b.createdAt - a.createdAt),
-    [subRules, active],
-  );
-
-  const [names, setNames] = useState<Record<string, string>>({});
-
-  const countFor = (keyword: string) =>
-    inParent.filter((t) => t.description.toLowerCase().includes(keyword)).length;
-
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <div>
-          <h2>Split a category into sub-categories</h2>
-          <p className="muted">
-            For look-alike buckets like Transfers — name the groups the app finds. Rules apply to
-            future imports too; untagged transactions stay “Unsorted”.
-          </p>
-        </div>
-        <label className="picker">
-          <span className="picker-label">Category</span>
-          <select
-            value={active}
-            onChange={(e) => {
-              setParent(e.target.value);
-              setNames({});
-            }}
-          >
-            {categoriesPresent.map((c) => (
-              <option key={c} value={c}>
-                {c}
-                {sub.splitParents.has(c) ? ' ✓' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="sub-stats muted">
-        {inParent.length} transactions · {inParent.length - unsorted.length} sorted ·{' '}
-        {unsorted.length} unsorted
-        {sub.splitParents.has(active) && (
-          <button type="button" className="linklike" onClick={() => onFocusCategory(active)}>
-            view in map
-          </button>
-        )}
-      </div>
-
-      {parentRules.length > 0 && (
-        <div className="sub-rules">
-          <h3>Sub-categories</h3>
-          {parentRules.map((r) => (
-            <div key={r.id} className="sub-rule">
-              <span className="catdot" style={{ background: categoryColor(`${active}/${r.sub}`) }} />
-              <span className="sub-rule-name">{r.sub}</span>
-              <span className="muted">
-                “{r.keyword}” · {countFor(r.keyword)} match
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => onDeleteSubRule(r.id)}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <h3 className="sub-suggest-head">Suggested groups</h3>
-      {suggestions.length === 0 ? (
-        <p className="muted">
-          {unsorted.length === 0
-            ? 'Everything here is sorted. 🎉'
-            : 'No repeating groups found in the unsorted transactions.'}
-        </p>
-      ) : (
-        <div className="sub-suggests">
-          {suggestions.map((s) => (
-            <div key={s.keyword} className="sub-suggest">
-              <div className="sub-suggest-info">
-                <strong>“{s.keyword}”</strong>
-                <span className="muted">
-                  {s.count} tx · {money(s.total)}
-                </span>
-                <span className="sub-samples">{s.samples.join(' · ')}</span>
-              </div>
-              <div className="sub-suggest-add">
-                <input
-                  value={names[s.keyword] ?? ''}
-                  placeholder="Name this group…"
-                  maxLength={28}
-                  onChange={(e) => setNames((n) => ({ ...n, [s.keyword]: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (names[s.keyword] ?? '').trim()) {
-                      onAddSubRule(active, s.keyword, names[s.keyword].trim());
-                      setNames((n) => ({ ...n, [s.keyword]: '' }));
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={!(names[s.keyword] ?? '').trim()}
-                  onClick={() => {
-                    onAddSubRule(active, s.keyword, names[s.keyword].trim());
-                    setNames((n) => ({ ...n, [s.keyword]: '' }));
-                  }}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
       )}
     </section>
   );

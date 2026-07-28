@@ -287,22 +287,12 @@ export async function getSubOverrides(dbName: string): Promise<SubOverride[]> {
   return db.getAll('subOverrides');
 }
 
-export async function saveSubRule(dbName: string, rule: SubRule): Promise<void> {
-  const db = await getDB(dbName);
-  await db.put('subRules', rule);
-}
-
 /** Bulk upsert sub-rules in one transaction (e.g. copying from another card). */
 export async function saveSubRules(dbName: string, rules: SubRule[]): Promise<void> {
   const db = await getDB(dbName);
   const tx = db.transaction('subRules', 'readwrite');
   for (const r of rules) void tx.store.put(r);
   await tx.done;
-}
-
-export async function deleteSubRule(dbName: string, id: string): Promise<void> {
-  const db = await getDB(dbName);
-  await db.delete('subRules', id);
 }
 
 export async function saveSubOverride(dbName: string, override: SubOverride): Promise<void> {
