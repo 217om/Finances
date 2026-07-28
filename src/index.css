@@ -540,6 +540,55 @@ main.container {
   color: var(--muted);
   font-size: 13px;
 }
+.tx-note {
+  width: 40px;
+}
+.tx-note-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.tx-note-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.tx-note-btn-filled {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.tx-note-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+.tx-note-edit textarea {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+}
+.tx-note-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.tx-note-remove {
+  color: var(--neg);
+  margin-right: auto;
+}
 .tx-empty {
   text-align: center;
   padding: 28px 0;

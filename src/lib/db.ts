@@ -206,6 +206,23 @@ export async function clearTransactionsOnly(dbName: string): Promise<void> {
   await db.clear('transactions');
 }
 
+/** Set (or, given an empty/whitespace-only string, clear) one transaction's
+ *  note. A no-op if the transaction isn't found — e.g. a stale id from a
+ *  view that hasn't refreshed yet. */
+export async function setTransactionNote(dbName: string, id: string, note: string): Promise<void> {
+  const db = await getDB(dbName);
+  const existing = await db.get('transactions', id);
+  if (!existing) return;
+  const trimmed = note.trim();
+  const updated: Transaction = { ...existing };
+  if (trimmed) {
+    updated.note = trimmed;
+  } else {
+    delete updated.note;
+  }
+  await db.put('transactions', updated);
+}
+
 // --- Category rules & overrides ----------------------------------------------
 
 export async function getRules(dbName: string): Promise<CategoryRule[]> {

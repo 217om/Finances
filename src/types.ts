@@ -16,6 +16,9 @@ export interface Transaction {
   source: string;
   /** Epoch millis of when this row was imported. */
   importedAt: number;
+  /** Optional free-text note the user attached to this one transaction. Empty
+   *  by default; absent entirely rather than an empty string when unset. */
+  note?: string;
 }
 
 /** How a raw spreadsheet maps onto our normalized fields. */

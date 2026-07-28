@@ -35,6 +35,7 @@ import {
   saveSubRules,
   deleteSubOverride,
   deleteSubOverrides,
+  setTransactionNote,
 } from './lib/db';
 import {
   type Card,
@@ -576,6 +577,40 @@ export default function App() {
     [dbName],
   );
 
+  // A plain per-transaction note, with no categorization rules involved, so
+  // — unlike category/sub-category edits — it's editable from anywhere the
+  // transaction is shown, including the combined views. `cardId` says which
+  // card's own database actually owns this transaction, so this works
+  // equally whether it's the active card or one only visible via combine.
+  const applyNote = useCallback((t: Transaction, note: string): Transaction => {
+    const trimmed = note.trim();
+    if (trimmed) return { ...t, note: trimmed };
+    const { note: _drop, ...rest } = t;
+    return rest as Transaction;
+  }, []);
+
+  const handleSetTxNote = useCallback(
+    (cardId: string, id: string, note: string) => {
+      if (cardId === activeCardId) {
+        void setTransactionNote(dbName, id, note);
+        setTransactions((prev) => prev.map((t) => (t.id === id ? applyNote(t, note) : t)));
+        return;
+      }
+      const card = cardsRef.current.find((c) => c.id === cardId);
+      if (!card) return;
+      void setTransactionNote(card.dbName, id, note);
+      setOtherCardsData((prev) => {
+        const existing = prev[cardId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [cardId]: { ...existing, transactions: existing.transactions.map((t) => (t.id === id ? applyNote(t, note) : t)) },
+        };
+      });
+    },
+    [activeCardId, dbName, applyNote],
+  );
+
   const handleSetCategory = useCallback(
     (id: string, category: string) => {
       const o: CategoryOverride = { id, category };
@@ -1022,9 +1057,11 @@ export default function App() {
                   categoryOf={combinedAllData.categoryOf}
                   subOf={combinedAllData.subOf}
                   cardNameOf={combinedAllData.cardNameOf}
+                  cardIdOf={combinedAllData.cardIdOf}
                   categoryFilter={combinedCategoryFilter}
                   onToggleCategoryFilter={handleToggleCombinedCategoryFilter}
                   onToggleSubFilter={handleToggleCombinedSubFilter}
+                  onSetTxNote={handleSetTxNote}
                 />
               ) : (
                 <CategoriesPage
@@ -1032,6 +1069,7 @@ export default function App() {
                   categoryOf={categoryOf}
                   sub={subResolver}
                   onBulkSetSubCategory={handleBulkSetSubCategory}
+                  onSetTxNote={(id, note) => handleSetTxNote(activeCardId, id, note)}
                   categoryFilter={categoryFilter}
                   onToggleCategoryFilter={handleToggleCategoryFilter}
                   onToggleSubFilter={handleToggleSubFilter}
@@ -1039,7 +1077,7 @@ export default function App() {
               )
             ) : view === 'transactions' ? (
               combineEnabled ? (
-                <CombinedTransactionsPage rows={combinedRows} jump={txJump} />
+                <CombinedTransactionsPage rows={combinedRows} jump={txJump} onSetTxNote={handleSetTxNote} />
               ) : (
                 <TransactionsPage
                   transactions={transactions}
@@ -1053,6 +1091,7 @@ export default function App() {
                   onClearCategory={handleClearCategory}
                   onCreateCategory={handleCreateCategory}
                   onSetSubCategory={handleSetSubCategory}
+                  onSetTxNote={(id, note) => handleSetTxNote(activeCardId, id, note)}
                 />
               )
             ) : (

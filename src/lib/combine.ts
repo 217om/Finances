@@ -23,6 +23,9 @@ export interface CombinedData {
   categoryOf: (tx: Transaction) => string;
   subOf: (tx: Transaction, cat: string) => string;
   cardNameOf: (tx: Transaction) => string;
+  /** Which card a transaction actually belongs to — needed for anything that
+   *  writes back to a specific card's own database, like a per-transaction note. */
+  cardIdOf: (tx: Transaction) => string;
   /** True if the combined cards don't all use the same currency, so summed
    *  totals mix units and should be shown with a caveat. */
   mixedCurrency: boolean;
@@ -41,6 +44,7 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
   const categoryByTx = new Map<Transaction, string>();
   const subByTx = new Map<Transaction, string>();
   const cardNameByTx = new Map<Transaction, string>();
+  const cardIdByTx = new Map<Transaction, string>();
 
   for (const snap of snapshots) {
     for (const tx of snap.transactions) {
@@ -51,6 +55,7 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
       categoryByTx.set(tx, cat);
       subByTx.set(tx, sub);
       cardNameByTx.set(tx, snap.cardName);
+      cardIdByTx.set(tx, snap.cardId);
     }
   }
   txs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -62,6 +67,7 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
     categoryOf: (tx) => categoryByTx.get(tx) ?? 'Other',
     subOf: (tx) => subByTx.get(tx) ?? UNSORTED,
     cardNameOf: (tx) => cardNameByTx.get(tx) ?? '',
+    cardIdOf: (tx) => cardIdByTx.get(tx) ?? '',
     mixedCurrency: currencies.size > 1,
   };
 }
@@ -77,6 +83,7 @@ export function combineAllData(snapshots: CardSnapshot[]): CombinedData {
   const categoryByTx = new Map<Transaction, string>();
   const subByTx = new Map<Transaction, string>();
   const cardNameByTx = new Map<Transaction, string>();
+  const cardIdByTx = new Map<Transaction, string>();
 
   for (const snap of snapshots) {
     for (const tx of snap.transactions) {
@@ -86,6 +93,7 @@ export function combineAllData(snapshots: CardSnapshot[]): CombinedData {
       categoryByTx.set(tx, cat);
       subByTx.set(tx, sub);
       cardNameByTx.set(tx, snap.cardName);
+      cardIdByTx.set(tx, snap.cardId);
     }
   }
   txs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -97,6 +105,7 @@ export function combineAllData(snapshots: CardSnapshot[]): CombinedData {
     categoryOf: (tx) => categoryByTx.get(tx) ?? 'Other',
     subOf: (tx) => subByTx.get(tx) ?? UNSORTED,
     cardNameOf: (tx) => cardNameByTx.get(tx) ?? '',
+    cardIdOf: (tx) => cardIdByTx.get(tx) ?? '',
     mixedCurrency: currencies.size > 1,
   };
 }

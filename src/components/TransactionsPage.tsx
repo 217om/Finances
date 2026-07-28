@@ -5,6 +5,7 @@ import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
+import TxNoteCell from './TxNoteCell';
 
 export interface TransactionsJump {
   from: string;
@@ -28,6 +29,7 @@ interface Props {
   onClearCategory: (id: string) => void;
   onCreateCategory: (name: string) => void;
   onSetSubCategory: (id: string, parent: string, subName: string) => void;
+  onSetTxNote: (id: string, note: string) => void;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -50,6 +52,7 @@ export default function TransactionsPage({
   onClearCategory,
   onCreateCategory,
   onSetSubCategory,
+  onSetTxNote,
 }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -225,6 +228,7 @@ export default function TransactionsPage({
               <th>Description</th>
               <th>Category</th>
               <th className="num">Amount</th>
+              <th className="tx-note">Note</th>
             </tr>
           </thead>
           <tbody>
@@ -270,11 +274,14 @@ export default function TransactionsPage({
                   </div>
                 </td>
                 <td className={`num ${t.amount >= 0 ? 'pos' : 'neg'}`}>{money(t.amount)}</td>
+                <td className="tx-note">
+                  <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
+                </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted tx-empty">
+                <td colSpan={5} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

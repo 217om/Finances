@@ -4,24 +4,28 @@ import type { TransactionsJump } from './TransactionsPage';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { money } from '../lib/format';
+import TxNoteCell from './TxNoteCell';
 
 interface Props {
   rows: CombinedRow[];
   /** Set when arriving from a chart-click drill-down; pre-fills the date range. */
   jump?: TransactionsJump | null;
+  onSetTxNote: (cardId: string, id: string, note: string) => void;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
 const PAGE = 100;
 
 /**
- * Read-only merged view of every card's transactions together while
- * "Combine all cards" is selected. Never affected by any card's hidden-
- * category filter, matching the single-card Transactions tab's behavior.
- * Category edits require a specific card's rule set, so there's no editing
- * here — switch to a single card in the selector above to reclassify.
+ * Merged view of every card's transactions together while "Combine all
+ * cards" is selected. Never affected by any card's hidden-category filter,
+ * matching the single-card Transactions tab's behavior. Category edits
+ * require a specific card's rule set, so there's no editing here — switch to
+ * a single card in the selector above to reclassify. Notes are plain
+ * per-transaction text with no rules involved, so those stay editable —
+ * each one is saved straight to the transaction's own card.
  */
-export default function CombinedTransactionsPage({ rows, jump }: Props) {
+export default function CombinedTransactionsPage({ rows, jump, onSetTxNote }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [category, setCategory] = useState('all');
@@ -84,8 +88,8 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
   return (
     <div className="tx-page">
       <p className="muted combine-readonly-note">
-        Showing every card together, read-only. Switch to a single card in the selector above to
-        edit categories.
+        Showing every card together. Switch to a single card in the selector above to edit
+        categories — notes can be added right here.
       </p>
       <div className="tx-controls">
         <input
@@ -176,6 +180,7 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
               <th>Description</th>
               <th>Category</th>
               <th className="num">Amount</th>
+              <th className="tx-note">Note</th>
             </tr>
           </thead>
           <tbody>
@@ -194,11 +199,14 @@ export default function CombinedTransactionsPage({ rows, jump }: Props) {
                   {r.sub !== UNSORTED ? ` / ${r.sub}` : ''}
                 </td>
                 <td className={`num ${r.t.amount >= 0 ? 'pos' : 'neg'}`}>{money(r.t.amount)}</td>
+                <td className="tx-note">
+                  <TxNoteCell note={r.t.note} onSave={(note) => onSetTxNote(r.cardId, r.t.id, note)} />
+                </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted tx-empty">
+                <td colSpan={6} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

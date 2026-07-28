@@ -13,6 +13,7 @@ interface Props {
   categoryOf: (tx: Transaction) => string;
   sub: SubResolver;
   onBulkSetSubCategory: (ids: string[], parent: string, subName: string) => void;
+  onSetTxNote: (id: string, note: string) => void;
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
   onToggleSubFilter: (category: string, subName: string) => void;
@@ -25,6 +26,7 @@ export default function CategoriesPage({
   categoryOf,
   sub,
   onBulkSetSubCategory,
+  onSetTxNote,
   categoryFilter,
   onToggleCategoryFilter,
   onToggleSubFilter,
@@ -211,6 +213,7 @@ export default function CategoriesPage({
             sub={sub}
             showSubFilter={isSplit}
             onAssign={(ids, subName) => onBulkSetSubCategory(ids, category, subName)}
+            onSetTxNote={onSetTxNote}
           />
         )}
 
@@ -228,6 +231,7 @@ export default function CategoriesPage({
               sub={sub}
               showSubFilter={false}
               onAssign={(ids, subName) => onBulkSetSubCategory(ids, category, subName)}
+              onSetTxNote={onSetTxNote}
             />
           </div>
         )}

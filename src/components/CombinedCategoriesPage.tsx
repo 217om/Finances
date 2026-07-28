@@ -6,6 +6,7 @@ import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
 import CategoryFilterPanel, { type MiniSubResolver, type Tagged } from './CategoryFilterPanel';
+import TxNoteCell from './TxNoteCell';
 
 interface Props {
   /** Unfiltered by any card's own hidden-category filter (see combineAllData)
@@ -15,11 +16,13 @@ interface Props {
   categoryOf: (tx: Transaction) => string;
   subOf: (tx: Transaction, cat: string) => string;
   cardNameOf: (tx: Transaction) => string;
+  cardIdOf: (tx: Transaction) => string;
   /** Independent from any single card's own filter — hiding a category here
    *  only affects this combined view, and doesn't touch any card's settings. */
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
   onToggleSubFilter: (category: string, subName: string) => void;
+  onSetTxNote: (cardId: string, id: string, note: string) => void;
 }
 
 const MERCHANT_LIMIT = 12;
@@ -30,16 +33,19 @@ const MERCHANT_LIMIT = 12;
  * own hide/show filter — independent from any individual card's filter — so
  * the combined view can be explored on its own terms. Sub-category RULES
  * still require a specific card (there's no single card's rules to edit
- * here), so switch to a single card for those.
+ * here), so switch to a single card for those — but notes are plain
+ * per-transaction text with no rules involved, so those stay editable here.
  */
 export default function CombinedCategoriesPage({
   transactions,
   categoryOf,
   subOf,
   cardNameOf,
+  cardIdOf,
   categoryFilter,
   onToggleCategoryFilter,
   onToggleSubFilter,
+  onSetTxNote,
 }: Props) {
   const expenses = useMemo<Tagged[]>(
     () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
@@ -256,11 +262,12 @@ export default function CombinedCategoriesPage({
                     <th>Card</th>
                     <th>Description</th>
                     <th className="num">Amount</th>
+                    <th className="tx-note">Note</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rowsToShow.map((t) => (
-                    <tr key={`${cardNameOf(t)}:${t.id}`}>
+                    <tr key={`${cardIdOf(t)}:${t.id}`}>
                       <td className="tx-date">{t.date}</td>
                       <td>
                         <span className="tx-card-badge">{cardNameOf(t)}</span>
@@ -269,11 +276,14 @@ export default function CombinedCategoriesPage({
                         {t.description || '—'}
                       </td>
                       <td className="num neg">{money(t.amount)}</td>
+                      <td className="tx-note">
+                        <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(cardIdOf(t), t.id, note)} />
+                      </td>
                     </tr>
                   ))}
                   {rowsToShow.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="muted tx-empty">
+                      <td colSpan={5} className="muted tx-empty">
                         No transactions match these filters.
                       </td>
                     </tr>

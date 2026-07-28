@@ -4,12 +4,14 @@ import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
+import TxNoteCell from './TxNoteCell';
 
 interface Props {
   parent: string;
   rows: Transaction[]; // all expense transactions already scoped to this parent (or a sub of it)
   sub: SubResolver;
   onAssign: (ids: string[], subName: string) => void;
+  onSetTxNote: (id: string, note: string) => void;
   /** Show the sub-category filter dropdown (only meaningful at the whole-category level). */
   showSubFilter?: boolean;
 }
@@ -23,7 +25,7 @@ type Sort = 'date' | 'amount';
  * and for a single sub-group's transactions, so search + reassignment work
  * everywhere you can see a list of transactions.
  */
-export default function CategoryTxList({ parent, rows, sub, onAssign, showSubFilter }: Props) {
+export default function CategoryTxList({ parent, rows, sub, onAssign, onSetTxNote, showSubFilter }: Props) {
   const [search, setSearch] = useState('');
   const [subFilter, setSubFilter] = useState('all');
   const [sort, setSort] = useState<Sort>('date');
@@ -170,6 +172,7 @@ export default function CategoryTxList({ parent, rows, sub, onAssign, showSubFil
               <th>Description</th>
               <th>Sub-category</th>
               <th className="num">Amount</th>
+              <th className="tx-note">Note</th>
             </tr>
           </thead>
           <tbody>
@@ -191,11 +194,14 @@ export default function CategoryTxList({ parent, rows, sub, onAssign, showSubFil
                   <span className={s === UNSORTED ? 'muted' : ''}>{s}</span>
                 </td>
                 <td className="num neg">{money(t.amount)}</td>
+                <td className="tx-note">
+                  <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
+                </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted tx-empty">
+                <td colSpan={6} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

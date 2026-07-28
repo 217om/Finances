@@ -128,7 +128,7 @@ function csvCell(value: string | number): string {
 
 /** Download the full history as a clean, spreadsheet-friendly CSV. */
 export function downloadCSV(txs: Transaction[]): void {
-  const header = ['Date', 'Description', 'Amount', 'Type', 'Category', 'Source'];
+  const header = ['Date', 'Description', 'Amount', 'Type', 'Category', 'Source', 'Note'];
   const lines = [header.join(',')];
   for (const t of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
     lines.push(
@@ -139,6 +139,7 @@ export function downloadCSV(txs: Transaction[]): void {
         csvCell(t.amount >= 0 ? 'Income' : 'Expense'),
         csvCell(categorize(t.description, t.amount)),
         csvCell(t.source),
+        csvCell(t.note ?? ''),
       ].join(','),
     );
   }
