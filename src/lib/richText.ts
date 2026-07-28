@@ -135,16 +135,37 @@ export function setSelectionRange(root: HTMLElement, start: number, end: number)
   sel.addRange(range);
 }
 
+/** Removes `prop` from the inline style of `node` and all its descendants,
+ *  so a style set further out (e.g. a newly-applied wrapper) isn't silently
+ *  overridden by an old, more deeply nested value — CSS always lets the
+ *  innermost explicit value win otherwise. */
+function clearStyleProperty(node: Node, prop: string): void {
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const el = node as HTMLElement;
+    if (el.style.getPropertyValue(prop)) {
+      el.style.removeProperty(prop);
+      if (!el.getAttribute('style')) el.removeAttribute('style');
+    }
+  }
+  node.childNodes.forEach((child) => clearStyleProperty(child, prop));
+}
+
 /** Wraps the current (non-collapsed) selection inside `root` with a
- *  `<span style="...">`, leaving the wrapped text selected afterward. */
+ *  `<span style="...">`, leaving the wrapped text selected afterward. Any
+ *  pre-existing value for the same CSS property inside the selection is
+ *  cleared first, so re-applying (e.g. picking a smaller size, or going
+ *  back to the default color) actually takes visible effect. */
 export function wrapSelectionStyle(root: HTMLElement, styleCss: string): void {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
   const range = sel.getRangeAt(0);
   if (!root.contains(range.commonAncestorContainer)) return;
+  const prop = styleCss.slice(0, styleCss.indexOf(':')).trim();
   const span = document.createElement('span');
   span.setAttribute('style', styleCss);
-  span.appendChild(range.extractContents());
+  const contents = range.extractContents();
+  clearStyleProperty(contents, prop);
+  span.appendChild(contents);
   range.insertNode(span);
   const next = document.createRange();
   next.selectNodeContents(span);

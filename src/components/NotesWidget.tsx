@@ -15,6 +15,8 @@ import {
 } from '../lib/richText';
 
 const SAVE_DEBOUNCE_MS = 400;
+const HISTORY_LIMIT = 100;
+const TYPING_BURST_MS = 600;
 const POSITION_KEY = 'cashflow.notesPosition';
 const SIZE_KEY = 'cashflow.notesSize';
 const LINE_HEIGHT = 20;
@@ -26,8 +28,12 @@ const MIN_HEIGHT = 260;
 // A handful of colors lifted straight from the app's existing category
 // palette, so note text stays legible and on-theme in both light and dark
 // mode without needing separate tuning.
+// Concrete values, not `inherit` — a formatting span can end up nested
+// inside a leftover (now-empty) ancestor span from an earlier color/size
+// change, and `inherit` would pick up THAT ancestor's value instead of
+// resetting to the editor's real base style.
 const TEXT_COLORS: { label: string; value: string }[] = [
-  { label: 'Default', value: 'inherit' },
+  { label: 'Default', value: 'var(--text)' },
   { label: 'Red', value: '#C1584B' },
   { label: 'Green', value: '#7C9473' },
   { label: 'Blue', value: '#6F8FA0' },
@@ -37,7 +43,7 @@ const TEXT_COLORS: { label: string; value: string }[] = [
 
 const TEXT_SIZES: { label: string; title: string; value: string }[] = [
   { label: 'S', title: 'Small text', value: '11px' },
-  { label: 'M', title: 'Normal text', value: 'inherit' },
+  { label: 'M', title: 'Normal text', value: '13px' },
   { label: 'L', title: 'Large text', value: '16px' },
 ];
 
@@ -63,6 +69,10 @@ interface CardEntry {
   card: Card;
   slug: string;
   data: CardCategoryData;
+}
+interface NoteHistory {
+  undo: string[];
+  redo: string[];
 }
 
 function loadPosition(): Position | null {
@@ -223,6 +233,13 @@ export default function NotesWidget() {
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
   const charWidthRef = useRef<number | null>(null);
+  // Undo/redo history, kept per note (so switching notes doesn't cross-wire
+  // history) and independent of the browser's own undo manager — that one
+  // never sees the manual DOM surgery bold/color/size use, so Ctrl+Z would
+  // silently ignore formatting changes otherwise.
+  const historyRef = useRef<Map<string, NoteHistory>>(new Map());
+  const typingBurstRef = useRef(false);
+  const burstTimerRef = useRef<number | null>(null);
 
   // Load notes lazily — only once the widget is actually opened, so it never
   // adds to the app's critical startup path.
@@ -257,6 +274,8 @@ export default function NotesWidget() {
     setBodyDraft(plain);
     setIsEmpty(plain.length === 0);
     setAutocomplete(null);
+    typingBurstRef.current = false;
+    if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
   }, [activeId, open]);
 
   // Refresh the card-lookup snapshot every time the panel opens, so
@@ -301,6 +320,60 @@ export default function NotesWidget() {
     saveTimer.current = window.setTimeout(flushSave, SAVE_DEBOUNCE_MS);
   }
 
+  function getHistory(id: string): NoteHistory {
+    let h = historyRef.current.get(id);
+    if (!h) {
+      h = { undo: [], redo: [] };
+      historyRef.current.set(id, h);
+    }
+    return h;
+  }
+
+  /** Snapshots the editor's current (pre-change) HTML onto the undo stack.
+   *  Call this immediately before any formatting or content mutation. */
+  function pushHistory() {
+    const id = activeIdRef.current;
+    const el = editorRef.current;
+    if (!id || !el) return;
+    const hist = getHistory(id);
+    const html = el.innerHTML;
+    if (hist.undo[hist.undo.length - 1] === html) return;
+    hist.undo.push(html);
+    if (hist.undo.length > HISTORY_LIMIT) hist.undo.shift();
+    hist.redo = [];
+  }
+
+  function restoreHtml(html: string) {
+    const el = editorRef.current;
+    if (!el) return;
+    el.innerHTML = html;
+    setCaretOffset(el, extractPlainText(el).length);
+    typingBurstRef.current = false;
+    handleEditorInput();
+  }
+
+  function performUndo() {
+    const id = activeIdRef.current;
+    const el = editorRef.current;
+    if (!id || !el) return;
+    const hist = getHistory(id);
+    const prev = hist.undo.pop();
+    if (prev === undefined) return;
+    hist.redo.push(el.innerHTML);
+    restoreHtml(prev);
+  }
+
+  function performRedo() {
+    const id = activeIdRef.current;
+    const el = editorRef.current;
+    if (!id || !el) return;
+    const hist = getHistory(id);
+    const next = hist.redo.pop();
+    if (next === undefined) return;
+    hist.undo.push(el.innerHTML);
+    restoreHtml(next);
+  }
+
   function updateAutocomplete(caret: number, plain: string) {
     if (charWidthRef.current === null) charWidthRef.current = measureCharWidth();
     caretRef.current = caret;
@@ -326,16 +399,30 @@ export default function NotesWidget() {
     const el = editorRef.current;
     const ac = autocomplete;
     if (!el || !ac) return;
+    pushHistory();
     el.focus();
     setSelectionRange(el, ac.start, ac.end);
     document.execCommand('insertText', false, option.insertText);
     setAutocomplete(null);
+    typingBurstRef.current = false;
     requestAnimationFrame(() => {
       handleEditorInput();
     });
   }
 
   function handleEditorKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) performRedo();
+      else performUndo();
+      return;
+    }
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      performRedo();
+      return;
+    }
     if (autocomplete) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -357,11 +444,28 @@ export default function NotesWidget() {
     }
     // Normalize Enter to a single <br> — left to the browser, different
     // engines insert <div>/<p> wrappers instead, which would desync the
-    // plain-text line count from the per-line results column.
+    // plain-text line count from the per-line results column. Its own
+    // undo step, separate from the typing burst before or after it.
     if (e.key === 'Enter') {
       e.preventDefault();
+      pushHistory();
+      typingBurstRef.current = false;
       document.execCommand('insertLineBreak');
       requestAnimationFrame(() => handleEditorInput());
+      return;
+    }
+    // Coalesce ordinary typing into bursts so one undo removes a whole
+    // recently-typed run, not a single character — matching how undo felt
+    // in the plain <textarea> this editor replaced.
+    if (!mod && !e.altKey && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) {
+      if (!typingBurstRef.current) {
+        pushHistory();
+        typingBurstRef.current = true;
+      }
+      if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
+      burstTimerRef.current = window.setTimeout(() => {
+        typingBurstRef.current = false;
+      }, TYPING_BURST_MS);
     }
   }
 
@@ -383,6 +487,7 @@ export default function NotesWidget() {
   function removeNote(id: string) {
     if (!confirm('Delete this note? This cannot be undone.')) return;
     void deleteNote(id);
+    historyRef.current.delete(id);
     setNotes((prev) => {
       const next = prev.filter((n) => n.id !== id);
       if (id === activeIdRef.current) {
@@ -493,6 +598,8 @@ export default function NotesWidget() {
   function insertAtCaret(text: string) {
     const el = editorRef.current;
     if (!el) return;
+    pushHistory();
+    typingBurstRef.current = false;
     el.focus();
     const plain = extractPlainText(el);
     const pos = Math.min(caretRef.current, plain.length);
@@ -521,6 +628,8 @@ export default function NotesWidget() {
   function applyBold() {
     const el = editorRef.current;
     if (!el) return;
+    pushHistory();
+    typingBurstRef.current = false;
     el.focus();
     document.execCommand('bold');
     handleEditorInput();
@@ -529,6 +638,8 @@ export default function NotesWidget() {
   function applyColor(value: string) {
     const el = editorRef.current;
     if (!el) return;
+    pushHistory();
+    typingBurstRef.current = false;
     el.focus();
     wrapSelectionStyle(el, `color: ${value}`);
     setColorOpen(false);
@@ -538,6 +649,8 @@ export default function NotesWidget() {
   function applySize(value: string) {
     const el = editorRef.current;
     if (!el) return;
+    pushHistory();
+    typingBurstRef.current = false;
     el.focus();
     wrapSelectionStyle(el, `font-size: ${value}`);
     setSizeOpen(false);
@@ -686,7 +799,7 @@ export default function NotesWidget() {
                             type="button"
                             className="notes-swatch"
                             title={c.label}
-                            style={{ background: c.value === 'inherit' ? 'var(--text)' : c.value }}
+                            style={{ background: c.value }}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => applyColor(c.value)}
                           />
@@ -716,7 +829,7 @@ export default function NotesWidget() {
                             type="button"
                             className="notes-fmt-size-opt"
                             title={s.title}
-                            style={{ fontSize: s.value === 'inherit' ? '13px' : s.value }}
+                            style={{ fontSize: s.value }}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => applySize(s.value)}
                           >
@@ -843,6 +956,8 @@ export default function NotesWidget() {
                   }}
                   onPaste={(e) => {
                     e.preventDefault();
+                    pushHistory();
+                    typingBurstRef.current = false;
                     const text = e.clipboardData.getData('text/plain');
                     document.execCommand('insertText', false, text);
                     requestAnimationFrame(() => handleEditorInput());
