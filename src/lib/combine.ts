@@ -66,6 +66,41 @@ export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
   };
 }
 
+/**
+ * Every transaction from every card, with none of any card's own filter
+ * applied — feeds the Categories tab's combined map, which has its own
+ * independent hide/show filter and so needs the full, unfiltered picture to
+ * apply it to (a category one card hides should still be reachable here).
+ */
+export function combineAllData(snapshots: CardSnapshot[]): CombinedData {
+  const txs: Transaction[] = [];
+  const categoryByTx = new Map<Transaction, string>();
+  const subByTx = new Map<Transaction, string>();
+  const cardNameByTx = new Map<Transaction, string>();
+
+  for (const snap of snapshots) {
+    for (const tx of snap.transactions) {
+      const cat = snap.categoryOf(tx);
+      const sub = snap.subOf(tx, cat);
+      txs.push(tx);
+      categoryByTx.set(tx, cat);
+      subByTx.set(tx, sub);
+      cardNameByTx.set(tx, snap.cardName);
+    }
+  }
+  txs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const currencies = new Set(snapshots.map((s) => s.currency));
+
+  return {
+    transactions: txs,
+    categoryOf: (tx) => categoryByTx.get(tx) ?? 'Other',
+    subOf: (tx) => subByTx.get(tx) ?? UNSORTED,
+    cardNameOf: (tx) => cardNameByTx.get(tx) ?? '',
+    mixedCurrency: currencies.size > 1,
+  };
+}
+
 export interface CombinedRow {
   t: Transaction;
   cardId: string;

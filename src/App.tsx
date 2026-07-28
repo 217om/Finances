@@ -54,7 +54,7 @@ import {
   COMBINE_CARD_ID,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
-import { combineSnapshots, combineAllRows, type CardSnapshot } from './lib/combine';
+import { combineSnapshots, combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
@@ -428,6 +428,14 @@ export default function App() {
 
   const combinedData = useMemo(
     () => (combineEnabled ? combineSnapshots(combinedSnapshots) : null),
+    [combineEnabled, combinedSnapshots],
+  );
+
+  // Unfiltered by any card's own hidden-category filter — the combined
+  // Categories tab has its own independent filter and should have the full
+  // picture available to apply it to (see combineAllData).
+  const combinedAllData = useMemo(
+    () => (combineEnabled ? combineAllData(combinedSnapshots) : null),
     [combineEnabled, combinedSnapshots],
   );
 
@@ -1008,12 +1016,12 @@ export default function App() {
             {!hasData ? (
               <EmptyState />
             ) : view === 'categories' ? (
-              combineEnabled && combinedData ? (
+              combineEnabled && combinedAllData ? (
                 <CombinedCategoriesPage
-                  transactions={combinedData.transactions}
-                  categoryOf={combinedData.categoryOf}
-                  subOf={combinedData.subOf}
-                  cardNameOf={combinedData.cardNameOf}
+                  transactions={combinedAllData.transactions}
+                  categoryOf={combinedAllData.categoryOf}
+                  subOf={combinedAllData.subOf}
+                  cardNameOf={combinedAllData.cardNameOf}
                   categoryFilter={combinedCategoryFilter}
                   onToggleCategoryFilter={handleToggleCombinedCategoryFilter}
                   onToggleSubFilter={handleToggleCombinedSubFilter}

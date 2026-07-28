@@ -8,9 +8,9 @@ import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
 import CategoryFilterPanel, { type MiniSubResolver, type Tagged } from './CategoryFilterPanel';
 
 interface Props {
-  /** Already category-filtered per each card's own hidden-category settings
-   *  (see combineSnapshots) — a category hidden on one card is excluded here
-   *  while a card that doesn't hide it still counts and shows its share. */
+  /** Unfiltered by any card's own hidden-category filter (see combineAllData)
+   *  — this view has its own independent filter below and should have the
+   *  full picture available regardless of what any individual card hides. */
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   subOf: (tx: Transaction, cat: string) => string;
@@ -174,9 +174,9 @@ export default function CombinedCategoriesPage({
           <div>
             <h2>Category map</h2>
             <p className="muted">
-              Sized by spending across every combined card (all time; each card's own hidden
-              categories are excluded). Click a category to break it down; click it again to list
-              every transaction in it.
+              Sized by spending across every combined card (all time, regardless of what any card
+              hides on its own). Click a category to break it down; click it again to list every
+              transaction in it.
             </p>
           </div>
         </div>
