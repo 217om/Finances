@@ -48,6 +48,7 @@ import {
   MONTH_START_KEY,
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
+  COMBINED_CATEGORY_FILTER_KEY,
   THEME_KEY,
   COMBINE_KEY,
   COMBINE_CARD_ID,
@@ -229,6 +230,15 @@ export default function App() {
   const [subRules, setSubRules] = useState<SubRule[]>([]);
   const [subOverrides, setSubOverrides] = useState<SubOverride[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilterState>(defaultCategoryFilter());
+  // Global (not per-card) — see handleToggleCombinedCategoryFilter above.
+  const [combinedCategoryFilter, setCombinedCategoryFilter] = useState<CategoryFilterState>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COMBINED_CATEGORY_FILTER_KEY) ?? 'null');
+      return isValidCategoryFilter(saved) ? saved : defaultCategoryFilter();
+    } catch {
+      return defaultCategoryFilter();
+    }
+  });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
@@ -497,6 +507,33 @@ export default function App() {
     },
     [activeCardId],
   );
+
+  // A separate hide/show filter for the combined Categories view — deliberately
+  // not scoped to any card, so switching cards or toggling combine mode never
+  // affects it, and hiding something here never touches a card's own filter.
+  const handleToggleCombinedCategoryFilter = useCallback((category: string) => {
+    setCombinedCategoryFilter((prev) => {
+      const next = toggleCategory(prev, category);
+      try {
+        localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleCombinedSubFilter = useCallback((category: string, subName: string) => {
+    setCombinedCategoryFilter((prev) => {
+      const next = toggleSub(prev, category, subName);
+      try {
+        localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const handleSetSubCategory = useCallback(
     (id: string, parent: string, subName: string) => {
@@ -977,6 +1014,9 @@ export default function App() {
                   categoryOf={combinedData.categoryOf}
                   subOf={combinedData.subOf}
                   cardNameOf={combinedData.cardNameOf}
+                  categoryFilter={combinedCategoryFilter}
+                  onToggleCategoryFilter={handleToggleCombinedCategoryFilter}
+                  onToggleSubFilter={handleToggleCombinedSubFilter}
                 />
               ) : (
                 <CategoriesPage

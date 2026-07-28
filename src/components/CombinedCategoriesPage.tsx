@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import { categoryColor, signatureOf } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
+import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
+import CategoryFilterPanel, { type MiniSubResolver, type Tagged } from './CategoryFilterPanel';
 
 interface Props {
   /** Already category-filtered per each card's own hidden-category settings
@@ -13,24 +15,38 @@ interface Props {
   categoryOf: (tx: Transaction) => string;
   subOf: (tx: Transaction, cat: string) => string;
   cardNameOf: (tx: Transaction) => string;
-}
-
-interface Tagged {
-  t: Transaction;
-  cat: string;
+  /** Independent from any single card's own filter — hiding a category here
+   *  only affects this combined view, and doesn't touch any card's settings. */
+  categoryFilter: CategoryFilterState;
+  onToggleCategoryFilter: (category: string) => void;
+  onToggleSubFilter: (category: string, subName: string) => void;
 }
 
 const MERCHANT_LIMIT = 12;
 
 /**
- * Read-only Category map across every combined card. Mirrors CategoriesPage's
- * treemap/drill-down, but fed by merged data instead of a single card, and
- * with no editing (hiding categories, sub-category rules) — those require a
- * specific card's own filter/rules, so switch to a single card for those.
+ * Category map across every combined card. Mirrors CategoriesPage's
+ * treemap/drill-down, fed by merged data instead of a single card, plus its
+ * own hide/show filter — independent from any individual card's filter — so
+ * the combined view can be explored on its own terms. Sub-category RULES
+ * still require a specific card (there's no single card's rules to edit
+ * here), so switch to a single card for those.
  */
-export default function CombinedCategoriesPage({ transactions, categoryOf, subOf, cardNameOf }: Props) {
+export default function CombinedCategoriesPage({
+  transactions,
+  categoryOf,
+  subOf,
+  cardNameOf,
+  categoryFilter,
+  onToggleCategoryFilter,
+  onToggleSubFilter,
+}: Props) {
   const expenses = useMemo<Tagged[]>(
     () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
+  const incomeTagged = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
     [transactions, categoryOf],
   );
 
@@ -38,17 +54,31 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
   const [leaf, setLeaf] = useState<string | null>(null);
   const [viewAll, setViewAll] = useState(false);
 
+  // The chart/treemap respects this view's own visibility filter; the
+  // transaction lists below always see everything, same as CategoriesPage.
+  const visibleExpenses = useMemo(
+    () => expenses.filter((x) => !isExcluded(categoryFilter, x.cat, subOf(x.t, x.cat))),
+    [expenses, categoryFilter, subOf],
+  );
+
   const rootCells = useMemo<TreemapCell[]>(() => {
     const totals = new Map<string, number>();
-    for (const x of expenses) totals.set(x.cat, (totals.get(x.cat) ?? 0) + -x.t.amount);
+    for (const x of visibleExpenses) totals.set(x.cat, (totals.get(x.cat) ?? 0) + -x.t.amount);
     return [...totals.entries()]
       .map(([name, value]) => ({ name, value, color: categoryColor(name) }))
       .sort((a, b) => b.value - a.value);
-  }, [expenses]);
+  }, [visibleExpenses]);
 
   const inCategory = useMemo(
     () => (category ? expenses.filter((x) => x.cat === category) : []),
     [expenses, category],
+  );
+  const visibleInCategory = useMemo(
+    () =>
+      category
+        ? inCategory.filter((x) => !isExcluded(categoryFilter, category, subOf(x.t, category)))
+        : [],
+    [inCategory, category, categoryFilter, subOf],
   );
 
   // Whether any merged transaction in this category actually has a real
@@ -63,7 +93,7 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
     if (!category) return [];
     const totals = new Map<string, number>();
     if (isSplit) {
-      for (const x of inCategory) {
+      for (const x of visibleInCategory) {
         const s = subOf(x.t, category);
         totals.set(s, (totals.get(s) ?? 0) + -x.t.amount);
       }
@@ -75,7 +105,7 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
         }))
         .sort((a, b) => b.value - a.value);
     }
-    for (const x of inCategory) {
+    for (const x of visibleInCategory) {
       const key = signatureOf(x.t.description);
       totals.set(key, (totals.get(key) ?? 0) + -x.t.amount);
     }
@@ -89,7 +119,7 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
     }));
     if (rest > 0) cells.push({ name: 'Other', value: rest, color: '#7A6F63' });
     return cells;
-  }, [category, inCategory, isSplit, subOf]);
+  }, [category, visibleInCategory, isSplit, subOf]);
 
   const leafTxs = useMemo(() => {
     if (!category || !leaf) return [];
@@ -113,11 +143,31 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
 
   const rowsToShow = viewAll ? inCategory.map((x) => x.t) : leafTxs;
 
+  // A minimal stand-in for a card's own SubResolver — there's no single
+  // card's rules to build a real one from here, but the filter panel only
+  // needs to resolve a sub-category and list the ones actually present.
+  const combinedSub = useMemo<MiniSubResolver>(
+    () => ({
+      subOf,
+      subsForParent: (parent) => {
+        const names = new Set<string>();
+        for (const x of expenses) {
+          if (x.cat !== parent) continue;
+          const s = subOf(x.t, parent);
+          if (s !== UNSORTED) names.add(s);
+        }
+        return [...names].sort();
+      },
+    }),
+    [subOf, expenses],
+  );
+
   return (
     <div className="cats-page">
       <p className="muted combine-readonly-note">
-        Showing every card's spending together, read-only. Switch to a single card in the selector
-        above to manage hidden categories or sub-categories.
+        Showing every card's spending together. Hiding a category or sub-category below only
+        affects this combined view — it won't touch any individual card's own filter. Switch to a
+        single card in the selector above to manage sub-category rules.
       </p>
       <section className="panel">
         <div className="panel-head">
@@ -234,6 +284,15 @@ export default function CombinedCategoriesPage({ transactions, categoryOf, subOf
           </div>
         )}
       </section>
+
+      <CategoryFilterPanel
+        expenses={expenses}
+        incomeTagged={incomeTagged}
+        sub={combinedSub}
+        categoryFilter={categoryFilter}
+        onToggleCategoryFilter={onToggleCategoryFilter}
+        onToggleSubFilter={onToggleSubFilter}
+      />
     </div>
   );
 }
