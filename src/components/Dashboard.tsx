@@ -6,7 +6,6 @@ import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
 import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
-import Insights from './Insights';
 
 interface Props {
   overview: Overview;
@@ -328,16 +327,6 @@ export default function Dashboard({
           </div>
         </div>
         <CategoryBreakdown months={monthBuckets} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Insights</h2>
-            <p className="muted">Recurring items and alerts, from your full history.</p>
-          </div>
-        </div>
-        <Insights overview={overview} />
       </section>
     </div>
   );

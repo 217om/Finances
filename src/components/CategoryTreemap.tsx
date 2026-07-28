@@ -53,10 +53,12 @@ function TreeCell(props: any) {
   const isSelected = selected && name === selected;
   return (
     <g
+      className="treemap-cell"
       onClick={() => onSelect && onSelect(name)}
       style={{ cursor: onSelect ? 'pointer' : 'default' }}
     >
       <rect
+        className="treemap-cell-rect"
         x={x}
         y={y}
         width={width}
