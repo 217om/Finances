@@ -1,11 +1,12 @@
 // Combines transactions from multiple cards into one view — for the
-// dashboard charts, and for the read-only merged Transactions list. Each card
-// keeps categorizing its own transactions with its own rules and its own
-// exclusion filter; combining just merges the results afterwards, it never
-// mixes rules or filters between cards.
+// dashboard charts, the Categories tab's map, and the read-only merged
+// Transactions list. Each card keeps categorizing its own transactions with
+// its own rules; combining just merges the results afterwards, it never
+// mixes rules between cards. Visibility (what's hidden) is handled entirely
+// by the combined view's own independent filter, in App.tsx — not by any
+// individual card's filter, so nothing here needs to know about those.
 
 import type { Transaction } from '../types';
-import { isExcluded, type CategoryFilterState } from './categoryFilter';
 import { UNSORTED } from './subcategory';
 
 export interface CardSnapshot {
@@ -15,7 +16,6 @@ export interface CardSnapshot {
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   subOf: (tx: Transaction, cat: string) => string;
-  filter: CategoryFilterState;
 }
 
 export interface CombinedData {
@@ -32,54 +32,15 @@ export interface CombinedData {
 }
 
 /**
- * Every transaction, category-filtered per its own card — feeds the
- * dashboard's KPIs/chart/breakdown/insights AND the Categories tab's map,
- * so a category hidden on one card is excluded from combined totals while a
- * card that doesn't hide it still counts and shows its own contribution.
- */
-export function combineSnapshots(snapshots: CardSnapshot[]): CombinedData {
-  const txs: Transaction[] = [];
-  // Keyed by object identity (not tx.id) so two different cards' transactions
-  // that happen to hash to the same id never overwrite each other's category.
-  const categoryByTx = new Map<Transaction, string>();
-  const subByTx = new Map<Transaction, string>();
-  const cardNameByTx = new Map<Transaction, string>();
-  const cardIdByTx = new Map<Transaction, string>();
-
-  for (const snap of snapshots) {
-    for (const tx of snap.transactions) {
-      const cat = snap.categoryOf(tx);
-      const sub = snap.subOf(tx, cat);
-      if (isExcluded(snap.filter, cat, sub)) continue;
-      txs.push(tx);
-      categoryByTx.set(tx, cat);
-      subByTx.set(tx, sub);
-      cardNameByTx.set(tx, snap.cardName);
-      cardIdByTx.set(tx, snap.cardId);
-    }
-  }
-  txs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-
-  const currencies = new Set(snapshots.map((s) => s.currency));
-
-  return {
-    transactions: txs,
-    categoryOf: (tx) => categoryByTx.get(tx) ?? 'Other',
-    subOf: (tx) => subByTx.get(tx) ?? UNSORTED,
-    cardNameOf: (tx) => cardNameByTx.get(tx) ?? '',
-    cardIdOf: (tx) => cardIdByTx.get(tx) ?? '',
-    mixedCurrency: currencies.size > 1,
-  };
-}
-
-/**
  * Every transaction from every card, with none of any card's own filter
- * applied — feeds the Categories tab's combined map, which has its own
- * independent hide/show filter and so needs the full, unfiltered picture to
- * apply it to (a category one card hides should still be reachable here).
+ * applied — feeds both the Dashboard and the Categories tab's map while
+ * combined, which share one independent hide/show filter (see App.tsx), so
+ * a category any individual card hides on its own is still reachable here.
  */
 export function combineAllData(snapshots: CardSnapshot[]): CombinedData {
   const txs: Transaction[] = [];
+  // Keyed by object identity (not tx.id) so two different cards' transactions
+  // that happen to hash to the same id never overwrite each other's category.
   const categoryByTx = new Map<Transaction, string>();
   const subByTx = new Map<Transaction, string>();
   const cardNameByTx = new Map<Transaction, string>();
@@ -116,18 +77,14 @@ export interface CombinedRow {
   cardName: string;
   category: string;
   sub: string;
-  /** True if this transaction's own card hides this category/sub — i.e. it's
-   *  excluded from the combined charts/KPIs (see combineSnapshots above). */
-  hidden: boolean;
 }
 
 /**
- * Every transaction from every card, tagged with whether its own card's
- * filter hides it. The general-purpose merged Transactions view ignores
- * that flag entirely (never affected by any card's hidden-category filter,
- * mirroring the single-card Transactions tab) — but a chart-click
- * drill-down applies it for that one visit, exactly like the single-card
- * tab does, so the list matches what the chart actually counted.
+ * Every transaction from every card. Feeds the merged Transactions view,
+ * which — like the single-card Transactions tab — is never affected by the
+ * combined view's own hidden-category filter, except for one visit's worth
+ * after a chart-click drill-down (see CombinedTransactionsPage, which
+ * applies that filter itself using the category/sub already resolved here).
  */
 export function combineAllRows(snapshots: CardSnapshot[]): CombinedRow[] {
   const rows: CombinedRow[] = [];
@@ -135,14 +92,7 @@ export function combineAllRows(snapshots: CardSnapshot[]): CombinedRow[] {
     for (const tx of snap.transactions) {
       const category = snap.categoryOf(tx);
       const sub = snap.subOf(tx, category);
-      rows.push({
-        t: tx,
-        cardId: snap.cardId,
-        cardName: snap.cardName,
-        category,
-        sub,
-        hidden: isExcluded(snap.filter, category, sub),
-      });
+      rows.push({ t: tx, cardId: snap.cardId, cardName: snap.cardName, category, sub });
     }
   }
   rows.sort((a, b) => (a.t.date < b.t.date ? 1 : a.t.date > b.t.date ? -1 : 0));

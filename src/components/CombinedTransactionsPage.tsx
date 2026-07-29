@@ -3,6 +3,7 @@ import type { CombinedRow } from '../lib/combine';
 import type { TransactionsJump } from './TransactionsPage';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
+import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import TxNoteCell from './TxNoteCell';
 
@@ -11,6 +12,10 @@ interface Props {
   /** Set when arriving from a chart-click drill-down; pre-fills the date range. */
   jump?: TransactionsJump | null;
   onSetTxNote: (cardId: string, id: string, note: string) => void;
+  /** The combined view's own independent filter (shared with the combined
+   *  Dashboard/Categories) — applied here only for one visit after a
+   *  chart-click drill-down, so the list matches what the chart counted. */
+  categoryFilter: CategoryFilterState;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -18,14 +23,14 @@ const PAGE = 100;
 
 /**
  * Merged view of every card's transactions together while "Combine all
- * cards" is selected. Never affected by any card's hidden-category filter,
- * matching the single-card Transactions tab's behavior. Category edits
- * require a specific card's rule set, so there's no editing here — switch to
- * a single card in the selector above to reclassify. Notes are plain
- * per-transaction text with no rules involved, so those stay editable —
- * each one is saved straight to the transaction's own card.
+ * cards" is selected. Never affected by the combined view's hidden-category
+ * filter, matching the single-card Transactions tab's behavior. Category
+ * edits require a specific card's rule set, so there's no editing here —
+ * switch to a single card in the selector above to reclassify. Notes are
+ * plain per-transaction text with no rules involved, so those stay
+ * editable — each one is saved straight to the transaction's own card.
  */
-export default function CombinedTransactionsPage({ rows, jump, onSetTxNote }: Props) {
+export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, categoryFilter }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [category, setCategory] = useState('all');
@@ -35,8 +40,9 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote }: Pr
   const [hiddenActive, setHiddenActive] = useState(Boolean(jump));
 
   // A fresh chart-click jump pre-fills the date range and (only this once)
-  // restricts to categories that aren't hidden on their own card — matching
-  // what the chart itself counted — same as the single-card Transactions tab.
+  // restricts to categories the combined view's own filter doesn't hide —
+  // matching what the chart itself counted — same as the single-card
+  // Transactions tab.
   useEffect(() => {
     if (!jump) return;
     setFromDate(jump.from);
@@ -72,10 +78,10 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote }: Pr
         if (fromDate && r.t.date < fromDate) return false;
         if (toDate && r.t.date > toDate) return false;
         if (needle && !r.t.description.toLowerCase().includes(needle)) return false;
-        if (hiddenActive && r.hidden) return false;
+        if (hiddenActive && isExcluded(categoryFilter, r.category, r.sub)) return false;
         return true;
       }),
-    [rows, typeFilter, category, fromDate, toDate, needle, hiddenActive],
+    [rows, typeFilter, category, fromDate, toDate, needle, hiddenActive, categoryFilter],
   );
 
   useEffect(() => {
@@ -158,7 +164,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote }: Pr
       {hiddenActive && (
         <div className="hidden-tray">
           <span className="hidden-tray-label">
-            Showing only categories that aren’t hidden on their own card.
+            Showing only categories that aren’t hidden by the combined view's filter.
           </span>
           <button type="button" className="linklike" onClick={() => setHiddenActive(false)}>
             Show all

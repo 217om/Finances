@@ -175,22 +175,13 @@ export default function Dashboard({
       <div className="dashboard">
         <section className="panel">
           <p className="muted">
-            {combineEnabled ? (
-              <>
-                Every transaction across your combined cards is currently hidden — each card applies
-                its own category filter here, so this can happen even if no single card looks fully
-                hidden on its own. Switch to a card in the selector above to review or adjust it.
-              </>
-            ) : (
-              <>
-                Every transaction on this card is currently hidden by your category filter, so there’s
-                nothing to show here.{' '}
-                {onManageHidden && (
-                  <button type="button" className="linklike" onClick={onManageHidden}>
-                    Manage hidden categories
-                  </button>
-                )}
-              </>
+            Every transaction {combineEnabled ? 'across your combined cards' : 'on this card'} is
+            currently hidden by {combineEnabled ? "this combined view's" : 'your'} category filter, so
+            there’s nothing to show here.{' '}
+            {onManageHidden && (
+              <button type="button" className="linklike" onClick={onManageHidden}>
+                Manage hidden categories
+              </button>
             )}
           </p>
         </section>
@@ -241,8 +232,7 @@ export default function Dashboard({
         {cycleNote && <p className="muted controls-note">{cycleNote}</p>}
         {combineEnabled && (
           <p className="muted controls-note">
-            Combining {combinedCardNames.join(', ')} into these charts. Each card's own hidden
-            categories are still excluded here.
+            Combining {combinedCardNames.join(', ')} into these charts.
             {mixedCurrency && ' These cards use different currencies — totals mix units.'}
           </p>
         )}
@@ -252,7 +242,7 @@ export default function Dashboard({
         <span>Overview</span>
         <span className="muted">All time</span>
       </div>
-      {!combineEnabled && hiddenCount > 0 && (
+      {hiddenCount > 0 && (
         <p className="muted hidden-note">
           Excluding {hiddenCount} hidden categor{hiddenCount === 1 ? 'y' : 'ies'}/sub-categories from
           all totals.

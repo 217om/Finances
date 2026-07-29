@@ -56,7 +56,7 @@ import {
   COMBINE_CARD_ID,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
-import { combineSnapshots, combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
+import { combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
 import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver } from './lib/categorize';
@@ -107,7 +107,6 @@ interface OtherCardData {
   subRules: SubRule[];
   subOverrides: SubOverride[];
   currency: string;
-  filter: CategoryFilterState;
 }
 
 export default function App() {
@@ -189,11 +188,8 @@ export default function App() {
             getSubOverrides(c.dbName).catch(() => [] as SubOverride[]),
           ]);
           let cur = 'OMR';
-          let filter = defaultCategoryFilter();
           try {
             cur = localStorage.getItem(scopedKey(CURRENCY_KEY, c.id)) || 'OMR';
-            const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, c.id)) ?? 'null');
-            if (isValidCategoryFilter(savedFilter)) filter = savedFilter;
           } catch {
             /* ignore */
           }
@@ -205,7 +201,6 @@ export default function App() {
             subRules: sr,
             subOverrides: so,
             currency: cur,
-            filter,
           };
           return [c.id, data] as const;
         }),
@@ -392,9 +387,10 @@ export default function App() {
     [visibleTransactions, monthStartDay, categoryOf],
   );
 
-  // When combining, every other card gets its own resolver/filter built from
-  // its own rules — a card's transactions are always categorized and
-  // filtered by that card's own rules, never the active card's.
+  // When combining, every other card gets its own resolver built from its
+  // own rules — a card's transactions are always categorized by that card's
+  // own rules, never the active card's. Visibility is a separate concern,
+  // handled entirely by the combined view's own independent filter.
   const combinedSnapshots = useMemo<CardSnapshot[]>(() => {
     if (!combineEnabled || !activeCard) return [];
     const activeSnap: CardSnapshot = {
@@ -404,7 +400,6 @@ export default function App() {
       transactions,
       categoryOf,
       subOf: subResolver.subOf,
-      filter: categoryFilter,
     };
     const others = cards
       .filter((c) => c.id !== activeCardId)
@@ -420,7 +415,6 @@ export default function App() {
           transactions: raw.transactions,
           categoryOf: makeResolver(rMap, oMap, raw.keywordRules),
           subOf: makeSubResolver(raw.subRules, raw.subOverrides).subOf,
-          filter: raw.filter,
         };
         return snap;
       })
@@ -434,27 +428,32 @@ export default function App() {
     transactions,
     categoryOf,
     subResolver,
-    categoryFilter,
     cards,
     otherCardsData,
   ]);
 
-  const combinedData = useMemo(
-    () => (combineEnabled ? combineSnapshots(combinedSnapshots) : null),
-    [combineEnabled, combinedSnapshots],
-  );
-
-  // Unfiltered by any card's own hidden-category filter — the combined
-  // Categories tab has its own independent filter and should have the full
-  // picture available to apply it to (see combineAllData).
+  // Unfiltered by any card's own hidden-category filter — every combined view
+  // (Dashboard and Categories alike) is driven by the combined view's own
+  // independent filter below, not by whatever any individual card hides.
   const combinedAllData = useMemo(
     () => (combineEnabled ? combineAllData(combinedSnapshots) : null),
     [combineEnabled, combinedSnapshots],
   );
 
+  const combinedDashboardTransactions = useMemo(() => {
+    if (!combineEnabled || !combinedAllData) return null;
+    const { categoryOf: catOf, subOf } = combinedAllData;
+    return combinedAllData.transactions.filter(
+      (tx) => !isExcluded(combinedCategoryFilter, catOf(tx), subOf(tx, catOf(tx))),
+    );
+  }, [combineEnabled, combinedAllData, combinedCategoryFilter]);
+
   const combinedOverview = useMemo(
-    () => (combinedData ? buildOverview(combinedData.transactions, monthStartDay, combinedData.categoryOf) : null),
-    [combinedData, monthStartDay],
+    () =>
+      combinedDashboardTransactions && combinedAllData
+        ? buildOverview(combinedDashboardTransactions, monthStartDay, combinedAllData.categoryOf)
+        : null,
+    [combinedDashboardTransactions, combinedAllData, monthStartDay],
   );
 
   // The read-only merged Transactions view — every card's transactions
@@ -465,8 +464,9 @@ export default function App() {
     [combineEnabled, combinedSnapshots],
   );
 
-  const dashboardTransactions = combineEnabled && combinedData ? combinedData.transactions : visibleTransactions;
-  const dashboardCategoryOf = combineEnabled && combinedData ? combinedData.categoryOf : categoryOf;
+  const dashboardTransactions =
+    combineEnabled && combinedDashboardTransactions ? combinedDashboardTransactions : visibleTransactions;
+  const dashboardCategoryOf = combineEnabled && combinedAllData ? combinedAllData.categoryOf : categoryOf;
   const dashboardOverview = combineEnabled && combinedOverview ? combinedOverview : overview;
 
   // Classification (the wizard's pending groups) is independent of the display
@@ -1157,7 +1157,12 @@ export default function App() {
               )
             ) : view === 'transactions' ? (
               combineEnabled ? (
-                <CombinedTransactionsPage rows={combinedRows} jump={txJump} onSetTxNote={handleSetTxNote} />
+                <CombinedTransactionsPage
+                  rows={combinedRows}
+                  jump={txJump}
+                  onSetTxNote={handleSetTxNote}
+                  categoryFilter={combinedCategoryFilter}
+                />
               ) : (
                 <TransactionsPage
                   transactions={transactions}
@@ -1184,12 +1189,12 @@ export default function App() {
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
                 onReset={hasCategorization ? handleResetCategorization : undefined}
                 onRefine={() => setRefineOpen(true)}
-                hiddenCount={excludedCount(categoryFilter)}
+                hiddenCount={excludedCount(combineEnabled ? combinedCategoryFilter : categoryFilter)}
                 onManageHidden={() => handleTabClick('categories')}
                 onDrillToTransactions={handleDrillToTransactions}
                 combineEnabled={combineEnabled}
                 combinedCardNames={combineEnabled ? combinedSnapshots.map((s) => s.cardName) : []}
-                mixedCurrency={combineEnabled ? combinedData?.mixedCurrency ?? false : false}
+                mixedCurrency={combineEnabled ? combinedAllData?.mixedCurrency ?? false : false}
               />
             )}
           </>
