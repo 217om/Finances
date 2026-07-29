@@ -2193,10 +2193,18 @@ th.num {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
+  transition: background 0.12s, border-color 0.12s;
 }
 .card-row-active {
   border-color: var(--accent);
-  background: rgba(235, 220, 196, 0.05);
+  background: var(--surface-2);
+}
+.card-row-switchable {
+  cursor: pointer;
+}
+.card-row-switchable:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
 }
 .card-name {
   font-weight: 600;

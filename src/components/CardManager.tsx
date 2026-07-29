@@ -80,47 +80,53 @@ export default function CardManager({
         </div>
 
         <div className="card-list">
-          {cards.map((c) => (
-            <div key={c.id} className={`card-row ${c.id === activeCardId ? 'card-row-active' : ''}`}>
-              {renamingId === c.id ? (
-                <input
-                  autoFocus
-                  className="card-rename-input"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') setRenamingId(null);
-                  }}
-                  onBlur={commitRename}
-                />
-              ) : (
-                <span className="card-name" title={c.name}>
-                  {c.name}
-                  {c.id === activeCardId && <span className="card-active-tag">current</span>}
-                </span>
-              )}
-              <div className="card-row-actions">
-                {c.id !== activeCardId && (
-                  <button type="button" className="btn btn-sm" onClick={() => onSwitch(c.id)}>
-                    Switch
-                  </button>
+          {cards.map((c) => {
+            const isActive = c.id === activeCardId;
+            return (
+              <div
+                key={c.id}
+                className={`card-row ${isActive ? 'card-row-active' : 'card-row-switchable'}`}
+                title={isActive ? undefined : `Switch to ${c.name}`}
+                onClick={() => {
+                  if (!isActive && renamingId !== c.id) onSwitch(c.id);
+                }}
+              >
+                {renamingId === c.id ? (
+                  <input
+                    autoFocus
+                    className="card-rename-input"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
+                    onBlur={commitRename}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span className="card-name" title={c.name}>
+                    {c.name}
+                    {isActive && <span className="card-active-tag">current</span>}
+                  </span>
                 )}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => startRename(c)}>
-                  Rename
-                </button>
-                {cards.length > 1 && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm btn-danger"
-                    onClick={() => onDelete(c.id)}
-                  >
-                    Delete
+                <div className="card-row-actions" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => startRename(c)}>
+                    Rename
                   </button>
-                )}
+                  {cards.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-danger"
+                      onClick={() => onDelete(c.id)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="card-add">
