@@ -176,23 +176,6 @@ body::before {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  border-radius: 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.theme-toggle:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
 .picker {
   display: inline-flex;
   align-items: center;
@@ -292,6 +275,15 @@ body::before {
 }
 .btn-ghost {
   background: transparent;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 /* ---------- Layout ---------- */
@@ -1320,6 +1312,28 @@ th.num {
 }
 .menu-danger {
   color: var(--neg) !important;
+}
+.menu-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 10px 2px;
+}
+.settings-pop {
+  min-width: 260px;
+}
+.settings-field {
+  width: 100%;
+  justify-content: space-between;
+  padding: 6px 10px;
+  box-sizing: border-box;
+}
+.settings-field select {
+  padding: 5px 8px;
+  font-size: 13px;
 }
 
 /* ---------- Category breakdown ---------- */
