@@ -168,19 +168,29 @@ export default function Dashboard({
       ? `Months run from the ${ordinal(monthStartDay)} to the ${ordinal(monthStartDay - 1)}.`
       : null;
 
-  // This card has transactions, but every one of them is currently in a
-  // hidden category/sub-category — nothing left to chart or total.
+  // Every transaction is currently in a hidden category/sub-category —
+  // nothing left to chart or total.
   if (transactions.length === 0) {
     return (
       <div className="dashboard">
         <section className="panel">
           <p className="muted">
-            Every transaction on this card is currently hidden by your category filter, so there’s
-            nothing to show here.{' '}
-            {onManageHidden && (
-              <button type="button" className="linklike" onClick={onManageHidden}>
-                Manage hidden categories
-              </button>
+            {combineEnabled ? (
+              <>
+                Every transaction across your combined cards is currently hidden — each card applies
+                its own category filter here, so this can happen even if no single card looks fully
+                hidden on its own. Switch to a card in the selector above to review or adjust it.
+              </>
+            ) : (
+              <>
+                Every transaction on this card is currently hidden by your category filter, so there’s
+                nothing to show here.{' '}
+                {onManageHidden && (
+                  <button type="button" className="linklike" onClick={onManageHidden}>
+                    Manage hidden categories
+                  </button>
+                )}
+              </>
             )}
           </p>
         </section>
@@ -231,7 +241,8 @@ export default function Dashboard({
         {cycleNote && <p className="muted controls-note">{cycleNote}</p>}
         {combineEnabled && (
           <p className="muted controls-note">
-            Combining {combinedCardNames.join(', ')} into these charts.
+            Combining {combinedCardNames.join(', ')} into these charts. Each card's own hidden
+            categories are still excluded here.
             {mixedCurrency && ' These cards use different currencies — totals mix units.'}
           </p>
         )}
@@ -241,7 +252,7 @@ export default function Dashboard({
         <span>Overview</span>
         <span className="muted">All time</span>
       </div>
-      {hiddenCount > 0 && (
+      {!combineEnabled && hiddenCount > 0 && (
         <p className="muted hidden-note">
           Excluding {hiddenCount} hidden categor{hiddenCount === 1 ? 'y' : 'ies'}/sub-categories from
           all totals.
