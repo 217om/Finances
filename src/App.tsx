@@ -822,37 +822,44 @@ export default function App() {
 
   const handleExportFullBackup = useCallback(async () => {
     try {
-      const backup = await buildFullBackup(cards, activeCardId, theme);
+      const backup = await buildFullBackup(cards, activeCardId, theme, combinedCategoryFilter, filterPresets);
       downloadFullBackup(backup);
     } catch (e) {
       setToast(`Could not build the full backup. ${(e as Error).message ?? ''}`.trim());
     }
-  }, [cards, activeCardId, theme]);
+  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets]);
 
   const handleRestoreFullBackup = useCallback(
     async (file: File) => {
       try {
         const backup = parseFullBackup(await file.text());
-        const txCount = backup.cards.reduce((a, c) => a + c.transactions.length, 0);
+        const backupCards = Array.isArray(backup.cards) ? backup.cards : [];
+        const txCount = backupCards.reduce(
+          (a, c) => a + (Array.isArray(c?.transactions) ? c.transactions.length : 0),
+          0,
+        );
+        const noteCount = Array.isArray(backup.notes) ? backup.notes.length : 0;
         const ok = confirm(
           `Restore this backup (from ${backup.exportedAt.slice(0, 10)})? It covers ${txCount} ` +
-            `transaction${txCount === 1 ? '' : 's'} across ${backup.cards.length} card` +
-            `${backup.cards.length === 1 ? '' : 's'} and ${backup.notes.length} note` +
-            `${backup.notes.length === 1 ? '' : 's'}. Existing data is kept — matching cards are ` +
+            `transaction${txCount === 1 ? '' : 's'} across ${backupCards.length} card` +
+            `${backupCards.length === 1 ? '' : 's'} and ${noteCount} note` +
+            `${noteCount === 1 ? '' : 's'}. Existing data is kept — matching cards are ` +
             'merged by id, and any cards not already present are added.',
         );
         if (!ok) return;
-        const result = await restoreFullBackup(backup, cards);
+        const result = await restoreFullBackup(backup, cards, combinedCategoryFilter, filterPresets);
         setCards(result.cards);
         setActiveCardId(result.activeCardId);
         setTheme(result.theme);
+        setCombinedCategoryFilter(result.combinedCategoryFilter);
+        setFilterPresets(result.filterPresets);
         setReloadToken((n) => n + 1);
         setToast('Full backup restored.');
       } catch (e) {
         setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [cards],
+    [cards, combinedCategoryFilter, filterPresets],
   );
 
   const handleConfirmMapping = useCallback(

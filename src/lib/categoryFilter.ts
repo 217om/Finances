@@ -68,3 +68,15 @@ export function isValidCategoryFilter(v: unknown): v is CategoryFilterState {
   const f = v as Record<string, unknown>;
   return Array.isArray(f.categories) && typeof f.subs === 'object' && f.subs !== null;
 }
+
+/** Combines two filters so nothing either one hides gets un-hidden — used
+ *  when restoring a backup on top of an existing filter, so restore is
+ *  additive here too, matching the rest of the restore process. */
+export function unionCategoryFilter(a: CategoryFilterState, b: CategoryFilterState): CategoryFilterState {
+  const categories = [...new Set([...a.categories, ...b.categories])];
+  const subs: Record<string, string[]> = {};
+  for (const parent of new Set([...Object.keys(a.subs), ...Object.keys(b.subs)])) {
+    subs[parent] = [...new Set([...(a.subs[parent] ?? []), ...(b.subs[parent] ?? [])])];
+  }
+  return { categories, subs };
+}

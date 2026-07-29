@@ -27,6 +27,19 @@ export function isValidPresetList(v: unknown): v is CategoryFilterPreset[] {
   return Array.isArray(v) && v.every(isValidPreset);
 }
 
+/** Merges two preset lists by id — an existing preset with the same id as
+ *  an incoming one is replaced by the incoming version; anything else on
+ *  either side is kept. Used when restoring a backup, so it's additive here
+ *  too rather than wiping out presets created since the backup was made. */
+export function mergePresets(
+  existing: CategoryFilterPreset[],
+  incoming: CategoryFilterPreset[],
+): CategoryFilterPreset[] {
+  const byId = new Map(existing.map((p) => [p.id, p]));
+  for (const p of incoming) byId.set(p.id, p);
+  return [...byId.values()];
+}
+
 /** True if two filters exclude the exact same categories/sub-categories,
  *  ignoring order — used to highlight whichever saved preset (if any)
  *  matches what's currently applied. */
