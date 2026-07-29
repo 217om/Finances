@@ -81,6 +81,7 @@ import {
   parseFullBackup,
   restoreFullBackup,
   parseBackup,
+  sniffBackupKind,
 } from './lib/exportData';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
@@ -778,45 +779,6 @@ export default function App() {
     [activeCardId],
   );
 
-  const handleFiles = useCallback(
-    async (files: FileList | File[]) => {
-      setError(null);
-      const list = Array.from(files);
-      if (list.length === 0) return;
-      const file = list[0];
-
-      // A CashFlow JSON backup is restored directly, skipping column mapping.
-      if (isBackupFile(file.name)) {
-        try {
-          const restored = parseBackup(await file.text());
-          const result = await addTransactions(dbName, restored, file.name);
-          setTransactions(await getAllTransactions(dbName));
-          setToast(
-            `Restored backup · ${result.added} added${
-              result.duplicates ? `, ${result.duplicates} already present` : ''
-            }`,
-          );
-        } catch (e) {
-          setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
-        }
-        return;
-      }
-
-      // Otherwise inspect the statement so the user can confirm its columns.
-      try {
-        const parsed = await inspectFile(file);
-        if (parsed.rows.length === 0) {
-          setError(`No rows found in "${parsed.fileName}". Is it an exported transaction file?`);
-          return;
-        }
-        setPending(parsed);
-      } catch (e) {
-        setError(`Could not read that file. ${(e as Error).message ?? ''}`.trim());
-      }
-    },
-    [dbName],
-  );
-
   const handleExportJSON = useCallback(() => downloadBackup(transactions), [transactions]);
   const handleExportCSV = useCallback(() => downloadCSV(transactions), [transactions]);
 
@@ -860,6 +822,52 @@ export default function App() {
       }
     },
     [cards, combinedCategoryFilter, filterPresets],
+  );
+
+  const handleFiles = useCallback(
+    async (files: FileList | File[]) => {
+      setError(null);
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      const file = list[0];
+
+      // A CashFlow JSON backup — either a single card or a full multi-card
+      // backup — is restored directly, skipping column mapping.
+      if (isBackupFile(file.name)) {
+        const text = await file.text();
+        const kind = sniffBackupKind(text);
+        if (kind === 'full') {
+          await handleRestoreFullBackup(file);
+          return;
+        }
+        try {
+          const restored = parseBackup(text);
+          const result = await addTransactions(dbName, restored, file.name);
+          setTransactions(await getAllTransactions(dbName));
+          setToast(
+            `Restored backup · ${result.added} added${
+              result.duplicates ? `, ${result.duplicates} already present` : ''
+            }`,
+          );
+        } catch (e) {
+          setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
+        }
+        return;
+      }
+
+      // Otherwise inspect the statement so the user can confirm its columns.
+      try {
+        const parsed = await inspectFile(file);
+        if (parsed.rows.length === 0) {
+          setError(`No rows found in "${parsed.fileName}". Is it an exported transaction file?`);
+          return;
+        }
+        setPending(parsed);
+      } catch (e) {
+        setError(`Could not read that file. ${(e as Error).message ?? ''}`.trim());
+      }
+    },
+    [dbName, handleRestoreFullBackup],
   );
 
   const handleConfirmMapping = useCallback(

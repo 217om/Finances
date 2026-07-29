@@ -162,6 +162,21 @@ export function isBackupFile(name: string): boolean {
   return /\.json$/i.test(name);
 }
 
+/** Which kind of CashFlow backup a JSON file is, without throwing — used to
+ *  route a dropped file to the right restore path (per-card vs. full). */
+export function sniffBackupKind(text: string): 'card' | 'full' | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const app = (data as { app?: unknown } | null)?.app;
+  if (app === FULL_BACKUP_MAGIC) return 'full';
+  if (app === BACKUP_MAGIC) return 'card';
+  return null;
+}
+
 /**
  * Parse a CashFlow JSON backup back into transactions, or throw if the file
  * isn't a valid backup. Tolerant of minor shape differences.
