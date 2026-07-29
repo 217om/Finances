@@ -69,8 +69,19 @@ export default function SettingsMenu({
         aria-expanded={open}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.6" />
-          <circle cx="12" cy="12" r="7.5" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.2 2.6" />
+          <circle cx="12" cy="12" r="5.5" stroke="currentColor" strokeWidth="2.4" />
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+            <rect
+              key={deg}
+              x="10.8"
+              y="2.8"
+              width="2.4"
+              height="4.6"
+              rx="0.6"
+              fill="currentColor"
+              transform={`rotate(${deg} 12 12)`}
+            />
+          ))}
         </svg>
       </button>
       {open && (
