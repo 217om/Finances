@@ -176,6 +176,15 @@ body::before {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* The card selector, "Manage cards", and the settings icon each derive
+ * their height from different padding/font-size combinations otherwise —
+ * pin them to match so the row reads as one consistent height. */
+.header-actions .card-selector-btn,
+.header-actions .btn-sm,
+.header-actions .btn-icon {
+  height: 34px;
+  box-sizing: border-box;
+}
 .picker {
   display: inline-flex;
   align-items: center;
