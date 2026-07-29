@@ -11,6 +11,7 @@ import {
   CUSTOM_CATEGORIES_KEY,
   MONTH_START_KEY,
   THEME_KEY,
+  makeCard,
   saveActiveCardId,
   saveCards,
   scopedKey,
@@ -304,12 +305,17 @@ function isValidNote(v: unknown): v is Note {
 
 /**
  * Restores a full backup on top of whatever's already stored. Additive, not
- * destructive: transactions are de-duped by id, cards that already exist
- * (matched by id) are merged into, cards not present locally are added, the
- * combined view's filter is unioned rather than replaced, and presets are
- * merged by id — nothing existing is ever deleted. Tolerant of a malformed
- * or older backup file too: a missing or invalid field falls back to a
- * sensible default (or is skipped) instead of aborting the whole restore.
+ * destructive: cards are matched by name (case-insensitive), not by id —
+ * every browser profile seeds its very first card with the same fixed id
+ * ("default"), so matching by id would silently fold an imported card's data
+ * into an unrelated local card that merely happens to share that id. A
+ * backup card whose name matches an existing local card is merged into it;
+ * anything else becomes a brand-new card with its own fresh id and database,
+ * even if the backup's id collides with a local one. The combined view's
+ * filter is unioned rather than replaced, and presets are merged by id —
+ * nothing existing is ever deleted. Tolerant of a malformed or older backup
+ * file too: a missing or invalid field falls back to a sensible default (or
+ * is skipped) instead of aborting the whole restore.
  */
 export async function restoreFullBackup(
   backup: FullBackupFile,
@@ -324,16 +330,23 @@ export async function restoreFullBackup(
   filterPresets: CategoryFilterPreset[];
 }> {
   let cards = existingCards;
+  // Backup card id -> id of the local card its data actually landed in.
+  const resolvedIdByBackupId = new Map<string, string>();
 
   for (const cb of backup.cards) {
     if (!cb || typeof cb.id !== 'string' || typeof cb.dbName !== 'string') continue;
-    if (!cards.some((c) => c.id === cb.id)) {
-      cards = [
-        ...cards,
-        { id: cb.id, name: cb.name || 'Card', dbName: cb.dbName, createdAt: cb.createdAt || Date.now() },
-      ];
+
+    const nameKey = (cb.name || '').trim().toLowerCase();
+    const existing = nameKey ? cards.find((c) => c.name.trim().toLowerCase() === nameKey) : undefined;
+    let target: Card;
+    if (existing) {
+      target = existing;
+    } else {
+      target = { ...makeCard(cb.name || 'Card'), createdAt: cb.createdAt || Date.now() };
+      cards = [...cards, target];
     }
-    const dbName = cards.find((c) => c.id === cb.id)!.dbName;
+    resolvedIdByBackupId.set(cb.id, target.id);
+    const dbName = target.dbName;
 
     await addTransactions(dbName, asArray<Transaction>(cb.transactions), `restore-${cb.name}`);
     await saveCategorization(dbName, asArray<CategoryRule>(cb.rules), asArray<CategoryOverride>(cb.overrides));
@@ -341,18 +354,18 @@ export async function restoreFullBackup(
     await saveSubRules(dbName, asArray<SubRule>(cb.subRules));
     await saveSubOverrides(dbName, asArray<SubOverride>(cb.subOverrides));
 
-    if (cb.currency) writeLS(scopedKey(CURRENCY_KEY, cb.id), cb.currency);
+    if (cb.currency) writeLS(scopedKey(CURRENCY_KEY, target.id), cb.currency);
     if (typeof cb.monthStartDay === 'number' && cb.monthStartDay >= 1 && cb.monthStartDay <= 28) {
-      writeLS(scopedKey(MONTH_START_KEY, cb.id), String(cb.monthStartDay));
+      writeLS(scopedKey(MONTH_START_KEY, target.id), String(cb.monthStartDay));
     }
     const customCategories = asArray<unknown>(cb.customCategories).filter(
       (c): c is string => typeof c === 'string',
     );
     if (customCategories.length > 0) {
-      writeLS(scopedKey(CUSTOM_CATEGORIES_KEY, cb.id), JSON.stringify(customCategories));
+      writeLS(scopedKey(CUSTOM_CATEGORIES_KEY, target.id), JSON.stringify(customCategories));
     }
     if (isValidCategoryFilter(cb.categoryFilter)) {
-      writeLS(scopedKey(CATEGORY_FILTER_KEY, cb.id), JSON.stringify(cb.categoryFilter));
+      writeLS(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(cb.categoryFilter));
     }
   }
 
@@ -362,7 +375,8 @@ export async function restoreFullBackup(
 
   if (backup.theme) writeLS(THEME_KEY, backup.theme);
   saveCards(cards);
-  const activeCardId = cards.some((c) => c.id === backup.activeCardId) ? backup.activeCardId : cards[0].id;
+  const resolvedActiveId = resolvedIdByBackupId.get(backup.activeCardId);
+  const activeCardId = resolvedActiveId && cards.some((c) => c.id === resolvedActiveId) ? resolvedActiveId : cards[0].id;
   saveActiveCardId(activeCardId);
 
   const incomingCombinedFilter = isValidCategoryFilter(backup.combinedCategoryFilter)
