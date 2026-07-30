@@ -1294,6 +1294,9 @@ export default function App() {
         setTheme(result.theme);
         setCombinedCategoryFilter(result.combinedCategoryFilter);
         setFilterPresets(result.filterPresets);
+        setGlobalRules(result.globalRules);
+        setGlobalKeywordRules(result.globalKeywordRules);
+        setGlobalSubRules(result.globalSubRules);
         setReloadToken((n) => n + 1);
         setToast('Full backup restored.');
       } catch (e) {

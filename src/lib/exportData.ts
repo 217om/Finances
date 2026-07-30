@@ -9,6 +9,7 @@ import {
   CATEGORY_FILTER_PRESETS_KEY,
   CURRENCY_KEY,
   CUSTOM_CATEGORIES_KEY,
+  GLOBAL_RULES_DB,
   MONTH_START_KEY,
   THEME_KEY,
   makeCard,
@@ -80,6 +81,12 @@ export interface FullBackupFile {
   /** Global (not per-card) preferences — see lib/cards.ts. */
   combinedCategoryFilter: CategoryFilterState;
   filterPresets: CategoryFilterPreset[];
+  /** Categorization rules shared by every card by default — see lib/cards'
+   *  GLOBAL_RULES_DB doc comment. Card-specific overrides of these live
+   *  inside each card's own CardBackup above. */
+  globalRules: CategoryRule[];
+  globalKeywordRules: KeywordRule[];
+  globalSubRules: SubRule[];
 }
 
 function readLS(key: string): string | null {
@@ -252,6 +259,12 @@ export async function buildFullBackup(
     }),
   );
 
+  const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
+    getRules(GLOBAL_RULES_DB),
+    getKeywordRules(GLOBAL_RULES_DB),
+    getSubRules(GLOBAL_RULES_DB),
+  ]);
+
   return {
     app: FULL_BACKUP_MAGIC,
     version: FULL_BACKUP_VERSION,
@@ -262,6 +275,9 @@ export async function buildFullBackup(
     notes: await getAllNotes(),
     combinedCategoryFilter,
     filterPresets,
+    globalRules,
+    globalKeywordRules,
+    globalSubRules,
   };
 }
 
@@ -328,6 +344,9 @@ export async function restoreFullBackup(
   theme: 'light' | 'dark';
   combinedCategoryFilter: CategoryFilterState;
   filterPresets: CategoryFilterPreset[];
+  globalRules: CategoryRule[];
+  globalKeywordRules: KeywordRule[];
+  globalSubRules: SubRule[];
 }> {
   let cards = existingCards;
   // Backup card id -> id of the local card its data actually landed in.
@@ -389,11 +408,26 @@ export async function restoreFullBackup(
   const filterPresets = mergePresets(existingFilterPresets, incomingPresets);
   writeLS(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(filterPresets));
 
+  // Global rules (shared by every card by default) upsert into the shared
+  // store the same additive way each card's own rules do above — nothing
+  // existing is replaced, only added to or overwritten key-for-key.
+  await saveCategorization(GLOBAL_RULES_DB, asArray<CategoryRule>(backup.globalRules), []);
+  await saveKeywordRules(GLOBAL_RULES_DB, asArray<KeywordRule>(backup.globalKeywordRules));
+  await saveSubRules(GLOBAL_RULES_DB, asArray<SubRule>(backup.globalSubRules));
+  const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
+    getRules(GLOBAL_RULES_DB),
+    getKeywordRules(GLOBAL_RULES_DB),
+    getSubRules(GLOBAL_RULES_DB),
+  ]);
+
   return {
     cards,
     activeCardId,
     theme: backup.theme === 'dark' ? 'dark' : 'light',
     combinedCategoryFilter,
     filterPresets,
+    globalRules,
+    globalKeywordRules,
+    globalSubRules,
   };
 }
