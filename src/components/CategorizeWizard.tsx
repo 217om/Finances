@@ -110,7 +110,10 @@ export default function CategorizeWizard({
     setStep((s) => s + 1);
   };
 
-  const skipGroup = () => setStep((s) => s + 1);
+  const skipGroup = () => {
+    setExtraLeftovers((e) => [...e, ...group.txs]);
+    setStep((s) => s + 1);
+  };
 
   // --- Leftovers step ---------------------------------------------------------
   const allLeftovers = useMemo(() => {
