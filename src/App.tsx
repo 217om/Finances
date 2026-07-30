@@ -720,18 +720,21 @@ export default function App() {
     [dbName],
   );
 
-  // Priority among keyword/sub-rules is "newest wins", so reordering swaps
-  // the createdAt timestamps of the two adjacent rules rather than needing a
-  // separate priority field.
+  // Priority is "newest wins", so reordering swaps the createdAt timestamps
+  // of the two adjacent rules rather than needing a separate priority field.
+  // Scoped to rules targeting the same category, since that's how they're
+  // grouped and reordered in the Advanced Settings view.
   const handleReorderKeywordRule = useCallback(
     (keyword: string, direction: 'up' | 'down') => {
       setKeywordRules((prev) => {
-        const sorted = [...prev].sort((a, b) => b.createdAt - a.createdAt);
-        const idx = sorted.findIndex((r) => r.keyword === keyword);
+        const target = prev.find((r) => r.keyword === keyword);
+        if (!target) return prev;
+        const siblings = prev.filter((r) => r.category === target.category).sort((a, b) => b.createdAt - a.createdAt);
+        const idx = siblings.findIndex((r) => r.keyword === keyword);
         const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return prev;
-        const a = sorted[idx];
-        const b = sorted[swapIdx];
+        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
+        const a = siblings[idx];
+        const b = siblings[swapIdx];
         const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
         const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
         saveKeywordRules(dbName, [updatedA, updatedB]);
@@ -796,6 +799,23 @@ export default function App() {
     (id: string) => {
       deleteSubRule(dbName, id);
       setSubRules((prev) => prev.filter((r) => r.id !== id));
+    },
+    [dbName],
+  );
+
+  // A sub-rule's id is derived from its (parent, keyword) pair, so moving it
+  // to a different category means replacing it under a new id rather than
+  // updating the existing record in place.
+  const handleReparentSubRule = useCallback(
+    (id: string, newParent: string) => {
+      setSubRules((prev) => {
+        const existing = prev.find((r) => r.id === id);
+        if (!existing || existing.parent === newParent) return prev;
+        const updated: SubRule = { ...existing, parent: newParent, id: `${newParent}${existing.keyword}` };
+        deleteSubRule(dbName, id);
+        saveSubRules(dbName, [updated]);
+        return [...prev.filter((r) => r.id !== id), updated];
+      });
     },
     [dbName],
   );
@@ -1299,6 +1319,7 @@ export default function App() {
                 onCreateSubRule={handleCreateSubRule}
                 onDeleteSubRule={handleDeleteSubRule}
                 onReorderSubRule={handleReorderSubRule}
+                onReparentSubRule={handleReparentSubRule}
               />
             ) : view === 'transactions' ? (
               combineEnabled ? (

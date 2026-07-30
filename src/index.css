@@ -1886,6 +1886,17 @@ th.num {
   padding: 5px 8px;
   font-size: 12px;
 }
+.rules-arrow-sub {
+  opacity: 0.6;
+}
+.rules-sub-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  width: 140px;
+  flex: none;
+}
 .rules-count {
   margin-left: auto;
   flex: none;
@@ -1946,20 +1957,38 @@ th.num {
   margin-top: 8px;
 }
 .rules-builtin {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px 20px;
   margin-top: 10px;
 }
-.rules-builtin-row {
+.rules-builtin-cat {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.rules-builtin-cat-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
 }
 .rules-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+}
+.chip-more {
+  border: none;
+  background: var(--surface-2);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+}
+.chip-more:hover {
+  color: var(--accent-hover);
 }
 
 /* ---------- Footer ---------- */

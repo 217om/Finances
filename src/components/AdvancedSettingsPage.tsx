@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
 import {
   BUILT_IN_RULES,
@@ -28,6 +28,7 @@ interface Props {
   onCreateSubRule: (parent: string, keyword: string, sub: string) => void;
   onDeleteSubRule: (id: string) => void;
   onReorderSubRule: (id: string, direction: 'up' | 'down') => void;
+  onReparentSubRule: (id: string, newParent: string) => void;
 }
 
 function matchCount(transactions: Transaction[], needle: string): number {
@@ -41,15 +42,115 @@ function plural(n: number): string {
   return n === 1 ? 'transaction' : 'transactions';
 }
 
+const BUILTIN_PREVIEW = 8;
+
+interface RuleRowProps {
+  priority?: number;
+  keyLabel: string;
+  titleAttr?: string;
+  category: string;
+  categoryOptions: string[];
+  onCreateCategory: (name: string) => void;
+  onCategoryChange: (category: string) => void;
+  subValue: string;
+  onSubCommit: (value: string) => void;
+  count: number;
+  onReorderUp?: () => void;
+  onReorderDown?: () => void;
+  reorderUpDisabled?: boolean;
+  reorderDownDisabled?: boolean;
+  onRemove: () => void;
+}
+
+/** One row of the merged rule list: keyword/merchant → category → optional
+ *  sub-category. Handles all three row kinds (keyword rule, merchant rule,
+ *  standalone sub-rule) through the same shape so they read as one list. */
+function RuleRow({
+  priority,
+  keyLabel,
+  titleAttr,
+  category,
+  categoryOptions,
+  onCreateCategory,
+  onCategoryChange,
+  subValue,
+  onSubCommit,
+  count,
+  onReorderUp,
+  onReorderDown,
+  reorderUpDisabled,
+  reorderDownDisabled,
+  onRemove,
+}: RuleRowProps) {
+  const [draft, setDraft] = useState(subValue);
+  useEffect(() => setDraft(subValue), [subValue]);
+  const commit = () => {
+    const trimmed = draft ? normalizeCategoryName(draft) : '';
+    if (trimmed !== subValue) onSubCommit(trimmed);
+  };
+  return (
+    <div className="rules-row">
+      {priority != null && <span className="rules-pri">{priority}</span>}
+      <span className="rules-kw" title={titleAttr}>
+        {keyLabel}
+      </span>
+      <span className="rules-arrow">→</span>
+      <span className="rules-cat-pick">
+        <CategoryPicker value={category} onChange={onCategoryChange} options={categoryOptions} onCreate={onCreateCategory} />
+      </span>
+      <span className="rules-arrow rules-arrow-sub">→</span>
+      <input
+        className="rules-sub-input"
+        value={draft}
+        placeholder="sub-category (optional)"
+        maxLength={28}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+      <span className="rules-count muted">
+        {count} {plural(count)}
+      </span>
+      <span className="rules-actions">
+        {onReorderUp && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm rules-reorder"
+            disabled={reorderUpDisabled}
+            title="Higher priority"
+            onClick={onReorderUp}
+          >
+            ▲
+          </button>
+        )}
+        {onReorderDown && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm rules-reorder"
+            disabled={reorderDownDisabled}
+            title="Lower priority"
+            onClick={onReorderDown}
+          >
+            ▼
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
+          Remove
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /**
- * The full categorization decision tree for the active card, in the same
- * precedence order the resolver actually applies it: keyword rules first
- * (newest wins), then merchant (signature) rules from the wizard, then the
- * built-in reference patterns as a fallback — plus the independent
- * sub-category tier layered on top of whichever top-level category wins.
- * Everything here is editable except the built-in reference; new rules can
- * be added even with zero matching transactions today, so they're ready for
- * future imports.
+ * The full categorization decision tree for the active card: keyword rules
+ * and merchant rules from the wizard — fundamentally the same thing, a match
+ * text mapped to a category — merged into one list grouped by category, each
+ * row with an optional second arrow to a sub-category. Built-in reference
+ * patterns are the read-only fallback. New rules can be added even with zero
+ * matching transactions today, so they're ready for future imports.
  */
 export default function AdvancedSettingsPage({
   cardName,
@@ -69,6 +170,7 @@ export default function AdvancedSettingsPage({
   onCreateSubRule,
   onDeleteSubRule,
   onReorderSubRule,
+  onReparentSubRule,
 }: Props) {
   const categoryOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -126,19 +228,13 @@ export default function AdvancedSettingsPage({
     setSubName('');
   };
 
-  // --- Keyword rules (global priority order, newest first) ---------------
-  const sortedKeywordRules = useMemo(
-    () => [...keywordRules].sort((a, b) => b.createdAt - a.createdAt),
-    [keywordRules],
-  );
+  // --- Merged keyword + merchant + standalone sub-rules, grouped by category
   const keywordMatchCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of keywordRules) m.set(r.keyword, matchCount(transactions, r.keyword));
     return m;
   }, [keywordRules, transactions]);
 
-  // --- Merchant (signature) rules, grouped by category, searchable -------
-  const [merchantQuery, setMerchantQuery] = useState('');
   const signatureMatchCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of transactions) {
@@ -148,35 +244,8 @@ export default function AdvancedSettingsPage({
     }
     return m;
   }, [transactions]);
-  const filteredRules = useMemo(() => {
-    const q = merchantQuery.trim().toLowerCase();
-    if (!q) return rules;
-    return rules.filter((r) => r.signature.includes(q) || r.sample.toLowerCase().includes(q));
-  }, [rules, merchantQuery]);
-  const rulesByCategory = useMemo(() => {
-    const m = new Map<string, CategoryRule[]>();
-    for (const r of filteredRules) {
-      const list = m.get(r.category);
-      if (list) list.push(r);
-      else m.set(r.category, [r]);
-    }
-    for (const list of m.values()) list.sort((a, b) => a.signature.localeCompare(b.signature));
-    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
-  }, [filteredRules]);
-  const searching = merchantQuery.trim().length > 0;
 
-  // --- Sub-category rules, grouped by parent ------------------------------
-  const subRulesByParent = useMemo(() => {
-    const m = new Map<string, SubRule[]>();
-    for (const r of subRules) {
-      const list = m.get(r.parent);
-      if (list) list.push(r);
-      else m.set(r.parent, [r]);
-    }
-    for (const list of m.values()) list.sort((a, b) => b.createdAt - a.createdAt);
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [subRules]);
-  const subRuleMatchCounts = useMemo(() => {
+  const subMatchCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of subRules) {
       let n = 0;
@@ -188,13 +257,80 @@ export default function AdvancedSettingsPage({
     return m;
   }, [subRules, transactions, categoryOf]);
 
+  // A sub-rule pairs with a top-level rule of the same (category, keyword) —
+  // shown as that rule's second arrow instead of its own row.
+  const subByPair = useMemo(() => {
+    const m = new Map<string, SubRule>();
+    for (const r of subRules) m.set(`${r.parent}|${r.keyword}`, r);
+    return m;
+  }, [subRules]);
+  const coveredSubKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of keywordRules) s.add(`${r.category}|${r.keyword}`);
+    for (const r of rules) s.add(`${r.category}|${r.signature}`);
+    return s;
+  }, [keywordRules, rules]);
+  const standaloneSubRules = useMemo(
+    () => subRules.filter((r) => !coveredSubKeys.has(`${r.parent}|${r.keyword}`)),
+    [subRules, coveredSubKeys],
+  );
+
+  const [query, setQuery] = useState('');
+  const searching = query.trim().length > 0;
+  const totalRuleCount = keywordRules.length + rules.length;
+
+  const categoryGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const hit = (...texts: (string | undefined)[]) => !q || texts.some((t) => t?.toLowerCase().includes(q));
+
+    const groups = new Map<string, { keyword: KeywordRule[]; merchant: CategoryRule[]; standalone: SubRule[] }>();
+    const ensure = (cat: string) => {
+      let g = groups.get(cat);
+      if (!g) {
+        g = { keyword: [], merchant: [], standalone: [] };
+        groups.set(cat, g);
+      }
+      return g;
+    };
+    for (const r of keywordRules) if (hit(r.keyword)) ensure(r.category).keyword.push(r);
+    for (const r of rules) if (hit(r.signature, r.sample)) ensure(r.category).merchant.push(r);
+    for (const r of standaloneSubRules) if (hit(r.keyword, r.sub)) ensure(r.parent).standalone.push(r);
+
+    for (const g of groups.values()) {
+      g.keyword.sort((a, b) => b.createdAt - a.createdAt);
+      g.merchant.sort((a, b) => a.signature.localeCompare(b.signature));
+      g.standalone.sort((a, b) => a.keyword.localeCompare(b.keyword));
+    }
+    return [...groups.entries()].sort(
+      (a, b) => b[1].keyword.length + b[1].merchant.length + b[1].standalone.length - (a[1].keyword.length + a[1].merchant.length + a[1].standalone.length),
+    );
+  }, [keywordRules, rules, standaloneSubRules, query]);
+
+  // --- Built-in reference, decluttered: collapsed to a preview per category
+  const [expandedBuiltIn, setExpandedBuiltIn] = useState<Set<string>>(new Set());
+  const toggleBuiltIn = (category: string) => {
+    setExpandedBuiltIn((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
+
+  const commitSub = (parent: string, keyword: string, value: string) => {
+    if (value) {
+      onCreateSubRule(parent, keyword, value);
+    } else if (subByPair.has(`${parent}|${keyword}`)) {
+      onDeleteSubRule(`${parent}${keyword}`);
+    }
+  };
+
   return (
     <div className="rules-page">
       <p className="muted rules-intro">
-        The categorization logic applied to <strong>{cardName}</strong>, in the order it's actually
-        checked: keyword rules first (newest wins), then merchant rules from the categorization
-        wizard, then the built-in reference patterns as a fallback. Sub-category rules are a separate,
-        independent tier layered on top of whichever category wins above.
+        The categorization logic applied to <strong>{cardName}</strong>, grouped by category: keyword
+        and merchant rules first (newest wins within a category), then the built-in reference patterns
+        as a fallback. Give any rule an optional sub-category for a finer split within that category.
       </p>
 
       <section className="panel rules-add">
@@ -303,132 +439,96 @@ export default function AdvancedSettingsPage({
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Keyword rules</h2>
-            <p className="muted">Highest priority — checked first, newest wins when more than one matches.</p>
-          </div>
-          <span className="badge">{sortedKeywordRules.length}</span>
-        </div>
-        {sortedKeywordRules.length === 0 ? (
-          <p className="muted rules-empty">No keyword rules yet — add one above.</p>
-        ) : (
-          <div className="rules-list">
-            {sortedKeywordRules.map((r, i) => {
-              const count = keywordMatchCounts.get(r.keyword) ?? 0;
-              return (
-                <div key={r.keyword} className="rules-row">
-                  <span className="rules-pri">{i + 1}</span>
-                  <span className="rules-kw">contains “{r.keyword}”</span>
-                  <span className="rules-arrow">→</span>
-                  <span className="rules-cat-pick">
-                    <CategoryPicker
-                      value={r.category}
-                      onChange={(cat) => onUpdateKeywordRuleCategory(r.keyword, cat)}
-                      options={categoryOptions}
-                      onCreate={onCreateCategory}
-                    />
-                  </span>
-                  <span className="rules-count muted">
-                    {count} {plural(count)}
-                  </span>
-                  <span className="rules-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm rules-reorder"
-                      disabled={i === 0}
-                      title="Higher priority"
-                      onClick={() => onReorderKeywordRule(r.keyword, 'up')}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm rules-reorder"
-                      disabled={i === sortedKeywordRules.length - 1}
-                      title="Lower priority"
-                      onClick={() => onReorderKeywordRule(r.keyword, 'down')}
-                    >
-                      ▼
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => onDeleteKeywordRule(r.keyword)}
-                    >
-                      Remove
-                    </button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Merchant rules</h2>
+            <h2>Category rules</h2>
             <p className="muted">
-              From the categorization wizard — one rule per merchant, applied to expenses only.
+              Keyword rules you typed and merchant rules from the categorization wizard — both are
+              "if description contains X" rules, just grouped here by the category they target.
             </p>
           </div>
-          <span className="badge">{rules.length}</span>
+          <span className="badge">{totalRuleCount}</span>
         </div>
-        {rules.length > 0 && (
+        {totalRuleCount === 0 && standaloneSubRules.length === 0 ? (
+          <p className="muted rules-empty">No rules yet — add one above, or run the categorization wizard from the Dashboard.</p>
+        ) : (
           <input
             className="rules-search"
-            value={merchantQuery}
-            placeholder="Search merchants…"
-            onChange={(e) => setMerchantQuery(e.target.value)}
+            value={query}
+            placeholder="Search rules…"
+            onChange={(e) => setQuery(e.target.value)}
           />
         )}
-        {rules.length === 0 ? (
-          <p className="muted rules-empty">
-            No merchant rules yet — run the categorization wizard from the Dashboard to create some.
-          </p>
-        ) : rulesByCategory.length === 0 ? (
-          <p className="muted rules-empty">No merchants match “{merchantQuery}”.</p>
-        ) : (
+        {(totalRuleCount > 0 || standaloneSubRules.length > 0) && categoryGroups.length === 0 && (
+          <p className="muted rules-empty">No rules match “{query}”.</p>
+        )}
+        {categoryGroups.length > 0 && (
           <div className="rules-groups">
-            {rulesByCategory.map(([cat, list]) => (
+            {categoryGroups.map(([cat, g]) => (
               <details key={cat} open={searching || undefined}>
                 <summary>
                   <span className="catdot" style={{ background: categoryColor(cat) }} />
                   {cat}
-                  <span className="muted rules-group-count">{list.length}</span>
+                  <span className="muted rules-group-count">{g.keyword.length + g.merchant.length + g.standalone.length}</span>
                 </summary>
                 <div className="rules-list">
-                  {list.map((r) => {
-                    const count = signatureMatchCounts.get(r.signature) ?? 0;
+                  {g.keyword.map((r, i) => {
+                    const subValue = subByPair.get(`${cat}|${r.keyword}`)?.sub ?? '';
                     return (
-                      <div key={r.signature} className="rules-row">
-                        <span className="rules-kw" title={r.sample}>
-                          {r.signature}
-                        </span>
-                        <span className="rules-arrow">→</span>
-                        <span className="rules-cat-pick">
-                          <CategoryPicker
-                            value={r.category}
-                            onChange={(newCat) => onUpdateSignatureRuleCategory(r.signature, newCat)}
-                            options={categoryOptions}
-                            onCreate={onCreateCategory}
-                          />
-                        </span>
-                        <span className="rules-count muted">
-                          {count} {plural(count)}
-                        </span>
-                        <span className="rules-actions">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => onDeleteSignatureRule(r.signature)}
-                          >
-                            Remove
-                          </button>
-                        </span>
-                      </div>
+                      <RuleRow
+                        key={`kw-${r.keyword}`}
+                        priority={i + 1}
+                        keyLabel={`contains “${r.keyword}”`}
+                        category={r.category}
+                        categoryOptions={categoryOptions}
+                        onCreateCategory={onCreateCategory}
+                        onCategoryChange={(newCat) => onUpdateKeywordRuleCategory(r.keyword, newCat)}
+                        subValue={subValue}
+                        onSubCommit={(v) => commitSub(cat, r.keyword, v)}
+                        count={keywordMatchCounts.get(r.keyword) ?? 0}
+                        onReorderUp={() => onReorderKeywordRule(r.keyword, 'up')}
+                        onReorderDown={() => onReorderKeywordRule(r.keyword, 'down')}
+                        reorderUpDisabled={i === 0}
+                        reorderDownDisabled={i === g.keyword.length - 1}
+                        onRemove={() => onDeleteKeywordRule(r.keyword)}
+                      />
                     );
                   })}
+                  {g.merchant.map((r) => {
+                    const subValue = subByPair.get(`${cat}|${r.signature}`)?.sub ?? '';
+                    return (
+                      <RuleRow
+                        key={`mr-${r.signature}`}
+                        keyLabel={r.signature}
+                        titleAttr={r.sample}
+                        category={r.category}
+                        categoryOptions={categoryOptions}
+                        onCreateCategory={onCreateCategory}
+                        onCategoryChange={(newCat) => onUpdateSignatureRuleCategory(r.signature, newCat)}
+                        subValue={subValue}
+                        onSubCommit={(v) => commitSub(cat, r.signature, v)}
+                        count={signatureMatchCounts.get(r.signature) ?? 0}
+                        onRemove={() => onDeleteSignatureRule(r.signature)}
+                      />
+                    );
+                  })}
+                  {g.standalone.map((r, i) => (
+                    <RuleRow
+                      key={`sr-${r.id}`}
+                      priority={i + 1}
+                      keyLabel={`contains “${r.keyword}”`}
+                      category={r.parent}
+                      categoryOptions={categoryOptions}
+                      onCreateCategory={onCreateCategory}
+                      onCategoryChange={(newCat) => onReparentSubRule(r.id, newCat)}
+                      subValue={r.sub}
+                      onSubCommit={(v) => (v ? onCreateSubRule(r.parent, r.keyword, v) : onDeleteSubRule(r.id))}
+                      count={subMatchCounts.get(r.id) ?? 0}
+                      onReorderUp={() => onReorderSubRule(r.id, 'up')}
+                      onReorderDown={() => onReorderSubRule(r.id, 'down')}
+                      reorderUpDisabled={i === 0}
+                      reorderDownDisabled={i === g.standalone.length - 1}
+                      onRemove={() => onDeleteSubRule(r.id)}
+                    />
+                  ))}
                 </div>
               </details>
             ))}
@@ -443,94 +543,42 @@ export default function AdvancedSettingsPage({
             <span className="muted rules-group-count">read-only</span>
           </summary>
           <p className="muted">
-            Always applied as the last resort, when nothing above matches. Add a keyword or merchant
-            rule to override any of these for a specific transaction.
+            Always applied as the last resort, when nothing above matches. Add a rule above to override
+            any of these for a specific transaction.
           </p>
           <div className="rules-builtin">
-            {BUILT_IN_RULES.map((r) => (
-              <div key={r.category} className="rules-builtin-row">
-                <span className="rules-cat">
-                  <span className="catdot" style={{ background: categoryColor(r.category) }} />
-                  {r.category}
-                </span>
-                <div className="rules-chips">
-                  {r.keywords.map((k) => (
-                    <span key={k} className="chip">
-                      {k}
-                    </span>
-                  ))}
+            {BUILT_IN_RULES.map((r) => {
+              const isOpen = expandedBuiltIn.has(r.category);
+              const shown = isOpen ? r.keywords : r.keywords.slice(0, BUILTIN_PREVIEW);
+              const hiddenCount = r.keywords.length - shown.length;
+              return (
+                <div key={r.category} className="rules-builtin-cat">
+                  <div className="rules-builtin-cat-name">
+                    <span className="catdot" style={{ background: categoryColor(r.category) }} />
+                    {r.category}
+                  </div>
+                  <div className="rules-chips">
+                    {shown.map((k) => (
+                      <span key={k} className="chip">
+                        {k}
+                      </span>
+                    ))}
+                    {hiddenCount > 0 && (
+                      <button type="button" className="chip chip-more" onClick={() => toggleBuiltIn(r.category)}>
+                        +{hiddenCount} more
+                      </button>
+                    )}
+                    {isOpen && r.keywords.length > BUILTIN_PREVIEW && (
+                      <button type="button" className="chip chip-more" onClick={() => toggleBuiltIn(r.category)}>
+                        Show less
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </details>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Sub-category rules</h2>
-            <p className="muted">
-              A second, independent tier — splits a category further without changing it. Newest wins
-              within each category.
-            </p>
-          </div>
-          <span className="badge">{subRules.length}</span>
-        </div>
-        {subRulesByParent.length === 0 ? (
-          <p className="muted rules-empty">No sub-category rules yet — add one above.</p>
-        ) : (
-          <div className="rules-groups">
-            {subRulesByParent.map(([parent, list]) => (
-              <details key={parent} open>
-                <summary>
-                  <span className="catdot" style={{ background: categoryColor(parent) }} />
-                  {parent}
-                  <span className="muted rules-group-count">{list.length}</span>
-                </summary>
-                <div className="rules-list">
-                  {list.map((r, i) => {
-                    const count = subRuleMatchCounts.get(r.id) ?? 0;
-                    return (
-                      <div key={r.id} className="rules-row">
-                        <span className="rules-pri">{i + 1}</span>
-                        <span className="rules-kw">contains “{r.keyword}”</span>
-                        <span className="rules-arrow">→</span>
-                        <span className="rules-cat">{r.sub}</span>
-                        <span className="rules-count muted">
-                          {count} {plural(count)}
-                        </span>
-                        <span className="rules-actions">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm rules-reorder"
-                            disabled={i === 0}
-                            title="Higher priority"
-                            onClick={() => onReorderSubRule(r.id, 'up')}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm rules-reorder"
-                            disabled={i === list.length - 1}
-                            title="Lower priority"
-                            onClick={() => onReorderSubRule(r.id, 'down')}
-                          >
-                            ▼
-                          </button>
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDeleteSubRule(r.id)}>
-                            Remove
-                          </button>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            ))}
-          </div>
-        )}
       </section>
     </div>
   );
