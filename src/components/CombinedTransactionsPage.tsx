@@ -20,7 +20,7 @@ interface Props {
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
-type SortCol = 'date' | 'card' | 'description' | 'category' | 'amount';
+type SortCol = 'date' | 'description' | 'amount';
 interface SortState {
   col: SortCol;
   dir: 'asc' | 'desc';
@@ -31,12 +31,8 @@ function compareBase(col: SortCol, a: CombinedRow, b: CombinedRow): number {
   switch (col) {
     case 'date':
       return a.t.date.localeCompare(b.t.date);
-    case 'card':
-      return a.cardName.localeCompare(b.cardName);
     case 'description':
       return a.t.description.localeCompare(b.t.description);
-    case 'category':
-      return a.category.localeCompare(b.category);
     case 'amount':
       return a.t.amount - b.t.amount;
     default:
@@ -224,11 +220,6 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, cate
               <th className="tx-th-menu">
                 <ColumnHeaderMenu
                   label="Card"
-                  sortActive={sort.col === 'card'}
-                  sortDir={sort.dir}
-                  ascLabel="A → Z"
-                  descLabel="Z → A"
-                  onSort={(dir) => setSort({ col: 'card', dir })}
                   filterValues={cardsPresent}
                   selectedValues={cardSelected}
                   onChangeSelected={setCardSelected}
@@ -247,11 +238,6 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, cate
               <th className="tx-th-menu">
                 <ColumnHeaderMenu
                   label="Category"
-                  sortActive={sort.col === 'category'}
-                  sortDir={sort.dir}
-                  ascLabel="A → Z"
-                  descLabel="Z → A"
-                  onSort={(dir) => setSort({ col: 'category', dir })}
                   filterValues={categoriesPresent}
                   selectedValues={categorySelected}
                   onChangeSelected={setCategorySelected}

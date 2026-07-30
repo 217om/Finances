@@ -34,7 +34,7 @@ interface Props {
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
-type SortCol = 'date' | 'description' | 'category' | 'amount';
+type SortCol = 'date' | 'description' | 'amount';
 interface SortState {
   col: SortCol;
   dir: 'asc' | 'desc';
@@ -47,8 +47,6 @@ function compareBase(col: SortCol, a: { t: Transaction; cat: string }, b: { t: T
       return a.t.date.localeCompare(b.t.date);
     case 'description':
       return a.t.description.localeCompare(b.t.description);
-    case 'category':
-      return a.cat.localeCompare(b.cat);
     case 'amount':
       return a.t.amount - b.t.amount;
     default:
@@ -258,11 +256,6 @@ export default function TransactionsPage({
               <th className="tx-th-menu">
                 <ColumnHeaderMenu
                   label="Category"
-                  sortActive={sort.col === 'category'}
-                  sortDir={sort.dir}
-                  ascLabel="A → Z"
-                  descLabel="Z → A"
-                  onSort={(dir) => setSort({ col: 'category', dir })}
                   filterValues={categoriesPresent}
                   selectedValues={categorySelected}
                   onChangeSelected={setCategorySelected}

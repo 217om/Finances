@@ -547,6 +547,9 @@ main.container {
   left: auto;
   right: 0;
 }
+.col-menu-clear {
+  color: var(--accent) !important;
+}
 .col-menu-search {
   border: 1px solid var(--border);
   border-radius: 7px;

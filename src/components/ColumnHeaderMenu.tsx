@@ -3,11 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 interface Props {
   label: string;
   align?: 'left' | 'right';
-  sortActive: boolean;
-  sortDir: 'asc' | 'desc';
-  ascLabel: string;
-  descLabel: string;
-  onSort: (dir: 'asc' | 'desc') => void;
+  /** Omit all four to disable sorting — filter-only header. */
+  sortActive?: boolean;
+  sortDir?: 'asc' | 'desc';
+  ascLabel?: string;
+  descLabel?: string;
+  onSort?: (dir: 'asc' | 'desc') => void;
   /** Omit both to disable the checklist filter — sort-only header. */
   filterValues?: string[];
   /** null means "everything selected" (no filter applied). */
@@ -17,9 +18,10 @@ interface Props {
 
 /**
  * Excel-style column header: click to open a menu with "sort ascending" /
- * "sort descending" and, for columns with a bounded set of values, a
- * checklist to show only specific ones — same interaction as an AutoFilter
- * dropdown. The whole header cell is the click target, not just an icon.
+ * "sort descending" (where applicable) and, for columns with a bounded set
+ * of values, a checklist to show only specific ones plus an explicit "Clear
+ * filter" action — same interaction as an AutoFilter dropdown. The whole
+ * header cell is the click target, not just an icon.
  */
 export default function ColumnHeaderMenu({
   label,
@@ -93,28 +95,46 @@ export default function ColumnHeaderMenu({
       </button>
       {open && (
         <div className={`menu-pop col-menu-pop ${align === 'right' ? 'col-menu-pop-right' : ''}`} role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onSort('asc');
-              setOpen(false);
-            }}
-          >
-            {ascLabel}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onSort('desc');
-              setOpen(false);
-            }}
-          >
-            {descLabel}
-          </button>
+          {onSort && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onSort('asc');
+                  setOpen(false);
+                }}
+              >
+                {ascLabel}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onSort('desc');
+                  setOpen(false);
+                }}
+              >
+                {descLabel}
+              </button>
+            </>
+          )}
           {hasFilter && filterValues && filterValues.length > 0 && (
             <>
+              {onSort && <div className="menu-sep" />}
+              {isFiltered && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="col-menu-clear"
+                  onClick={() => {
+                    onChangeSelected?.(null);
+                    setOpen(false);
+                  }}
+                >
+                  ✕ Clear filter
+                </button>
+              )}
               <div className="menu-sep" />
               {filterValues.length > 8 && (
                 <input
