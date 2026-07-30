@@ -1904,6 +1904,20 @@ th.num {
 .rules-card-picker {
   margin: -6px 0 -2px;
 }
+.rules-form-scope {
+  margin: 8px 0 4px;
+}
+.rules-search-top {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.rules-card-scope-note {
+  margin: -4px 0 10px;
+}
 .rules-form {
   display: flex;
   align-items: center;

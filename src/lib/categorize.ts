@@ -229,6 +229,19 @@ export function makeResolver(
   return (tx) => resolveCategory(tx, rules, overrides, sorted);
 }
 
+/**
+ * Combines a global rule list with a card-specific one, keyed by whatever
+ * makes each rule type unique (keyword, signature, or sub-rule id). A
+ * card-specific rule shadows a global rule with the same key — its own
+ * customization always wins over the shared default.
+ */
+export function mergeByKey<T>(globalList: T[], cardList: T[], keyFn: (item: T) => string): T[] {
+  const map = new Map<string, T>();
+  for (const item of globalList) map.set(keyFn(item), item);
+  for (const item of cardList) map.set(keyFn(item), item);
+  return [...map.values()];
+}
+
 // Stable colors so a category looks the same across every chart. Muted,
 // earthy tones tuned to sit well on the app's dark charcoal/beige/coral theme.
 export const CATEGORY_COLORS: Record<string, string> = {

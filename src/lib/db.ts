@@ -278,6 +278,14 @@ export async function clearCategorization(dbName: string): Promise<void> {
   ]);
 }
 
+/** Clear only the rule definitions (signature rules, keyword rules,
+ *  sub-rules) — used when migrating a card's rules into the global store, so
+ *  its transactions, overrides, and sub-overrides are left untouched. */
+export async function clearRuleDefinitions(dbName: string): Promise<void> {
+  const db = await getDB(dbName);
+  await Promise.all([db.clear('rules'), db.clear('keywordRules'), db.clear('subRules')]);
+}
+
 // --- Keyword refinement rules ------------------------------------------------
 
 export async function getKeywordRules(dbName: string): Promise<KeywordRule[]> {

@@ -34,9 +34,23 @@ export const CATEGORY_FILTER_PRESETS_KEY = 'cashflow.categoryFilterPresets';
  *  users' data loads with no migration step. */
 export const DEFAULT_CARD_ID = 'default';
 
+/** Not a real card — a dedicated database (reusing the same schema as a
+ *  card's own db) that holds categorization rules shared by every card by
+ *  default. A card can still define its own rules that take precedence over
+ *  a global one for the same keyword/signature/sub-rule id. */
+export const GLOBAL_RULES_DB = 'cashflow-global-rules';
+
+/** Set once the one-time migration of every card's pre-existing rules into
+ *  the global store has run, so it never repeats. */
+export const RULES_GLOBAL_MIGRATION_KEY = 'cashflow.rulesGlobalMigration.v1';
+
 /** Sentinel value for the "Combine all cards" entry in the card selector —
  *  never a real card id, so it can share the same <select> as real cards. */
 export const COMBINE_CARD_ID = '__combined__';
+
+/** Sentinel for "every card" in Advanced Settings' transaction-count picker
+ *  — aggregates a rule's match count across every card instead of just one. */
+export const ALL_CARDS_ID = '__all__';
 
 function defaultCard(): Card {
   return { id: DEFAULT_CARD_ID, name: 'Card 1', dbName: 'cashflow', createdAt: Date.now() };

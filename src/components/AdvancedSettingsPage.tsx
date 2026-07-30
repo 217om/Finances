@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
 import type { Card } from '../lib/cards';
+import { ALL_CARDS_ID } from '../lib/cards';
+import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
+import type { CardSnapshot } from '../lib/combine';
 import {
   BUILT_IN_RULES,
   EXPENSE_CATEGORIES,
@@ -11,37 +13,41 @@ import {
 } from '../lib/categorize';
 import CategoryPicker from './CategoryPicker';
 
-interface Props {
+export interface CardRuleSet {
+  cardId: string;
   cardName: string;
-  /** Every card, so the picker below can target one while combined; empty
-   *  when not combined, since there's nothing to disambiguate then. */
-  cards: Card[];
-  selectedCardId: string;
-  onSelectCard: (id: string) => void;
-  transactions: Transaction[];
-  categoryOf: (tx: Transaction) => string;
-  customCategories: string[];
   rules: CategoryRule[];
   keywordRules: KeywordRule[];
   subRules: SubRule[];
-  onCreateCategory: (name: string) => void;
-  onCreateKeywordRule: (keyword: string, category: string) => void;
-  onUpdateKeywordRuleCategory: (keyword: string, category: string) => void;
-  onDeleteKeywordRule: (keyword: string) => void;
-  onReorderKeywordRule: (keyword: string, direction: 'up' | 'down') => void;
-  onUpdateSignatureRuleCategory: (signature: string, category: string) => void;
-  onDeleteSignatureRule: (signature: string) => void;
-  onCreateSubRule: (parent: string, keyword: string, sub: string) => void;
-  onDeleteSubRule: (id: string) => void;
-  onReorderSubRule: (id: string, direction: 'up' | 'down') => void;
-  onReparentSubRule: (id: string, newParent: string) => void;
 }
 
-function matchCount(transactions: Transaction[], needle: string): number {
-  if (!needle) return 0;
-  let n = 0;
-  for (const t of transactions) if (t.description.toLowerCase().includes(needle)) n++;
-  return n;
+interface Props {
+  cards: Card[];
+  /** Which card's transactions the "N transactions" counts reflect — either
+   *  a specific card id or ALL_CARDS_ID to sum across every card. */
+  countCardId: string;
+  onChangeCountCard: (id: string) => void;
+  /** Every card's own effective (global+card merged) resolver — used only
+   *  for computing match counts, never for deciding what's editable here. */
+  cardSnapshots: CardSnapshot[];
+  globalRules: CategoryRule[];
+  globalKeywordRules: KeywordRule[];
+  globalSubRules: SubRule[];
+  /** Each card's own card-specific rules, unmerged — what actually renders
+   *  in that card's own section below the global one. */
+  cardRuleSets: CardRuleSet[];
+  customCategories: string[];
+  onCreateCategory: (scope: string, name: string) => void;
+  onCreateKeywordRule: (scope: string, keyword: string, category: string) => void;
+  onUpdateKeywordRuleCategory: (scope: string, keyword: string, category: string) => void;
+  onDeleteKeywordRule: (scope: string, keyword: string, category: string) => void;
+  onReorderKeywordRule: (scope: string, keyword: string, direction: 'up' | 'down') => void;
+  onUpdateSignatureRuleCategory: (scope: string, signature: string, category: string) => void;
+  onDeleteSignatureRule: (scope: string, signature: string, category: string) => void;
+  onCreateSubRule: (scope: string, parent: string, keyword: string, sub: string) => void;
+  onDeleteSubRule: (scope: string, id: string, info: { parent: string; sub: string; keyword: string }) => void;
+  onReorderSubRule: (scope: string, id: string, direction: 'up' | 'down') => void;
+  onReparentSubRule: (scope: string, id: string, newParent: string) => void;
 }
 
 function plural(n: number): string {
@@ -68,7 +74,7 @@ interface RuleRowProps {
   onRemove: () => void;
 }
 
-/** One row of the merged rule list: keyword/merchant → category → optional
+/** One row of a scope's rule list: keyword/merchant → category → optional
  *  sub-category. Handles all three row kinds (keyword rule, merchant rule,
  *  standalone sub-rule) through the same shape so they read as one list. */
 function RuleRow({
@@ -150,124 +156,85 @@ function RuleRow({
   );
 }
 
-/**
- * The full categorization decision tree for the active card: keyword rules
- * and merchant rules from the wizard — fundamentally the same thing, a match
- * text mapped to a category — merged into one list grouped by category, each
- * row with an optional second arrow to a sub-category. Built-in reference
- * patterns are the read-only fallback. New rules can be added even with zero
- * matching transactions today, so they're ready for future imports.
- */
-export default function AdvancedSettingsPage({
-  cardName,
-  cards,
-  selectedCardId,
-  onSelectCard,
-  transactions,
-  categoryOf,
-  customCategories,
+interface ScopedCategoryRulesProps {
+  rules: CategoryRule[];
+  keywordRules: KeywordRule[];
+  subRules: SubRule[];
+  categoryOptions: string[];
+  onCreateCategory: (name: string) => void;
+  countCardIds: string[];
+  snapshotById: Map<string, CardSnapshot>;
+  query: string;
+  onUpdateKeywordRuleCategory: (keyword: string, category: string) => void;
+  onDeleteKeywordRule: (keyword: string, category: string) => void;
+  onReorderKeywordRule: (keyword: string, direction: 'up' | 'down') => void;
+  onUpdateSignatureRuleCategory: (signature: string, category: string) => void;
+  onDeleteSignatureRule: (signature: string, category: string) => void;
+  onSetSub: (parent: string, keyword: string, sub: string) => void;
+  onDeleteSub: (id: string, info: { parent: string; sub: string; keyword: string }) => void;
+  onReorderSub: (id: string, direction: 'up' | 'down') => void;
+  onReparentSub: (id: string, newParent: string) => void;
+}
+
+/** The category-grouped rule list for one scope (global, or a single card's
+ *  own rules) — keyword and merchant rules merged into one list, each with
+ *  an optional second arrow to a sub-category; a sub-rule with no matching
+ *  top-level rule still gets its own row. */
+function ScopedCategoryRules({
   rules,
   keywordRules,
   subRules,
+  categoryOptions,
   onCreateCategory,
-  onCreateKeywordRule,
+  countCardIds,
+  snapshotById,
+  query,
   onUpdateKeywordRuleCategory,
   onDeleteKeywordRule,
   onReorderKeywordRule,
   onUpdateSignatureRuleCategory,
   onDeleteSignatureRule,
-  onCreateSubRule,
-  onDeleteSubRule,
-  onReorderSubRule,
-  onReparentSubRule,
-}: Props) {
-  const categoryOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const c of [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...customCategories]) {
-      if (!seen.has(c)) {
-        seen.add(c);
-        out.push(c);
-      }
-    }
-    return out;
-  }, [customCategories]);
-
-  // --- Add-rule form -----------------------------------------------------
-  const [mode, setMode] = useState<'keyword' | 'sub'>('keyword');
-  const [kwText, setKwText] = useState('');
-  const [kwCategory, setKwCategory] = useState('');
-  const [subParent, setSubParent] = useState('');
-  const [subText, setSubText] = useState('');
-  const [subName, setSubName] = useState('');
-
-  const kwNeedle = kwText.trim().toLowerCase();
-  const kwMatches = kwNeedle.length >= 2 ? matchCount(transactions, kwNeedle) : 0;
-
-  const subNeedle = subText.trim().toLowerCase();
-  const subMatches = useMemo(() => {
-    if (!subParent || subNeedle.length < 2) return 0;
+  onSetSub,
+  onDeleteSub,
+  onReorderSub,
+  onReparentSub,
+}: ScopedCategoryRulesProps) {
+  const countCategoryFor = (needle: string, category: string) => {
     let n = 0;
-    for (const t of transactions) {
-      if (categoryOf(t) === subParent && t.description.toLowerCase().includes(subNeedle)) n++;
+    for (const id of countCardIds) {
+      const snap = snapshotById.get(id);
+      if (!snap) continue;
+      for (const t of snap.transactions) {
+        if (t.description.toLowerCase().includes(needle) && snap.categoryOf(t) === category) n++;
+      }
     }
     return n;
-  }, [transactions, categoryOf, subParent, subNeedle]);
-
-  const subNamesForParent = useMemo(() => {
-    if (!subParent) return [];
-    const set = new Set<string>();
-    for (const r of subRules) if (r.parent === subParent) set.add(r.sub);
-    return [...set].sort();
-  }, [subRules, subParent]);
-
-  const submitKeyword = () => {
-    if (!kwNeedle || !kwCategory) return;
-    onCreateKeywordRule(kwNeedle, kwCategory);
-    setKwText('');
-    setKwCategory('');
   };
-
-  const submitSub = () => {
-    const kw = subText.trim().toLowerCase();
-    const name = normalizeCategoryName(subName);
-    if (!subParent || !kw || !name) return;
-    onCreateSubRule(subParent, kw, name);
-    setSubText('');
-    setSubName('');
-  };
-
-  // --- Merged keyword + merchant + standalone sub-rules, grouped by category
-  const keywordMatchCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of keywordRules) m.set(r.keyword, matchCount(transactions, r.keyword));
-    return m;
-  }, [keywordRules, transactions]);
-
-  const signatureMatchCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of transactions) {
-      if (t.amount >= 0) continue; // signature rules are expense-only
-      const sig = signatureOf(t.description);
-      m.set(sig, (m.get(sig) ?? 0) + 1);
-    }
-    return m;
-  }, [transactions]);
-
-  const subMatchCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of subRules) {
-      let n = 0;
-      for (const t of transactions) {
-        if (categoryOf(t) === r.parent && t.description.toLowerCase().includes(r.keyword)) n++;
+  const countSignature = (sig: string) => {
+    let n = 0;
+    for (const id of countCardIds) {
+      const snap = snapshotById.get(id);
+      if (!snap) continue;
+      for (const t of snap.transactions) {
+        if (t.amount < 0 && signatureOf(t.description) === sig) n++;
       }
-      m.set(r.id, n);
     }
-    return m;
-  }, [subRules, transactions, categoryOf]);
+    return n;
+  };
+  const countSub = (needle: string, parent: string, sub: string) => {
+    let n = 0;
+    for (const id of countCardIds) {
+      const snap = snapshotById.get(id);
+      if (!snap) continue;
+      for (const t of snap.transactions) {
+        if (!t.description.toLowerCase().includes(needle)) continue;
+        if (snap.categoryOf(t) !== parent) continue;
+        if (snap.subOf(t, parent) === sub) n++;
+      }
+    }
+    return n;
+  };
 
-  // A sub-rule pairs with a top-level rule of the same (category, keyword) —
-  // shown as that rule's second arrow instead of its own row.
   const subByPair = useMemo(() => {
     const m = new Map<string, SubRule>();
     for (const r of subRules) m.set(`${r.parent}|${r.keyword}`, r);
@@ -283,10 +250,6 @@ export default function AdvancedSettingsPage({
     () => subRules.filter((r) => !coveredSubKeys.has(`${r.parent}|${r.keyword}`)),
     [subRules, coveredSubKeys],
   );
-
-  const [query, setQuery] = useState('');
-  const searching = query.trim().length > 0;
-  const totalRuleCount = keywordRules.length + rules.length;
 
   const categoryGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -315,6 +278,220 @@ export default function AdvancedSettingsPage({
     );
   }, [keywordRules, rules, standaloneSubRules, query]);
 
+  const searching = query.trim().length > 0;
+  const total = rules.length + keywordRules.length;
+
+  if (total === 0 && standaloneSubRules.length === 0) {
+    return <p className="muted rules-empty">No rules here yet — add one above.</p>;
+  }
+  if (categoryGroups.length === 0) {
+    return <p className="muted rules-empty">No rules match “{query}”.</p>;
+  }
+
+  return (
+    <div className="rules-groups">
+      {categoryGroups.map(([cat, g]) => (
+        <details key={cat} open={searching || undefined}>
+          <summary>
+            <span className="catdot" style={{ background: categoryColor(cat) }} />
+            {cat}
+            <span className="muted rules-group-count">{g.keyword.length + g.merchant.length + g.standalone.length}</span>
+          </summary>
+          <div className="rules-list">
+            {g.keyword.map((r, i) => {
+              const subValue = subByPair.get(`${cat}|${r.keyword}`)?.sub ?? '';
+              return (
+                <RuleRow
+                  key={`kw-${r.keyword}`}
+                  priority={i + 1}
+                  keyLabel={`contains “${r.keyword}”`}
+                  category={r.category}
+                  categoryOptions={categoryOptions}
+                  onCreateCategory={onCreateCategory}
+                  onCategoryChange={(newCat) => onUpdateKeywordRuleCategory(r.keyword, newCat)}
+                  subValue={subValue}
+                  onSubCommit={(v) =>
+                    v
+                      ? onSetSub(cat, r.keyword, v)
+                      : subByPair.has(`${cat}|${r.keyword}`) &&
+                        onDeleteSub(`${cat}${r.keyword}`, { parent: cat, sub: subValue, keyword: r.keyword })
+                  }
+                  count={countCategoryFor(r.keyword, cat)}
+                  onReorderUp={() => onReorderKeywordRule(r.keyword, 'up')}
+                  onReorderDown={() => onReorderKeywordRule(r.keyword, 'down')}
+                  reorderUpDisabled={i === 0}
+                  reorderDownDisabled={i === g.keyword.length - 1}
+                  onRemove={() => onDeleteKeywordRule(r.keyword, r.category)}
+                />
+              );
+            })}
+            {g.merchant.map((r) => {
+              const subValue = subByPair.get(`${cat}|${r.signature}`)?.sub ?? '';
+              return (
+                <RuleRow
+                  key={`mr-${r.signature}`}
+                  keyLabel={r.signature}
+                  titleAttr={r.sample}
+                  category={r.category}
+                  categoryOptions={categoryOptions}
+                  onCreateCategory={onCreateCategory}
+                  onCategoryChange={(newCat) => onUpdateSignatureRuleCategory(r.signature, newCat)}
+                  subValue={subValue}
+                  onSubCommit={(v) =>
+                    v
+                      ? onSetSub(cat, r.signature, v)
+                      : subByPair.has(`${cat}|${r.signature}`) &&
+                        onDeleteSub(`${cat}${r.signature}`, { parent: cat, sub: subValue, keyword: r.signature })
+                  }
+                  count={countSignature(r.signature)}
+                  onRemove={() => onDeleteSignatureRule(r.signature, r.category)}
+                />
+              );
+            })}
+            {g.standalone.map((r, i) => (
+              <RuleRow
+                key={`sr-${r.id}`}
+                priority={i + 1}
+                keyLabel={`contains “${r.keyword}”`}
+                category={r.parent}
+                categoryOptions={categoryOptions}
+                onCreateCategory={onCreateCategory}
+                onCategoryChange={(newCat) => onReparentSub(r.id, newCat)}
+                subValue={r.sub}
+                onSubCommit={(v) =>
+                  v
+                    ? onSetSub(r.parent, r.keyword, v)
+                    : onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })
+                }
+                count={countSub(r.keyword, r.parent, r.sub)}
+                onReorderUp={() => onReorderSub(r.id, 'up')}
+                onReorderDown={() => onReorderSub(r.id, 'down')}
+                reorderUpDisabled={i === 0}
+                reorderDownDisabled={i === g.standalone.length - 1}
+                onRemove={() => onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })}
+              />
+            ))}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The full categorization decision tree, across every card: global rules
+ * (the default, applying everywhere) plus any card that has its own
+ * card-specific overrides — each shown in its own section, category-grouped
+ * within. New rules can be added even with zero matching transactions today,
+ * so they're ready for future imports. Deleting a rule never changes how an
+ * already-categorized transaction looks — see the caller for that guarantee.
+ */
+export default function AdvancedSettingsPage({
+  cards,
+  countCardId,
+  onChangeCountCard,
+  cardSnapshots,
+  globalRules,
+  globalKeywordRules,
+  globalSubRules,
+  cardRuleSets,
+  customCategories,
+  onCreateCategory,
+  onCreateKeywordRule,
+  onUpdateKeywordRuleCategory,
+  onDeleteKeywordRule,
+  onReorderKeywordRule,
+  onUpdateSignatureRuleCategory,
+  onDeleteSignatureRule,
+  onCreateSubRule,
+  onDeleteSubRule,
+  onReorderSubRule,
+  onReparentSubRule,
+}: Props) {
+  const categoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...customCategories]) {
+      if (!seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    return out;
+  }, [customCategories]);
+
+  const snapshotById = useMemo(() => new Map(cardSnapshots.map((s) => [s.cardId, s])), [cardSnapshots]);
+  const countCardIds = useMemo(
+    () => (countCardId === ALL_CARDS_ID ? cards.map((c) => c.id) : [countCardId]),
+    [countCardId, cards],
+  );
+  const countTransactions = useMemo(() => {
+    const out: Transaction[] = [];
+    for (const id of countCardIds) {
+      const snap = snapshotById.get(id);
+      if (snap) out.push(...snap.transactions);
+    }
+    return out;
+  }, [countCardIds, snapshotById]);
+
+  // --- Add-rule form -------------------------------------------------------
+  const [mode, setMode] = useState<'keyword' | 'sub'>('keyword');
+  const [formScope, setFormScope] = useState('global');
+  const [kwText, setKwText] = useState('');
+  const [kwCategory, setKwCategory] = useState('');
+  const [subParent, setSubParent] = useState('');
+  const [subText, setSubText] = useState('');
+  const [subName, setSubName] = useState('');
+
+  const kwNeedle = kwText.trim().toLowerCase();
+  const kwMatches = useMemo(() => {
+    if (kwNeedle.length < 2) return 0;
+    let n = 0;
+    for (const t of countTransactions) if (t.description.toLowerCase().includes(kwNeedle)) n++;
+    return n;
+  }, [countTransactions, kwNeedle]);
+
+  const subNeedle = subText.trim().toLowerCase();
+  const subMatches = useMemo(() => {
+    if (!subParent || subNeedle.length < 2) return 0;
+    let n = 0;
+    for (const id of countCardIds) {
+      const snap = snapshotById.get(id);
+      if (!snap) continue;
+      for (const t of snap.transactions) {
+        if (snap.categoryOf(t) === subParent && t.description.toLowerCase().includes(subNeedle)) n++;
+      }
+    }
+    return n;
+  }, [countCardIds, snapshotById, subParent, subNeedle]);
+
+  const allSubRules = useMemo(
+    () => [...globalSubRules, ...cardRuleSets.flatMap((c) => c.subRules)],
+    [globalSubRules, cardRuleSets],
+  );
+  const subNamesForParent = useMemo(() => {
+    if (!subParent) return [];
+    const set = new Set<string>();
+    for (const r of allSubRules) if (r.parent === subParent) set.add(r.sub);
+    return [...set].sort();
+  }, [allSubRules, subParent]);
+
+  const submitKeyword = () => {
+    if (!kwNeedle || !kwCategory) return;
+    onCreateKeywordRule(formScope, kwNeedle, kwCategory);
+    setKwText('');
+    setKwCategory('');
+  };
+
+  const submitSub = () => {
+    const kw = subText.trim().toLowerCase();
+    const name = normalizeCategoryName(subName);
+    if (!subParent || !kw || !name) return;
+    onCreateSubRule(formScope, subParent, kw, name);
+    setSubText('');
+    setSubName('');
+  };
+
   // --- Built-in reference, decluttered: collapsed to a preview per category
   const [expandedBuiltIn, setExpandedBuiltIn] = useState<Set<string>>(new Set());
   const toggleBuiltIn = (category: string) => {
@@ -326,34 +503,32 @@ export default function AdvancedSettingsPage({
     });
   };
 
-  const commitSub = (parent: string, keyword: string, value: string) => {
-    if (value) {
-      onCreateSubRule(parent, keyword, value);
-    } else if (subByPair.has(`${parent}|${keyword}`)) {
-      onDeleteSubRule(`${parent}${keyword}`);
-    }
-  };
+  const [query, setQuery] = useState('');
+
+  const cardsWithOwnRules = useMemo(
+    () => cardRuleSets.filter((c) => c.rules.length + c.keywordRules.length + c.subRules.length > 0),
+    [cardRuleSets],
+  );
 
   return (
     <div className="rules-page">
       <p className="muted rules-intro">
-        The categorization logic applied to <strong>{cardName}</strong>, grouped by category: keyword
-        and merchant rules first (newest wins within a category), then the built-in reference patterns
-        as a fallback. Give any rule an optional sub-category for a finer split within that category.
+        Rules are global by default — a keyword or merchant rule applies to every card unless a card
+        defines its own for the same keyword/merchant, which takes precedence just for that card.
+        Give any rule an optional sub-category for a finer split within it.
       </p>
 
-      {cards.length > 1 && (
-        <label className="picker rules-card-picker">
-          <span className="picker-label">Editing rules for</span>
-          <select value={selectedCardId} onChange={(e) => onSelectCard(e.target.value)}>
-            {cards.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      <label className="picker rules-card-picker">
+        <span className="picker-label">Show match counts for</span>
+        <select value={countCardId} onChange={(e) => onChangeCountCard(e.target.value)}>
+          <option value={ALL_CARDS_ID}>All cards</option>
+          {cards.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <section className="panel rules-add">
         <div className="panel-head">
@@ -374,6 +549,18 @@ export default function AdvancedSettingsPage({
           </div>
         </div>
 
+        <label className="picker rules-form-scope">
+          <span className="picker-label">For</span>
+          <select value={formScope} onChange={(e) => setFormScope(e.target.value)}>
+            <option value="global">All cards (default)</option>
+            {cards.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} only
+              </option>
+            ))}
+          </select>
+        </label>
+
         {mode === 'keyword' ? (
           <div className="rules-form">
             <span className="muted">If description contains</span>
@@ -388,7 +575,7 @@ export default function AdvancedSettingsPage({
               value={kwCategory}
               onChange={setKwCategory}
               options={categoryOptions}
-              onCreate={onCreateCategory}
+              onCreate={(name) => onCreateCategory(formScope, name)}
               keepValue=""
               keepLabel="Choose category…"
             />
@@ -458,105 +645,75 @@ export default function AdvancedSettingsPage({
         )}
       </section>
 
+      <input
+        className="rules-search rules-search-top"
+        value={query}
+        placeholder="Search rules across every card…"
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Category rules</h2>
-            <p className="muted">
-              Keyword rules you typed and merchant rules from the categorization wizard — both are
-              "if description contains X" rules, just grouped here by the category they target.
-            </p>
+            <h2>Global rules</h2>
+            <p className="muted">Apply to every card by default.</p>
           </div>
-          <span className="badge">{totalRuleCount}</span>
+          <span className="badge">{globalRules.length + globalKeywordRules.length}</span>
         </div>
-        {totalRuleCount === 0 && standaloneSubRules.length === 0 ? (
-          <p className="muted rules-empty">No rules yet — add one above, or run the categorization wizard from the Dashboard.</p>
-        ) : (
-          <input
-            className="rules-search"
-            value={query}
-            placeholder="Search rules…"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        )}
-        {(totalRuleCount > 0 || standaloneSubRules.length > 0) && categoryGroups.length === 0 && (
-          <p className="muted rules-empty">No rules match “{query}”.</p>
-        )}
-        {categoryGroups.length > 0 && (
-          <div className="rules-groups">
-            {categoryGroups.map(([cat, g]) => (
-              <details key={cat} open={searching || undefined}>
-                <summary>
-                  <span className="catdot" style={{ background: categoryColor(cat) }} />
-                  {cat}
-                  <span className="muted rules-group-count">{g.keyword.length + g.merchant.length + g.standalone.length}</span>
-                </summary>
-                <div className="rules-list">
-                  {g.keyword.map((r, i) => {
-                    const subValue = subByPair.get(`${cat}|${r.keyword}`)?.sub ?? '';
-                    return (
-                      <RuleRow
-                        key={`kw-${r.keyword}`}
-                        priority={i + 1}
-                        keyLabel={`contains “${r.keyword}”`}
-                        category={r.category}
-                        categoryOptions={categoryOptions}
-                        onCreateCategory={onCreateCategory}
-                        onCategoryChange={(newCat) => onUpdateKeywordRuleCategory(r.keyword, newCat)}
-                        subValue={subValue}
-                        onSubCommit={(v) => commitSub(cat, r.keyword, v)}
-                        count={keywordMatchCounts.get(r.keyword) ?? 0}
-                        onReorderUp={() => onReorderKeywordRule(r.keyword, 'up')}
-                        onReorderDown={() => onReorderKeywordRule(r.keyword, 'down')}
-                        reorderUpDisabled={i === 0}
-                        reorderDownDisabled={i === g.keyword.length - 1}
-                        onRemove={() => onDeleteKeywordRule(r.keyword)}
-                      />
-                    );
-                  })}
-                  {g.merchant.map((r) => {
-                    const subValue = subByPair.get(`${cat}|${r.signature}`)?.sub ?? '';
-                    return (
-                      <RuleRow
-                        key={`mr-${r.signature}`}
-                        keyLabel={r.signature}
-                        titleAttr={r.sample}
-                        category={r.category}
-                        categoryOptions={categoryOptions}
-                        onCreateCategory={onCreateCategory}
-                        onCategoryChange={(newCat) => onUpdateSignatureRuleCategory(r.signature, newCat)}
-                        subValue={subValue}
-                        onSubCommit={(v) => commitSub(cat, r.signature, v)}
-                        count={signatureMatchCounts.get(r.signature) ?? 0}
-                        onRemove={() => onDeleteSignatureRule(r.signature)}
-                      />
-                    );
-                  })}
-                  {g.standalone.map((r, i) => (
-                    <RuleRow
-                      key={`sr-${r.id}`}
-                      priority={i + 1}
-                      keyLabel={`contains “${r.keyword}”`}
-                      category={r.parent}
-                      categoryOptions={categoryOptions}
-                      onCreateCategory={onCreateCategory}
-                      onCategoryChange={(newCat) => onReparentSubRule(r.id, newCat)}
-                      subValue={r.sub}
-                      onSubCommit={(v) => (v ? onCreateSubRule(r.parent, r.keyword, v) : onDeleteSubRule(r.id))}
-                      count={subMatchCounts.get(r.id) ?? 0}
-                      onReorderUp={() => onReorderSubRule(r.id, 'up')}
-                      onReorderDown={() => onReorderSubRule(r.id, 'down')}
-                      reorderUpDisabled={i === 0}
-                      reorderDownDisabled={i === g.standalone.length - 1}
-                      onRemove={() => onDeleteSubRule(r.id)}
-                    />
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        )}
+        <ScopedCategoryRules
+          rules={globalRules}
+          keywordRules={globalKeywordRules}
+          subRules={globalSubRules}
+          categoryOptions={categoryOptions}
+          onCreateCategory={(name) => onCreateCategory('global', name)}
+          countCardIds={countCardIds}
+          snapshotById={snapshotById}
+          query={query}
+          onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory('global', kw, cat)}
+          onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule('global', kw, cat)}
+          onReorderKeywordRule={(kw, dir) => onReorderKeywordRule('global', kw, dir)}
+          onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory('global', sig, cat)}
+          onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule('global', sig, cat)}
+          onSetSub={(parent, kw, sub) => onCreateSubRule('global', parent, kw, sub)}
+          onDeleteSub={(id, info) => onDeleteSubRule('global', id, info)}
+          onReorderSub={(id, dir) => onReorderSubRule('global', id, dir)}
+          onReparentSub={(id, newParent) => onReparentSubRule('global', id, newParent)}
+        />
       </section>
+
+      {cardsWithOwnRules.map((c) => (
+        <section className="panel" key={c.cardId}>
+          <details open>
+            <summary>
+              <strong>{c.cardName} — card-specific rules</strong>
+              <span className="muted rules-group-count">{c.rules.length + c.keywordRules.length}</span>
+            </summary>
+            <p className="muted rules-card-scope-note">
+              Only applies to {c.cardName}, and takes precedence over a global rule for the same keyword
+              or merchant.
+            </p>
+            <ScopedCategoryRules
+              rules={c.rules}
+              keywordRules={c.keywordRules}
+              subRules={c.subRules}
+              categoryOptions={categoryOptions}
+              onCreateCategory={(name) => onCreateCategory(c.cardId, name)}
+              countCardIds={countCardIds}
+              snapshotById={snapshotById}
+              query={query}
+              onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory(c.cardId, kw, cat)}
+              onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule(c.cardId, kw, cat)}
+              onReorderKeywordRule={(kw, dir) => onReorderKeywordRule(c.cardId, kw, dir)}
+              onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory(c.cardId, sig, cat)}
+              onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule(c.cardId, sig, cat)}
+              onSetSub={(parent, kw, sub) => onCreateSubRule(c.cardId, parent, kw, sub)}
+              onDeleteSub={(id, info) => onDeleteSubRule(c.cardId, id, info)}
+              onReorderSub={(id, dir) => onReorderSubRule(c.cardId, id, dir)}
+              onReparentSub={(id, newParent) => onReparentSubRule(c.cardId, id, newParent)}
+            />
+          </details>
+        </section>
+      ))}
 
       <section className="panel">
         <details>
