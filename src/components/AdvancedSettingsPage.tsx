@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
+import type { Card } from '../lib/cards';
 import {
   BUILT_IN_RULES,
   EXPENSE_CATEGORIES,
@@ -12,6 +13,11 @@ import CategoryPicker from './CategoryPicker';
 
 interface Props {
   cardName: string;
+  /** Every card, so the picker below can target one while combined; empty
+   *  when not combined, since there's nothing to disambiguate then. */
+  cards: Card[];
+  selectedCardId: string;
+  onSelectCard: (id: string) => void;
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   customCategories: string[];
@@ -154,6 +160,9 @@ function RuleRow({
  */
 export default function AdvancedSettingsPage({
   cardName,
+  cards,
+  selectedCardId,
+  onSelectCard,
   transactions,
   categoryOf,
   customCategories,
@@ -332,6 +341,19 @@ export default function AdvancedSettingsPage({
         and merchant rules first (newest wins within a category), then the built-in reference patterns
         as a fallback. Give any rule an optional sub-category for a finer split within that category.
       </p>
+
+      {cards.length > 1 && (
+        <label className="picker rules-card-picker">
+          <span className="picker-label">Editing rules for</span>
+          <select value={selectedCardId} onChange={(e) => onSelectCard(e.target.value)}>
+            {cards.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <section className="panel rules-add">
         <div className="panel-head">

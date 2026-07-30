@@ -172,6 +172,19 @@ export default function App() {
     }
   });
   const [otherCardsData, setOtherCardsData] = useState<Record<string, OtherCardData>>({});
+  // Which card's rules Advanced Settings shows/edits — normally the active
+  // card, but while combined the user can point it at a different card via
+  // its own picker without touching the global active card (so the combined
+  // Dashboard/Categories/Transactions views stay put). Resyncs to the active
+  // card whenever it actually changes.
+  const [rulesTargetCardId, setRulesTargetCardId] = useState<string>(activeCardId);
+  useEffect(() => {
+    setRulesTargetCardId(activeCardId);
+  }, [activeCardId]);
+  // Bumped whenever a custom category is added for a non-active card, so the
+  // localStorage-backed memo below knows to recompute (otherCardsData itself
+  // doesn't carry custom categories).
+  const [otherCustomCategoriesTick, setOtherCustomCategoriesTick] = useState(0);
 
   useEffect(() => {
     if (!combineEnabled) {
@@ -473,6 +486,36 @@ export default function App() {
   const dashboardCategoryOf = combineEnabled && combinedAllData ? combinedAllData.categoryOf : categoryOf;
   const dashboardOverview = combineEnabled && combinedOverview ? combinedOverview : overview;
 
+  // Data for whichever card Advanced Settings is currently targeting (see
+  // rulesTargetCardId above) — the active card's own live state, or a
+  // read-only snapshot of another card fetched for combining.
+  const rulesTargetCard = useMemo(
+    () => cards.find((c) => c.id === rulesTargetCardId) ?? activeCard,
+    [cards, rulesTargetCardId, activeCard],
+  );
+  const isRulesTargetActive = rulesTargetCard?.id === activeCardId;
+  const rulesTargetOther = !isRulesTargetActive ? otherCardsData[rulesTargetCard?.id ?? ''] : undefined;
+  const rulesTargetTransactions = isRulesTargetActive ? transactions : rulesTargetOther?.transactions ?? [];
+  const rulesTargetRules = isRulesTargetActive ? rules : rulesTargetOther?.rules ?? [];
+  const rulesTargetKeywordRules = isRulesTargetActive ? keywordRules : rulesTargetOther?.keywordRules ?? [];
+  const rulesTargetSubRules = isRulesTargetActive ? subRules : rulesTargetOther?.subRules ?? [];
+  const rulesTargetCategoryOf = useMemo(() => {
+    if (isRulesTargetActive) return categoryOf;
+    const rMap = new Map(rulesTargetRules.map((r) => [r.signature, r]));
+    const oMap = new Map((rulesTargetOther?.overrides ?? []).map((o) => [o.id, o.category]));
+    return makeResolver(rMap, oMap, rulesTargetKeywordRules);
+  }, [isRulesTargetActive, categoryOf, rulesTargetRules, rulesTargetOther, rulesTargetKeywordRules]);
+  const rulesTargetCustomCategories = useMemo(() => {
+    if (isRulesTargetActive) return customCategories;
+    try {
+      const raw = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, rulesTargetCard?.id ?? '')) ?? '[]');
+      return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === 'string') : [];
+    } catch {
+      return [];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRulesTargetActive, customCategories, rulesTargetCard, otherCustomCategoriesTick]);
+
   // Classification (the wizard's pending groups) is independent of the display
   // filter above — you can still categorize everything even if some of it is
   // excluded from the charts.
@@ -720,126 +763,6 @@ export default function App() {
     [dbName],
   );
 
-  // Priority is "newest wins", so reordering swaps the createdAt timestamps
-  // of the two adjacent rules rather than needing a separate priority field.
-  // Scoped to rules targeting the same category, since that's how they're
-  // grouped and reordered in the Advanced Settings view.
-  const handleReorderKeywordRule = useCallback(
-    (keyword: string, direction: 'up' | 'down') => {
-      setKeywordRules((prev) => {
-        const target = prev.find((r) => r.keyword === keyword);
-        if (!target) return prev;
-        const siblings = prev.filter((r) => r.category === target.category).sort((a, b) => b.createdAt - a.createdAt);
-        const idx = siblings.findIndex((r) => r.keyword === keyword);
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
-        const a = siblings[idx];
-        const b = siblings[swapIdx];
-        const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
-        const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
-        saveKeywordRules(dbName, [updatedA, updatedB]);
-        return prev.map((r) =>
-          r.keyword === updatedA.keyword ? updatedA : r.keyword === updatedB.keyword ? updatedB : r,
-        );
-      });
-    },
-    [dbName],
-  );
-
-  // Editing a keyword rule's target category in place — unlike creating a new
-  // rule with that keyword, this keeps the rule's existing priority instead
-  // of bumping it to "newest wins".
-  const handleUpdateKeywordRuleCategory = useCallback(
-    (keyword: string, category: string) => {
-      setKeywordRules((prev) => {
-        const existing = prev.find((r) => r.keyword === keyword);
-        if (!existing) return prev;
-        const updated: KeywordRule = { ...existing, category };
-        saveKeywordRule(dbName, updated);
-        return prev.map((r) => (r.keyword === keyword ? updated : r));
-      });
-    },
-    [dbName],
-  );
-
-  const handleUpdateSignatureRuleCategory = useCallback(
-    (signature: string, category: string) => {
-      setRules((prev) => {
-        const existing = prev.find((r) => r.signature === signature);
-        if (!existing) return prev;
-        const updated: CategoryRule = { ...existing, category };
-        saveCategorization(dbName, [updated], []);
-        return prev.map((r) => (r.signature === signature ? updated : r));
-      });
-    },
-    [dbName],
-  );
-
-  const handleDeleteSignatureRule = useCallback(
-    (signature: string) => {
-      deleteRule(dbName, signature);
-      setRules((prev) => prev.filter((r) => r.signature !== signature));
-    },
-    [dbName],
-  );
-
-  const handleCreateSubRule = useCallback(
-    (parent: string, keyword: string, subName: string) => {
-      const kw = keyword.trim().toLowerCase();
-      if (!parent || !kw || !subName) return;
-      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
-      saveSubRules(dbName, [rule]);
-      setSubRules((prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
-      setToast(`Sub-category rule saved · "${kw}" → ${parent} / ${subName}`);
-    },
-    [dbName],
-  );
-
-  const handleDeleteSubRule = useCallback(
-    (id: string) => {
-      deleteSubRule(dbName, id);
-      setSubRules((prev) => prev.filter((r) => r.id !== id));
-    },
-    [dbName],
-  );
-
-  // A sub-rule's id is derived from its (parent, keyword) pair, so moving it
-  // to a different category means replacing it under a new id rather than
-  // updating the existing record in place.
-  const handleReparentSubRule = useCallback(
-    (id: string, newParent: string) => {
-      setSubRules((prev) => {
-        const existing = prev.find((r) => r.id === id);
-        if (!existing || existing.parent === newParent) return prev;
-        const updated: SubRule = { ...existing, parent: newParent, id: `${newParent}${existing.keyword}` };
-        deleteSubRule(dbName, id);
-        saveSubRules(dbName, [updated]);
-        return [...prev.filter((r) => r.id !== id), updated];
-      });
-    },
-    [dbName],
-  );
-
-  const handleReorderSubRule = useCallback(
-    (id: string, direction: 'up' | 'down') => {
-      setSubRules((prev) => {
-        const target = prev.find((r) => r.id === id);
-        if (!target) return prev;
-        const siblings = prev.filter((r) => r.parent === target.parent).sort((a, b) => b.createdAt - a.createdAt);
-        const idx = siblings.findIndex((r) => r.id === id);
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
-        const a = siblings[idx];
-        const b = siblings[swapIdx];
-        const updatedA: SubRule = { ...a, createdAt: b.createdAt };
-        const updatedB: SubRule = { ...b, createdAt: a.createdAt };
-        saveSubRules(dbName, [updatedA, updatedB]);
-        return prev.map((r) => (r.id === updatedA.id ? updatedA : r.id === updatedB.id ? updatedB : r));
-      });
-    },
-    [dbName],
-  );
-
   const handleCreateCategory = useCallback(
     (rawName: string) => {
       setCustomCategories((prev) => {
@@ -857,6 +780,218 @@ export default function App() {
       });
     },
     [activeCardId],
+  );
+
+  // --- Advanced Settings: same operations as above, but targetable at any
+  // card (not just the active one) — see rulesTargetCardId. Writes go to
+  // that card's own database; state updates go to the main state if it's the
+  // active card, or otherCardsData if it's a different one being combined.
+  const getCardDbName = useCallback(
+    (cardId: string) => cards.find((c) => c.id === cardId)?.dbName ?? dbName,
+    [cards, dbName],
+  );
+  const updateCardKeywordRules = useCallback(
+    (cardId: string, updater: (prev: KeywordRule[]) => KeywordRule[]) => {
+      if (cardId === activeCardId) {
+        setKeywordRules(updater);
+      } else {
+        setOtherCardsData((prev) => {
+          const existing = prev[cardId];
+          if (!existing) return prev;
+          return { ...prev, [cardId]: { ...existing, keywordRules: updater(existing.keywordRules) } };
+        });
+      }
+    },
+    [activeCardId],
+  );
+  const updateCardRules = useCallback(
+    (cardId: string, updater: (prev: CategoryRule[]) => CategoryRule[]) => {
+      if (cardId === activeCardId) {
+        setRules(updater);
+      } else {
+        setOtherCardsData((prev) => {
+          const existing = prev[cardId];
+          if (!existing) return prev;
+          return { ...prev, [cardId]: { ...existing, rules: updater(existing.rules) } };
+        });
+      }
+    },
+    [activeCardId],
+  );
+  const updateCardSubRules = useCallback(
+    (cardId: string, updater: (prev: SubRule[]) => SubRule[]) => {
+      if (cardId === activeCardId) {
+        setSubRules(updater);
+      } else {
+        setOtherCardsData((prev) => {
+          const existing = prev[cardId];
+          if (!existing) return prev;
+          return { ...prev, [cardId]: { ...existing, subRules: updater(existing.subRules) } };
+        });
+      }
+    },
+    [activeCardId],
+  );
+
+  const handleCreateKeywordRuleFor = useCallback(
+    (cardId: string, keyword: string, category: string) => {
+      const rule: KeywordRule = { keyword, category, createdAt: Date.now() };
+      saveKeywordRule(getCardDbName(cardId), rule);
+      updateCardKeywordRules(cardId, (prev) => [...prev.filter((r) => r.keyword !== keyword), rule]);
+      setToast(`Rule saved · “${keyword}” → ${category}`);
+    },
+    [getCardDbName, updateCardKeywordRules],
+  );
+
+  const handleDeleteKeywordRuleFor = useCallback(
+    (cardId: string, keyword: string) => {
+      deleteKeywordRule(getCardDbName(cardId), keyword);
+      updateCardKeywordRules(cardId, (prev) => prev.filter((r) => r.keyword !== keyword));
+    },
+    [getCardDbName, updateCardKeywordRules],
+  );
+
+  // Priority is "newest wins", so reordering swaps the createdAt timestamps
+  // of the two adjacent rules rather than needing a separate priority field.
+  // Scoped to rules targeting the same category, since that's how they're
+  // grouped and reordered in the Advanced Settings view.
+  const handleReorderKeywordRule = useCallback(
+    (cardId: string, keyword: string, direction: 'up' | 'down') => {
+      updateCardKeywordRules(cardId, (prev) => {
+        const target = prev.find((r) => r.keyword === keyword);
+        if (!target) return prev;
+        const siblings = prev.filter((r) => r.category === target.category).sort((a, b) => b.createdAt - a.createdAt);
+        const idx = siblings.findIndex((r) => r.keyword === keyword);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
+        const a = siblings[idx];
+        const b = siblings[swapIdx];
+        const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
+        const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
+        saveKeywordRules(getCardDbName(cardId), [updatedA, updatedB]);
+        return prev.map((r) =>
+          r.keyword === updatedA.keyword ? updatedA : r.keyword === updatedB.keyword ? updatedB : r,
+        );
+      });
+    },
+    [getCardDbName, updateCardKeywordRules],
+  );
+
+  // Editing a keyword rule's target category in place — unlike creating a new
+  // rule with that keyword, this keeps the rule's existing priority instead
+  // of bumping it to "newest wins".
+  const handleUpdateKeywordRuleCategory = useCallback(
+    (cardId: string, keyword: string, category: string) => {
+      updateCardKeywordRules(cardId, (prev) => {
+        const existing = prev.find((r) => r.keyword === keyword);
+        if (!existing) return prev;
+        const updated: KeywordRule = { ...existing, category };
+        saveKeywordRule(getCardDbName(cardId), updated);
+        return prev.map((r) => (r.keyword === keyword ? updated : r));
+      });
+    },
+    [getCardDbName, updateCardKeywordRules],
+  );
+
+  const handleUpdateSignatureRuleCategory = useCallback(
+    (cardId: string, signature: string, category: string) => {
+      updateCardRules(cardId, (prev) => {
+        const existing = prev.find((r) => r.signature === signature);
+        if (!existing) return prev;
+        const updated: CategoryRule = { ...existing, category };
+        saveCategorization(getCardDbName(cardId), [updated], []);
+        return prev.map((r) => (r.signature === signature ? updated : r));
+      });
+    },
+    [getCardDbName, updateCardRules],
+  );
+
+  const handleDeleteSignatureRule = useCallback(
+    (cardId: string, signature: string) => {
+      deleteRule(getCardDbName(cardId), signature);
+      updateCardRules(cardId, (prev) => prev.filter((r) => r.signature !== signature));
+    },
+    [getCardDbName, updateCardRules],
+  );
+
+  const handleCreateSubRule = useCallback(
+    (cardId: string, parent: string, keyword: string, subName: string) => {
+      const kw = keyword.trim().toLowerCase();
+      if (!parent || !kw || !subName) return;
+      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
+      saveSubRules(getCardDbName(cardId), [rule]);
+      updateCardSubRules(cardId, (prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
+      setToast(`Sub-category rule saved · "${kw}" → ${parent} / ${subName}`);
+    },
+    [getCardDbName, updateCardSubRules],
+  );
+
+  const handleDeleteSubRule = useCallback(
+    (cardId: string, id: string) => {
+      deleteSubRule(getCardDbName(cardId), id);
+      updateCardSubRules(cardId, (prev) => prev.filter((r) => r.id !== id));
+    },
+    [getCardDbName, updateCardSubRules],
+  );
+
+  // A sub-rule's id is derived from its (parent, keyword) pair, so moving it
+  // to a different category means replacing it under a new id rather than
+  // updating the existing record in place.
+  const handleReparentSubRule = useCallback(
+    (cardId: string, id: string, newParent: string) => {
+      updateCardSubRules(cardId, (prev) => {
+        const existing = prev.find((r) => r.id === id);
+        if (!existing || existing.parent === newParent) return prev;
+        const updated: SubRule = { ...existing, parent: newParent, id: `${newParent}${existing.keyword}` };
+        const targetDbName = getCardDbName(cardId);
+        deleteSubRule(targetDbName, id);
+        saveSubRules(targetDbName, [updated]);
+        return [...prev.filter((r) => r.id !== id), updated];
+      });
+    },
+    [getCardDbName, updateCardSubRules],
+  );
+
+  const handleReorderSubRule = useCallback(
+    (cardId: string, id: string, direction: 'up' | 'down') => {
+      updateCardSubRules(cardId, (prev) => {
+        const target = prev.find((r) => r.id === id);
+        if (!target) return prev;
+        const siblings = prev.filter((r) => r.parent === target.parent).sort((a, b) => b.createdAt - a.createdAt);
+        const idx = siblings.findIndex((r) => r.id === id);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
+        const a = siblings[idx];
+        const b = siblings[swapIdx];
+        const updatedA: SubRule = { ...a, createdAt: b.createdAt };
+        const updatedB: SubRule = { ...b, createdAt: a.createdAt };
+        saveSubRules(getCardDbName(cardId), [updatedA, updatedB]);
+        return prev.map((r) => (r.id === updatedA.id ? updatedA : r.id === updatedB.id ? updatedB : r));
+      });
+    },
+    [getCardDbName, updateCardSubRules],
+  );
+
+  const handleCreateCategoryFor = useCallback(
+    (cardId: string, rawName: string) => {
+      if (cardId === activeCardId) {
+        handleCreateCategory(rawName);
+        return;
+      }
+      try {
+        const raw = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, cardId)) ?? '[]');
+        const prev: string[] = Array.isArray(raw) ? raw.filter((c: unknown): c is string => typeof c === 'string') : [];
+        const exists =
+          prev.some((c) => c.toLowerCase() === rawName.toLowerCase()) ||
+          EXPENSE_CATEGORIES.some((c) => c.toLowerCase() === rawName.toLowerCase());
+        if (exists) return;
+        localStorage.setItem(scopedKey(CUSTOM_CATEGORIES_KEY, cardId), JSON.stringify([...prev, rawName]));
+        setOtherCustomCategoriesTick((n) => n + 1);
+      } catch {
+        /* ignore */
+      }
+    },
+    [activeCardId, handleCreateCategory],
   );
 
   const handleWizardComplete = useCallback(
@@ -1302,24 +1437,35 @@ export default function App() {
               )
             ) : view === 'advanced' ? (
               <AdvancedSettingsPage
-                cardName={activeCard?.name ?? 'this card'}
-                transactions={transactions}
-                categoryOf={categoryOf}
-                customCategories={customCategories}
-                rules={rules}
-                keywordRules={keywordRules}
-                subRules={subRules}
-                onCreateCategory={handleCreateCategory}
-                onCreateKeywordRule={handleCreateKeywordRule}
-                onUpdateKeywordRuleCategory={handleUpdateKeywordRuleCategory}
-                onDeleteKeywordRule={handleDeleteKeywordRule}
-                onReorderKeywordRule={handleReorderKeywordRule}
-                onUpdateSignatureRuleCategory={handleUpdateSignatureRuleCategory}
-                onDeleteSignatureRule={handleDeleteSignatureRule}
-                onCreateSubRule={handleCreateSubRule}
-                onDeleteSubRule={handleDeleteSubRule}
-                onReorderSubRule={handleReorderSubRule}
-                onReparentSubRule={handleReparentSubRule}
+                cardName={rulesTargetCard?.name ?? 'this card'}
+                cards={combineEnabled ? cards : []}
+                selectedCardId={rulesTargetCard?.id ?? activeCardId}
+                onSelectCard={setRulesTargetCardId}
+                transactions={rulesTargetTransactions}
+                categoryOf={rulesTargetCategoryOf}
+                customCategories={rulesTargetCustomCategories}
+                rules={rulesTargetRules}
+                keywordRules={rulesTargetKeywordRules}
+                subRules={rulesTargetSubRules}
+                onCreateCategory={(name) => handleCreateCategoryFor(rulesTargetCard?.id ?? activeCardId, name)}
+                onCreateKeywordRule={(kw, cat) => handleCreateKeywordRuleFor(rulesTargetCard?.id ?? activeCardId, kw, cat)}
+                onUpdateKeywordRuleCategory={(kw, cat) =>
+                  handleUpdateKeywordRuleCategory(rulesTargetCard?.id ?? activeCardId, kw, cat)
+                }
+                onDeleteKeywordRule={(kw) => handleDeleteKeywordRuleFor(rulesTargetCard?.id ?? activeCardId, kw)}
+                onReorderKeywordRule={(kw, dir) => handleReorderKeywordRule(rulesTargetCard?.id ?? activeCardId, kw, dir)}
+                onUpdateSignatureRuleCategory={(sig, cat) =>
+                  handleUpdateSignatureRuleCategory(rulesTargetCard?.id ?? activeCardId, sig, cat)
+                }
+                onDeleteSignatureRule={(sig) => handleDeleteSignatureRule(rulesTargetCard?.id ?? activeCardId, sig)}
+                onCreateSubRule={(parent, kw, sub) =>
+                  handleCreateSubRule(rulesTargetCard?.id ?? activeCardId, parent, kw, sub)
+                }
+                onDeleteSubRule={(id) => handleDeleteSubRule(rulesTargetCard?.id ?? activeCardId, id)}
+                onReorderSubRule={(id, dir) => handleReorderSubRule(rulesTargetCard?.id ?? activeCardId, id, dir)}
+                onReparentSubRule={(id, newParent) =>
+                  handleReparentSubRule(rulesTargetCard?.id ?? activeCardId, id, newParent)
+                }
               />
             ) : view === 'transactions' ? (
               combineEnabled ? (

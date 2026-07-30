@@ -1812,6 +1812,9 @@ th.num {
 .rules-intro {
   margin: 0;
 }
+.rules-card-picker {
+  margin: -6px 0 -2px;
+}
 .rules-form {
   display: flex;
   align-items: center;
