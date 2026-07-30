@@ -491,6 +491,95 @@ main.container {
   padding-top: 11px;
   padding-bottom: 11px;
 }
+
+/* ---------- Excel-style sortable/filterable column headers ---------- */
+.data-table th.tx-th-menu {
+  padding: 0;
+}
+.col-menu {
+  position: relative;
+  width: 100%;
+}
+.col-menu-btn {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.col-menu-btn:hover {
+  color: var(--text);
+}
+.col-menu-right .col-menu-btn {
+  justify-content: center;
+}
+.col-menu-label {
+  white-space: nowrap;
+}
+.col-menu-sort-ind {
+  font-size: 9px;
+  color: var(--accent);
+}
+.col-menu-filter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.col-menu-caret {
+  opacity: 0.5;
+  flex: none;
+}
+.col-menu-pop {
+  left: 0;
+  right: auto;
+  min-width: 200px;
+  max-width: 280px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+}
+.col-menu-pop-right {
+  left: auto;
+  right: 0;
+}
+.col-menu-search {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  margin: 2px 2px 4px;
+}
+.col-menu-selectall {
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px !important;
+  margin-bottom: 4px;
+}
+.col-menu-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.col-menu-list .filter-check,
+.col-menu-selectall {
+  gap: 7px;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.col-menu-list .filter-check:hover {
+  background: var(--surface-2);
+}
+.col-menu-empty {
+  padding: 8px 6px;
+  font-size: 12px;
+}
 .tx-controls input[type='date'] {
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -5,6 +5,7 @@ import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
+import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
 
 export interface TransactionsJump {
@@ -33,7 +34,27 @@ interface Props {
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
+type SortCol = 'date' | 'description' | 'category' | 'amount';
+interface SortState {
+  col: SortCol;
+  dir: 'asc' | 'desc';
+}
 const PAGE = 100;
+
+function compareBase(col: SortCol, a: { t: Transaction; cat: string }, b: { t: Transaction; cat: string }): number {
+  switch (col) {
+    case 'date':
+      return a.t.date.localeCompare(b.t.date);
+    case 'description':
+      return a.t.description.localeCompare(b.t.description);
+    case 'category':
+      return a.cat.localeCompare(b.cat);
+    case 'amount':
+      return a.t.amount - b.t.amount;
+    default:
+      return 0;
+  }
+}
 
 /**
  * Full transaction list — searchable, filterable, newest first, with inline
@@ -56,7 +77,8 @@ export default function TransactionsPage({
 }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [category, setCategory] = useState('all');
+  const [categorySelected, setCategorySelected] = useState<Set<string> | null>(null);
+  const [sort, setSort] = useState<SortState>({ col: 'date', dir: 'desc' });
   const [fromDate, setFromDate] = useState(jump?.from ?? '');
   const [toDate, setToDate] = useState(jump?.to ?? '');
   const [visible, setVisible] = useState(PAGE);
@@ -96,14 +118,14 @@ export default function TransactionsPage({
     return out;
   }, [customCategories]);
 
-  // Tag + sort once (newest first); filtering/search runs cheaply over this.
-  const base = useMemo(
-    () =>
-      transactions
-        .map((t) => ({ t, cat: categoryOf(t) }))
-        .sort((a, b) => (a.t.date < b.t.date ? 1 : a.t.date > b.t.date ? -1 : 0)),
-    [transactions, categoryOf],
-  );
+  // Tag + sort once per sort choice (newest first by default); filtering/search
+  // runs cheaply over this.
+  const base = useMemo(() => {
+    const tagged = transactions.map((t) => ({ t, cat: categoryOf(t) }));
+    const mult = sort.dir === 'asc' ? 1 : -1;
+    tagged.sort((a, b) => compareBase(sort.col, a, b) * mult);
+    return tagged;
+  }, [transactions, categoryOf, sort]);
 
   const categoriesPresent = useMemo(() => {
     const set = new Set<string>();
@@ -122,20 +144,20 @@ export default function TransactionsPage({
       base.filter((r) => {
         if (typeFilter === 'expense' && r.t.amount >= 0) return false;
         if (typeFilter === 'income' && r.t.amount < 0) return false;
-        if (category !== 'all' && r.cat !== category) return false;
+        if (categorySelected && !categorySelected.has(r.cat)) return false;
         if (fromDate && r.t.date < fromDate) return false;
         if (toDate && r.t.date > toDate) return false;
         if (needle && !r.t.description.toLowerCase().includes(needle)) return false;
         if (hiddenActive && isExcluded(categoryFilter, r.cat, sub.subOf(r.t, r.cat))) return false;
         return true;
       }),
-    [base, typeFilter, category, fromDate, toDate, needle, hiddenActive, categoryFilter, sub],
+    [base, typeFilter, categorySelected, fromDate, toDate, needle, hiddenActive, categoryFilter, sub],
   );
 
   // Keep the rendered list bounded whenever the filters change.
   useEffect(() => {
     setVisible(PAGE);
-  }, [search, typeFilter, category, fromDate, toDate]);
+  }, [search, typeFilter, categorySelected, fromDate, toDate]);
 
   const shown = filtered.slice(0, visible);
   const total = filtered.reduce((a, r) => a + r.t.amount, 0);
@@ -161,17 +183,6 @@ export default function TransactionsPage({
             </button>
           ))}
         </div>
-        <label className="picker">
-          <span className="picker-label">Category</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="all">All categories</option>
-            {categoriesPresent.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="picker">
           <span className="picker-label">From</span>
           <input
@@ -224,10 +235,50 @@ export default function TransactionsPage({
         <table className="data-table tx-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Category</th>
-              <th className="num">Amount</th>
+              <th className="tx-th-menu">
+                <ColumnHeaderMenu
+                  label="Date"
+                  sortActive={sort.col === 'date'}
+                  sortDir={sort.dir}
+                  ascLabel="Oldest first"
+                  descLabel="Newest first"
+                  onSort={(dir) => setSort({ col: 'date', dir })}
+                />
+              </th>
+              <th className="tx-th-menu">
+                <ColumnHeaderMenu
+                  label="Description"
+                  sortActive={sort.col === 'description'}
+                  sortDir={sort.dir}
+                  ascLabel="A → Z"
+                  descLabel="Z → A"
+                  onSort={(dir) => setSort({ col: 'description', dir })}
+                />
+              </th>
+              <th className="tx-th-menu">
+                <ColumnHeaderMenu
+                  label="Category"
+                  sortActive={sort.col === 'category'}
+                  sortDir={sort.dir}
+                  ascLabel="A → Z"
+                  descLabel="Z → A"
+                  onSort={(dir) => setSort({ col: 'category', dir })}
+                  filterValues={categoriesPresent}
+                  selectedValues={categorySelected}
+                  onChangeSelected={setCategorySelected}
+                />
+              </th>
+              <th className="num tx-th-menu">
+                <ColumnHeaderMenu
+                  label="Amount"
+                  align="right"
+                  sortActive={sort.col === 'amount'}
+                  sortDir={sort.dir}
+                  ascLabel="Smallest first"
+                  descLabel="Largest first"
+                  onSort={(dir) => setSort({ col: 'amount', dir })}
+                />
+              </th>
               <th className="tx-note">Note</th>
             </tr>
           </thead>
