@@ -15,7 +15,6 @@ import {
   addTransactions,
   clearAll,
   clearTransactionsOnly,
-  clearCategorization,
   deleteCardDatabase,
   deleteKeywordRule,
   deleteOverride,
@@ -97,7 +96,6 @@ import Dashboard from './components/Dashboard';
 import EmptyState from './components/EmptyState';
 import Toast from './components/Toast';
 import CategorizeWizard from './components/CategorizeWizard';
-import RefineCategories from './components/RefineCategories';
 import TransactionsPage from './components/TransactionsPage';
 import CombinedTransactionsPage from './components/CombinedTransactionsPage';
 import CategoriesPage from './components/CategoriesPage';
@@ -335,7 +333,6 @@ export default function App() {
     }
   });
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [refineOpen, setRefineOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'advanced'>('dashboard');
   // Set only when jumping in from a chart click (Dashboard -> a specific
   // day/week/month's transactions); cleared on any normal tab navigation, so
@@ -646,26 +643,6 @@ export default function App() {
     [transactions, rulesMap, overridesMap, effectiveKeywordRules],
   );
 
-  const handleResetCategorization = useCallback(async () => {
-    if (
-      !confirm(
-        'Start categorization over? This clears your saved category rules and manual ' +
-          'assignments so you can reclassify from scratch. Your transactions and custom ' +
-          'categories are kept.',
-      )
-    ) {
-      return;
-    }
-    await clearCategorization(dbName);
-    setRules([]);
-    setOverrides([]);
-    setKeywordRules([]);
-    setSubRules([]);
-    setSubOverrides([]);
-    setWizardOpen(true);
-    setToast('Categorization reset — reclassify from scratch.');
-  }, [dbName]);
-
   const overriddenIds = useMemo(() => new Set(overrides.map((o) => o.id)), [overrides]);
 
   const handleToggleCategoryFilter = useCallback(
@@ -863,24 +840,6 @@ export default function App() {
     (id: string) => {
       deleteOverride(dbName, id);
       setOverrides((prev) => prev.filter((x) => x.id !== id));
-    },
-    [dbName],
-  );
-
-  const handleCreateKeywordRule = useCallback(
-    (keyword: string, category: string) => {
-      const rule: KeywordRule = { keyword, category, createdAt: Date.now() };
-      saveKeywordRule(dbName, rule);
-      setKeywordRules((prev) => [...prev.filter((r) => r.keyword !== keyword), rule]);
-      setToast(`Rule saved · “${keyword}” → ${category}`);
-    },
-    [dbName],
-  );
-
-  const handleDeleteKeywordRule = useCallback(
-    (keyword: string) => {
-      deleteKeywordRule(dbName, keyword);
-      setKeywordRules((prev) => prev.filter((r) => r.keyword !== keyword));
     },
     [dbName],
   );
@@ -1216,7 +1175,7 @@ export default function App() {
   );
 
   const handleWizardComplete = useCallback(
-    async (newRules: CategoryRule[], newOverrides: CategoryOverride[]) => {
+    async (newRules: CategoryRule[], newOverrides: CategoryOverride[], newKeywordRules: KeywordRule[]) => {
       // Merge: new decisions replace any existing rule/override with the same key.
       const mergedRules = new Map(rules.map((r) => [r.signature, r]));
       for (const r of newRules) mergedRules.set(r.signature, r);
@@ -1226,11 +1185,16 @@ export default function App() {
       await saveCategorization(dbName, newRules, newOverrides);
       setRules([...mergedRules.values()]);
       setOverrides([...mergedOverrides.values()]);
+      // Keyword rules split off in the wizard are, like every other rule,
+      // shared by every card by default.
+      for (const kr of newKeywordRules) handleCreateKeywordRuleFor('global', kr.keyword, kr.category);
       setWizardOpen(false);
-      const n = newRules.length + newOverrides.length;
-      if (n > 0) setToast(`Categorization saved · ${newRules.length} rules applied`);
+      const n = newRules.length + newOverrides.length + newKeywordRules.length;
+      if (n > 0) {
+        setToast(`Categorization saved · ${newRules.length + newKeywordRules.length} rules applied`);
+      }
     },
-    [rules, overrides, dbName],
+    [rules, overrides, dbName, handleCreateKeywordRuleFor],
   );
 
   const handleCurrencyChange = useCallback(
@@ -1443,7 +1407,6 @@ export default function App() {
       // Keep whichever tab (Dashboard/Categories/Transactions) the user was
       // already on — switching cards shouldn't reset where you're looking.
       setWizardOpen(false);
-      setRefineOpen(false);
     },
     [activeCardId, combineEnabled],
   );
@@ -1488,7 +1451,6 @@ export default function App() {
         setActiveCardId(card.id);
         saveActiveCardId(card.id);
         setWizardOpen(false);
-        setRefineOpen(false);
         setCardManagerOpen(false);
         setToast(`Card created · ${card.name}`);
       } catch (e) {
@@ -1533,7 +1495,6 @@ export default function App() {
         setActiveCardId(fallback.id);
         saveActiveCardId(fallback.id);
         setWizardOpen(false);
-        setRefineOpen(false);
       }
       setToast(`Deleted card · ${card.name}`);
     },
@@ -1542,7 +1503,6 @@ export default function App() {
 
   const hasData = transactions.length > 0;
   const canCategorize = grouping.groups.length > 0 || grouping.leftovers.length > 0;
-  const hasCategorization = rules.length > 0 || overrides.length > 0;
 
   return (
     <div className="app">
@@ -1714,8 +1674,6 @@ export default function App() {
                 monthStartDay={monthStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
-                onReset={hasCategorization ? handleResetCategorization : undefined}
-                onRefine={() => setRefineOpen(true)}
                 hiddenCount={excludedCount(combineEnabled ? combinedCategoryFilter : categoryFilter)}
                 onManageHidden={() => handleTabClick('categories')}
                 onDrillToTransactions={handleDrillToTransactions}
@@ -1745,19 +1703,6 @@ export default function App() {
           onCreateCategory={handleCreateCategory}
           onComplete={handleWizardComplete}
           onClose={() => setWizardOpen(false)}
-        />
-      )}
-
-      {refineOpen && (
-        <RefineCategories
-          transactions={transactions}
-          keywordRules={keywordRules}
-          customCategories={customCategories}
-          categoryOf={categoryOf}
-          onCreateCategory={handleCreateCategory}
-          onCreateRule={handleCreateKeywordRule}
-          onDeleteRule={handleDeleteKeywordRule}
-          onClose={() => setRefineOpen(false)}
         />
       )}
 

@@ -14,8 +14,6 @@ interface Props {
   monthStartDay: number;
   pendingCount: number;
   onReview?: () => void;
-  onReset?: () => void;
-  onRefine?: () => void;
   hiddenCount?: number;
   onManageHidden?: () => void;
   onDrillToTransactions?: (from: string, to: string) => void;
@@ -86,8 +84,6 @@ export default function Dashboard({
   monthStartDay,
   pendingCount,
   onReview,
-  onReset,
-  onRefine,
   hiddenCount = 0,
   onManageHidden,
   onDrillToTransactions,
@@ -309,16 +305,6 @@ export default function Dashboard({
             <p className="muted">Spending by category · {rangedNote}</p>
           </div>
           <div className="panel-actions">
-            {onRefine && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onRefine}>
-                Refine
-              </button>
-            )}
-            {onReset && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onReset}>
-                Start over
-              </button>
-            )}
             {onReview && (
               <button type="button" className="btn btn-primary btn-sm" onClick={onReview}>
                 Review categories
