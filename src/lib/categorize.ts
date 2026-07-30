@@ -89,6 +89,28 @@ const RULES: Rule[] = [
   { category: 'Cash', patterns: [/\batm\b/i, /cash withdrawal/i, /withdrawal/i, /cash wdl/i] },
 ];
 
+/** A regex pattern rendered back into the plain word(s) it matches, for display. */
+function patternLabels(re: RegExp): string[] {
+  const cleaned = re.source
+    .replace(/\\b/g, '')
+    .replace(/\\(.)/g, '$1')
+    .replace(/[?*+]/g, '');
+  return cleaned.split('|').map((s) => s.trim()).filter(Boolean);
+}
+
+export interface BuiltInRule {
+  category: string;
+  keywords: string[];
+}
+
+/** The app's built-in keyword-matching logic, read-only, for display in the
+ *  Advanced Settings categorization map. Same order and precedence as RULES —
+ *  first matching category wins. */
+export const BUILT_IN_RULES: BuiltInRule[] = RULES.map((r) => ({
+  category: r.category,
+  keywords: r.patterns.flatMap(patternLabels),
+}));
+
 // Pure functions of the description are memoized: with many years of data the
 // same descriptions and signatures are looked up repeatedly across aggregation,
 // grouping, and resolution.

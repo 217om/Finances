@@ -19,6 +19,8 @@ import {
   deleteCardDatabase,
   deleteKeywordRule,
   deleteOverride,
+  deleteRule,
+  deleteSubRule,
   getAllTransactions,
   getKeywordRules,
   getOverrides,
@@ -96,6 +98,7 @@ import TransactionsPage from './components/TransactionsPage';
 import CombinedTransactionsPage from './components/CombinedTransactionsPage';
 import CategoriesPage from './components/CategoriesPage';
 import CombinedCategoriesPage from './components/CombinedCategoriesPage';
+import AdvancedSettingsPage from './components/AdvancedSettingsPage';
 import CardManager from './components/CardManager';
 
 type Theme = 'light' | 'dark';
@@ -250,13 +253,13 @@ export default function App() {
   });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'advanced'>('dashboard');
   // Set only when jumping in from a chart click (Dashboard -> a specific
   // day/week/month's transactions); cleared on any normal tab navigation, so
   // the Transactions tab is never affected by category filters otherwise.
   const [txJump, setTxJump] = useState<{ from: string; to: string; token: number } | null>(null);
 
-  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories') => {
+  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories' | 'advanced') => {
     setTxJump(null);
     setView(next);
   }, []);
@@ -717,6 +720,106 @@ export default function App() {
     [dbName],
   );
 
+  // Priority among keyword/sub-rules is "newest wins", so reordering swaps
+  // the createdAt timestamps of the two adjacent rules rather than needing a
+  // separate priority field.
+  const handleReorderKeywordRule = useCallback(
+    (keyword: string, direction: 'up' | 'down') => {
+      setKeywordRules((prev) => {
+        const sorted = [...prev].sort((a, b) => b.createdAt - a.createdAt);
+        const idx = sorted.findIndex((r) => r.keyword === keyword);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return prev;
+        const a = sorted[idx];
+        const b = sorted[swapIdx];
+        const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
+        const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
+        saveKeywordRules(dbName, [updatedA, updatedB]);
+        return prev.map((r) =>
+          r.keyword === updatedA.keyword ? updatedA : r.keyword === updatedB.keyword ? updatedB : r,
+        );
+      });
+    },
+    [dbName],
+  );
+
+  // Editing a keyword rule's target category in place — unlike creating a new
+  // rule with that keyword, this keeps the rule's existing priority instead
+  // of bumping it to "newest wins".
+  const handleUpdateKeywordRuleCategory = useCallback(
+    (keyword: string, category: string) => {
+      setKeywordRules((prev) => {
+        const existing = prev.find((r) => r.keyword === keyword);
+        if (!existing) return prev;
+        const updated: KeywordRule = { ...existing, category };
+        saveKeywordRule(dbName, updated);
+        return prev.map((r) => (r.keyword === keyword ? updated : r));
+      });
+    },
+    [dbName],
+  );
+
+  const handleUpdateSignatureRuleCategory = useCallback(
+    (signature: string, category: string) => {
+      setRules((prev) => {
+        const existing = prev.find((r) => r.signature === signature);
+        if (!existing) return prev;
+        const updated: CategoryRule = { ...existing, category };
+        saveCategorization(dbName, [updated], []);
+        return prev.map((r) => (r.signature === signature ? updated : r));
+      });
+    },
+    [dbName],
+  );
+
+  const handleDeleteSignatureRule = useCallback(
+    (signature: string) => {
+      deleteRule(dbName, signature);
+      setRules((prev) => prev.filter((r) => r.signature !== signature));
+    },
+    [dbName],
+  );
+
+  const handleCreateSubRule = useCallback(
+    (parent: string, keyword: string, subName: string) => {
+      const kw = keyword.trim().toLowerCase();
+      if (!parent || !kw || !subName) return;
+      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
+      saveSubRules(dbName, [rule]);
+      setSubRules((prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
+      setToast(`Sub-category rule saved · "${kw}" → ${parent} / ${subName}`);
+    },
+    [dbName],
+  );
+
+  const handleDeleteSubRule = useCallback(
+    (id: string) => {
+      deleteSubRule(dbName, id);
+      setSubRules((prev) => prev.filter((r) => r.id !== id));
+    },
+    [dbName],
+  );
+
+  const handleReorderSubRule = useCallback(
+    (id: string, direction: 'up' | 'down') => {
+      setSubRules((prev) => {
+        const target = prev.find((r) => r.id === id);
+        if (!target) return prev;
+        const siblings = prev.filter((r) => r.parent === target.parent).sort((a, b) => b.createdAt - a.createdAt);
+        const idx = siblings.findIndex((r) => r.id === id);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
+        const a = siblings[idx];
+        const b = siblings[swapIdx];
+        const updatedA: SubRule = { ...a, createdAt: b.createdAt };
+        const updatedB: SubRule = { ...b, createdAt: a.createdAt };
+        saveSubRules(dbName, [updatedA, updatedB]);
+        return prev.map((r) => (r.id === updatedA.id ? updatedA : r.id === updatedB.id ? updatedB : r));
+      });
+    },
+    [dbName],
+  );
+
   const handleCreateCategory = useCallback(
     (rawName: string) => {
       setCustomCategories((prev) => {
@@ -1113,6 +1216,13 @@ export default function App() {
                 >
                   Transactions
                 </button>
+                <button
+                  type="button"
+                  className={`tabs-right ${view === 'advanced' ? 'on' : ''}`}
+                  onClick={() => handleTabClick('advanced')}
+                >
+                  Advanced Settings
+                </button>
               </nav>
             )}
 
@@ -1170,6 +1280,26 @@ export default function App() {
                   onApplyPreset={handleApplyCategoryFilterPreset}
                 />
               )
+            ) : view === 'advanced' ? (
+              <AdvancedSettingsPage
+                cardName={activeCard?.name ?? 'this card'}
+                transactions={transactions}
+                categoryOf={categoryOf}
+                customCategories={customCategories}
+                rules={rules}
+                keywordRules={keywordRules}
+                subRules={subRules}
+                onCreateCategory={handleCreateCategory}
+                onCreateKeywordRule={handleCreateKeywordRule}
+                onUpdateKeywordRuleCategory={handleUpdateKeywordRuleCategory}
+                onDeleteKeywordRule={handleDeleteKeywordRule}
+                onReorderKeywordRule={handleReorderKeywordRule}
+                onUpdateSignatureRuleCategory={handleUpdateSignatureRuleCategory}
+                onDeleteSignatureRule={handleDeleteSignatureRule}
+                onCreateSubRule={handleCreateSubRule}
+                onDeleteSubRule={handleDeleteSubRule}
+                onReorderSubRule={handleReorderSubRule}
+              />
             ) : view === 'transactions' ? (
               combineEnabled ? (
                 <CombinedTransactionsPage

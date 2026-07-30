@@ -349,3 +349,9 @@ export async function deleteSubOverride(dbName: string, id: string): Promise<voi
   const db = await getDB(dbName);
   await db.delete('subOverrides', id);
 }
+
+/** Remove a single sub-rule by id. */
+export async function deleteSubRule(dbName: string, id: string): Promise<void> {
+  const db = await getDB(dbName);
+  await db.delete('subRules', id);
+}
