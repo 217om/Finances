@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { deleteNote, getAllNotes, makeNote, saveNote, type Note } from '../lib/notes';
 import { evalNote, formatResult, cardSlug, type CardGetter } from '../lib/notesCalc';
 import { loadCards, type Card } from '../lib/cards';
@@ -259,6 +259,16 @@ export default function NotesWidget() {
       }
     })();
   }, [open, loaded]);
+
+  // A saved position/size can be stale relative to the current window (e.g.
+  // the panel was last dragged near the edge of a much wider screen) — without
+  // re-clamping on open, it can render fully off-screen, which looks exactly
+  // like the button silently doing nothing. useLayoutEffect so it's corrected
+  // before the first paint, not after a visible flash.
+  useLayoutEffect(() => {
+    if (!open || !panelRef.current) return;
+    setPosition((prev) => (prev ? clampPosition(prev) : prev));
+  }, [open]);
 
   // The contentEditable's rendered HTML is the source of truth for
   // formatting; React never re-renders its children while the user is
