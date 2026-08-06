@@ -36,6 +36,7 @@ import {
   saveSubRules,
   deleteSubOverride,
   deleteSubOverrides,
+  deleteTransaction,
   setTransactionNote,
   clearRuleDefinitions,
 } from './lib/db';
@@ -825,6 +826,42 @@ export default function App() {
       });
     },
     [activeCardId, dbName, applyNote],
+  );
+
+  // Deleting a transaction also drops any override/sub-override tied to its
+  // id — otherwise they'd sit orphaned in that card's database forever, since
+  // nothing ever looks them up again once the transaction itself is gone.
+  const handleDeleteTransaction = useCallback(
+    (cardId: string, id: string) => {
+      if (cardId === activeCardId) {
+        void deleteTransaction(dbName, id);
+        void deleteOverride(dbName, id);
+        void deleteSubOverride(dbName, id);
+        setTransactions((prev) => prev.filter((t) => t.id !== id));
+        setOverrides((prev) => prev.filter((o) => o.id !== id));
+        setSubOverrides((prev) => prev.filter((o) => o.id !== id));
+        return;
+      }
+      const card = cardsRef.current.find((c) => c.id === cardId);
+      if (!card) return;
+      void deleteTransaction(card.dbName, id);
+      void deleteOverride(card.dbName, id);
+      void deleteSubOverride(card.dbName, id);
+      setOtherCardsData((prev) => {
+        const existing = prev[cardId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [cardId]: {
+            ...existing,
+            transactions: existing.transactions.filter((t) => t.id !== id),
+            overrides: existing.overrides.filter((o) => o.id !== id),
+            subOverrides: existing.subOverrides.filter((o) => o.id !== id),
+          },
+        };
+      });
+    },
+    [activeCardId, dbName],
   );
 
   const handleSetCategory = useCallback(
@@ -1648,6 +1685,7 @@ export default function App() {
                   rows={combinedRows}
                   jump={txJump}
                   onSetTxNote={handleSetTxNote}
+                  onDeleteTransaction={handleDeleteTransaction}
                   categoryFilter={combinedCategoryFilter}
                 />
               ) : (
@@ -1664,6 +1702,7 @@ export default function App() {
                   onCreateCategory={handleCreateCategory}
                   onSetSubCategory={handleSetSubCategory}
                   onSetTxNote={(id, note) => handleSetTxNote(activeCardId, id, note)}
+                  onDeleteTransaction={(id) => handleDeleteTransaction(activeCardId, id)}
                 />
               )
             ) : (

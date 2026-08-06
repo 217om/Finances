@@ -7,6 +7,7 @@ import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
+import TrashIcon from './TrashIcon';
 
 export interface TransactionsJump {
   from: string;
@@ -31,6 +32,7 @@ interface Props {
   onCreateCategory: (name: string) => void;
   onSetSubCategory: (id: string, parent: string, subName: string) => void;
   onSetTxNote: (id: string, note: string) => void;
+  onDeleteTransaction: (id: string) => void;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -72,6 +74,7 @@ export default function TransactionsPage({
   onCreateCategory,
   onSetSubCategory,
   onSetTxNote,
+  onDeleteTransaction,
 }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -273,6 +276,7 @@ export default function TransactionsPage({
                 />
               </th>
               <th className="tx-note">Note</th>
+              <th className="tx-delete" />
             </tr>
           </thead>
           <tbody>
@@ -321,11 +325,24 @@ export default function TransactionsPage({
                 <td className="tx-note">
                   <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
                 </td>
+                <td className="tx-delete">
+                  <button
+                    type="button"
+                    className="tx-delete-btn"
+                    title="Delete transaction"
+                    aria-label="Delete transaction"
+                    onClick={() => {
+                      if (confirm('Delete this transaction? This can’t be undone.')) onDeleteTransaction(t.id);
+                    }}
+                  >
+                    <TrashIcon />
+                  </button>
+                </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted tx-empty">
+                <td colSpan={6} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

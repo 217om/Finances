@@ -7,12 +7,14 @@ import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { money } from '../lib/format';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
+import TrashIcon from './TrashIcon';
 
 interface Props {
   rows: CombinedRow[];
   /** Set when arriving from a chart-click drill-down; pre-fills the date range. */
   jump?: TransactionsJump | null;
   onSetTxNote: (cardId: string, id: string, note: string) => void;
+  onDeleteTransaction: (cardId: string, id: string) => void;
   /** The combined view's own independent filter (shared with the combined
    *  Dashboard/Categories) — applied here only for one visit after a
    *  chart-click drill-down, so the list matches what the chart counted. */
@@ -45,11 +47,11 @@ function compareBase(col: SortCol, a: CombinedRow, b: CombinedRow): number {
  * cards" is selected. Never affected by the combined view's hidden-category
  * filter, matching the single-card Transactions tab's behavior. Category
  * edits require a specific card's rule set, so there's no editing here —
- * switch to a single card in the selector above to reclassify. Notes are
- * plain per-transaction text with no rules involved, so those stay
- * editable — each one is saved straight to the transaction's own card.
+ * switch to a single card in the selector above to reclassify. Notes and
+ * deletion aren't rule-dependent, so those stay available here too — each
+ * one is applied straight to the transaction's own card.
  */
-export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, categoryFilter }: Props) {
+export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDeleteTransaction, categoryFilter }: Props) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [categorySelected, setCategorySelected] = useState<Set<string> | null>(null);
@@ -132,7 +134,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, cate
     <div className="tx-page">
       <p className="muted combine-readonly-note">
         Showing every card together. Switch to a single card in the selector above to edit
-        categories — notes can be added right here.
+        categories — notes and deletion work right here.
       </p>
       <div className="tx-controls">
         <input
@@ -255,6 +257,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, cate
                 />
               </th>
               <th className="tx-note">Note</th>
+              <th className="tx-delete" />
             </tr>
           </thead>
           <tbody>
@@ -276,11 +279,24 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, cate
                 <td className="tx-note">
                   <TxNoteCell note={r.t.note} onSave={(note) => onSetTxNote(r.cardId, r.t.id, note)} />
                 </td>
+                <td className="tx-delete">
+                  <button
+                    type="button"
+                    className="tx-delete-btn"
+                    title="Delete transaction"
+                    aria-label="Delete transaction"
+                    onClick={() => {
+                      if (confirm('Delete this transaction? This can’t be undone.')) onDeleteTransaction(r.cardId, r.t.id);
+                    }}
+                  >
+                    <TrashIcon />
+                  </button>
+                </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted tx-empty">
+                <td colSpan={7} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

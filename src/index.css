@@ -639,6 +639,26 @@ main.container {
 .tx-note {
   width: 40px;
 }
+.tx-delete {
+  width: 34px;
+}
+.tx-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 7px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.tx-delete-btn:hover {
+  background: rgba(193, 88, 75, 0.1);
+  border-color: rgba(193, 88, 75, 0.3);
+  color: #C1584B;
+}
 .tx-note-btn {
   display: inline-flex;
   align-items: center;

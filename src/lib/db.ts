@@ -206,6 +206,12 @@ export async function clearTransactionsOnly(dbName: string): Promise<void> {
   await db.clear('transactions');
 }
 
+/** Permanently delete one transaction. */
+export async function deleteTransaction(dbName: string, id: string): Promise<void> {
+  const db = await getDB(dbName);
+  await db.delete('transactions', id);
+}
+
 /** Set (or, given an empty/whitespace-only string, clear) one transaction's
  *  note. A no-op if the transaction isn't found — e.g. a stale id from a
  *  view that hasn't refreshed yet. */
