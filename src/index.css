@@ -640,7 +640,7 @@ main.container {
   width: 40px;
 }
 .tx-delete {
-  width: 34px;
+  width: 42px;
 }
 .tx-delete-btn {
   display: inline-flex;
@@ -649,8 +649,8 @@ main.container {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 7px;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
   color: var(--muted);
 }
@@ -1943,16 +1943,34 @@ th.num {
   display: flex;
   flex-direction: column;
 }
+.rules-row-wrap {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--surface-2);
+}
+.rules-row-wrap:last-child {
+  border-bottom: none;
+}
 .rules-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 2px;
   font-size: 13px;
-  border-bottom: 1px solid var(--surface-2);
 }
-.rules-row:last-child {
-  border-bottom: none;
+.rules-warn-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 9px 32px;
+  margin-top: -2px;
+  font-size: 12px;
+  color: #C9A227;
+}
+.rules-warn-fix {
+  color: #C9A227;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .rules-pri {
   width: 20px;

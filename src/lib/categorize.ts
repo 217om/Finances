@@ -242,6 +242,29 @@ export function mergeByKey<T>(globalList: T[], cardList: T[], keyFn: (item: T) =
   return [...map.values()];
 }
 
+interface KeywordRanked {
+  keyword: string;
+  createdAt: number;
+}
+
+/**
+ * Both keyword rules and per-parent sub-rules resolve the same way: newest
+ * first, first substring match wins. That means whenever one rule's keyword
+ * is a substring of another's, the substring rule — if it has equal or
+ * higher priority (evaluated first) — will always match first too, so the
+ * longer/narrower rule can never actually apply. `sortedRules` must already
+ * be in evaluation order (newest/highest-priority first, the same order
+ * `makeResolver` and `makeSubResolver` use). Returns the specific rule that
+ * shadows `target`, or null if nothing does.
+ */
+export function findShadowingRule<T extends KeywordRanked>(target: T, sortedRules: T[]): T | null {
+  for (const r of sortedRules) {
+    if (r.keyword === target.keyword) return null; // reached target's own rank first
+    if (target.keyword.includes(r.keyword)) return r;
+  }
+  return null;
+}
+
 // Stable colors so a category looks the same across every chart. Muted,
 // earthy tones tuned to sit well on the app's dark charcoal/beige/coral theme.
 export const CATEGORY_COLORS: Record<string, string> = {

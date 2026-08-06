@@ -1066,23 +1066,46 @@ export default function App() {
   // of the two adjacent rules rather than needing a separate priority field.
   // Scoped to rules targeting the same category, since that's how they're
   // grouped and reordered in the Advanced Settings view.
+  // Keyword rules compete on their keyword text alone — resolveCategory picks
+  // the first substring match across ALL of a scope's keyword rules regardless
+  // of category, so reordering has to operate on that same full list. Scoping
+  // it to same-category siblings (as this used to) let you reorder rules that
+  // could never actually conflict, while leaving the real cross-category
+  // conflicts completely unaddressable from the UI.
   const handleReorderKeywordRule = useCallback(
     (scope: string, keyword: string, direction: 'up' | 'down') => {
       updateScopeKeywordRules(scope, (prev) => {
-        const target = prev.find((r) => r.keyword === keyword);
-        if (!target) return prev;
-        const siblings = prev.filter((r) => r.category === target.category).sort((a, b) => b.createdAt - a.createdAt);
-        const idx = siblings.findIndex((r) => r.keyword === keyword);
+        const sorted = [...prev].sort((a, b) => b.createdAt - a.createdAt);
+        const idx = sorted.findIndex((r) => r.keyword === keyword);
         const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
-        const a = siblings[idx];
-        const b = siblings[swapIdx];
+        if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return prev;
+        const a = sorted[idx];
+        const b = sorted[swapIdx];
         const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
         const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
         saveKeywordRules(getScopeDbName(scope), [updatedA, updatedB]);
         return prev.map((r) =>
           r.keyword === updatedA.keyword ? updatedA : r.keyword === updatedB.keyword ? updatedB : r,
         );
+      });
+    },
+    [getScopeDbName, updateScopeKeywordRules],
+  );
+
+  // One-click fix for a shadowed rule (see AdvancedSettingsPage's shadow
+  // detection): bump it to just above whatever rule is currently shadowing
+  // it. Works even when the shadowing rule lives in a different scope (e.g.
+  // a card rule shadowed by a global one) — priority is a shared numeric
+  // order across the merged set, so nudging this rule's own createdAt past
+  // the other rule's is enough; the other rule never needs to move.
+  const handlePromoteKeywordRuleAbove = useCallback(
+    (scope: string, keyword: string, aboveCreatedAt: number) => {
+      updateScopeKeywordRules(scope, (prev) => {
+        const existing = prev.find((r) => r.keyword === keyword);
+        if (!existing) return prev;
+        const updated: KeywordRule = { ...existing, createdAt: aboveCreatedAt + 1 };
+        saveKeywordRule(getScopeDbName(scope), updated);
+        return prev.map((r) => (r.keyword === keyword ? updated : r));
       });
     },
     [getScopeDbName, updateScopeKeywordRules],
@@ -1672,6 +1695,7 @@ export default function App() {
                 onUpdateKeywordRuleCategory={handleUpdateKeywordRuleCategory}
                 onDeleteKeywordRule={handleDeleteKeywordRuleFor}
                 onReorderKeywordRule={handleReorderKeywordRule}
+                onPromoteKeywordRuleAbove={handlePromoteKeywordRuleAbove}
                 onUpdateSignatureRuleCategory={handleUpdateSignatureRuleCategory}
                 onDeleteSignatureRule={handleDeleteSignatureRule}
                 onCreateSubRule={handleCreateSubRule}

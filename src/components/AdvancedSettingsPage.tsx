@@ -8,6 +8,8 @@ import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
   categoryColor,
+  findShadowingRule,
+  mergeByKey,
   normalizeCategoryName,
   signatureOf,
 } from '../lib/categorize';
@@ -42,6 +44,9 @@ interface Props {
   onUpdateKeywordRuleCategory: (scope: string, keyword: string, category: string) => void;
   onDeleteKeywordRule: (scope: string, keyword: string, category: string) => void;
   onReorderKeywordRule: (scope: string, keyword: string, direction: 'up' | 'down') => void;
+  /** One-click fix for a shadowed keyword rule — bump it to just above the
+   *  rule currently shadowing it (which may live in a different scope). */
+  onPromoteKeywordRuleAbove: (scope: string, keyword: string, aboveCreatedAt: number) => void;
   onUpdateSignatureRuleCategory: (scope: string, signature: string, category: string) => void;
   onDeleteSignatureRule: (scope: string, signature: string, category: string) => void;
   onCreateSubRule: (scope: string, parent: string, keyword: string, sub: string) => void;
@@ -55,6 +60,12 @@ function plural(n: number): string {
 }
 
 const BUILTIN_PREVIEW = 8;
+
+interface RuleWarning {
+  text: string;
+  fixLabel?: string;
+  onFix?: () => void;
+}
 
 interface RuleRowProps {
   priority?: number;
@@ -72,6 +83,7 @@ interface RuleRowProps {
   reorderUpDisabled?: boolean;
   reorderDownDisabled?: boolean;
   onRemove: () => void;
+  warning?: RuleWarning | null;
 }
 
 /** One row of a scope's rule list: keyword/merchant → category → optional
@@ -93,6 +105,7 @@ function RuleRow({
   reorderUpDisabled,
   reorderDownDisabled,
   onRemove,
+  warning,
 }: RuleRowProps) {
   const [draft, setDraft] = useState(subValue);
   useEffect(() => setDraft(subValue), [subValue]);
@@ -101,57 +114,69 @@ function RuleRow({
     if (trimmed !== subValue) onSubCommit(trimmed);
   };
   return (
-    <div className="rules-row">
-      {priority != null && <span className="rules-pri">{priority}</span>}
-      <span className="rules-kw" title={titleAttr}>
-        {keyLabel}
-      </span>
-      <span className="rules-arrow">→</span>
-      <span className="rules-cat-pick">
-        <CategoryPicker value={category} onChange={onCategoryChange} options={categoryOptions} onCreate={onCreateCategory} />
-      </span>
-      <span className="rules-arrow rules-arrow-sub">→</span>
-      <input
-        className="rules-sub-input"
-        value={draft}
-        placeholder="sub-category (optional)"
-        maxLength={28}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        }}
-      />
-      <span className="rules-count muted">
-        {count} {plural(count)}
-      </span>
-      <span className="rules-actions">
-        {onReorderUp && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm rules-reorder"
-            disabled={reorderUpDisabled}
-            title="Higher priority"
-            onClick={onReorderUp}
-          >
-            ▲
+    <div className="rules-row-wrap">
+      <div className="rules-row">
+        {priority != null && <span className="rules-pri">{priority}</span>}
+        <span className="rules-kw" title={titleAttr}>
+          {keyLabel}
+        </span>
+        <span className="rules-arrow">→</span>
+        <span className="rules-cat-pick">
+          <CategoryPicker value={category} onChange={onCategoryChange} options={categoryOptions} onCreate={onCreateCategory} />
+        </span>
+        <span className="rules-arrow rules-arrow-sub">→</span>
+        <input
+          className="rules-sub-input"
+          value={draft}
+          placeholder="sub-category (optional)"
+          maxLength={28}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+        />
+        <span className="rules-count muted">
+          {count} {plural(count)}
+        </span>
+        <span className="rules-actions">
+          {onReorderUp && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm rules-reorder"
+              disabled={reorderUpDisabled}
+              title="Higher priority"
+              onClick={onReorderUp}
+            >
+              ▲
+            </button>
+          )}
+          {onReorderDown && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm rules-reorder"
+              disabled={reorderDownDisabled}
+              title="Lower priority"
+              onClick={onReorderDown}
+            >
+              ▼
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
+            Remove
           </button>
-        )}
-        {onReorderDown && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm rules-reorder"
-            disabled={reorderDownDisabled}
-            title="Lower priority"
-            onClick={onReorderDown}
-          >
-            ▼
-          </button>
-        )}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
-          Remove
-        </button>
-      </span>
+        </span>
+      </div>
+      {warning && (
+        <div className="rules-warn-line">
+          <span>⚠ {warning.text}</span>
+          {warning.onFix && (
+            <button type="button" className="linklike rules-warn-fix" onClick={warning.onFix}>
+              {warning.fixLabel ?? 'Fix'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -159,6 +184,12 @@ function RuleRow({
 interface ScopedCategoryRulesProps {
   rules: CategoryRule[];
   keywordRules: KeywordRule[];
+  /** The full set this scope's keyword rules actually compete against at
+   *  resolution time — for the global section that's just its own
+   *  keywordRules; for a card section it's global+card merged, since a card
+   *  rule can be shadowed by (or shadow) a global one too. Used only to
+   *  detect overlaps, never to decide what's editable here. */
+  effectiveKeywordRules: KeywordRule[];
   subRules: SubRule[];
   categoryOptions: string[];
   onCreateCategory: (name: string) => void;
@@ -168,6 +199,7 @@ interface ScopedCategoryRulesProps {
   onUpdateKeywordRuleCategory: (keyword: string, category: string) => void;
   onDeleteKeywordRule: (keyword: string, category: string) => void;
   onReorderKeywordRule: (keyword: string, direction: 'up' | 'down') => void;
+  onPromoteKeywordRule: (keyword: string, aboveCreatedAt: number) => void;
   onUpdateSignatureRuleCategory: (signature: string, category: string) => void;
   onDeleteSignatureRule: (signature: string, category: string) => void;
   onSetSub: (parent: string, keyword: string, sub: string) => void;
@@ -183,6 +215,7 @@ interface ScopedCategoryRulesProps {
 function ScopedCategoryRules({
   rules,
   keywordRules,
+  effectiveKeywordRules,
   subRules,
   categoryOptions,
   onCreateCategory,
@@ -192,6 +225,7 @@ function ScopedCategoryRules({
   onUpdateKeywordRuleCategory,
   onDeleteKeywordRule,
   onReorderKeywordRule,
+  onPromoteKeywordRule,
   onUpdateSignatureRuleCategory,
   onDeleteSignatureRule,
   onSetSub,
@@ -199,6 +233,19 @@ function ScopedCategoryRules({
   onReorderSub,
   onReparentSub,
 }: ScopedCategoryRulesProps) {
+  // True evaluation order — resolveCategory sorts ALL of a scope's keyword
+  // rules by createdAt regardless of category, so that's the order priority
+  // numbers, up/down bounds, and shadow detection all have to use. The
+  // category-grouped `g.keyword` list below is just a display grouping.
+  const sortedOwnKeyword = useMemo(
+    () => [...keywordRules].sort((a, b) => b.createdAt - a.createdAt),
+    [keywordRules],
+  );
+  const sortedEffectiveKeyword = useMemo(
+    () => [...effectiveKeywordRules].sort((a, b) => b.createdAt - a.createdAt),
+    [effectiveKeywordRules],
+  );
+  const priorityOf = (keyword: string) => sortedOwnKeyword.findIndex((r) => r.keyword === keyword) + 1;
   const countCategoryFor = (needle: string, category: string) => {
     let n = 0;
     for (const id of countCardIds) {
@@ -298,12 +345,14 @@ function ScopedCategoryRules({
             <span className="muted rules-group-count">{g.keyword.length + g.merchant.length + g.standalone.length}</span>
           </summary>
           <div className="rules-list">
-            {g.keyword.map((r, i) => {
+            {g.keyword.map((r) => {
               const subValue = subByPair.get(`${cat}|${r.keyword}`)?.sub ?? '';
+              const priority = priorityOf(r.keyword);
+              const shadow = findShadowingRule(r, sortedEffectiveKeyword);
               return (
                 <RuleRow
                   key={`kw-${r.keyword}`}
-                  priority={i + 1}
+                  priority={priority}
                   keyLabel={`contains “${r.keyword}”`}
                   category={r.category}
                   categoryOptions={categoryOptions}
@@ -319,9 +368,16 @@ function ScopedCategoryRules({
                   count={countCategoryFor(r.keyword, cat)}
                   onReorderUp={() => onReorderKeywordRule(r.keyword, 'up')}
                   onReorderDown={() => onReorderKeywordRule(r.keyword, 'down')}
-                  reorderUpDisabled={i === 0}
-                  reorderDownDisabled={i === g.keyword.length - 1}
+                  reorderUpDisabled={priority <= 1}
+                  reorderDownDisabled={priority >= sortedOwnKeyword.length}
                   onRemove={() => onDeleteKeywordRule(r.keyword, r.category)}
+                  warning={
+                    shadow && {
+                      text: `“${shadow.keyword}” (${shadow.category}) always matches first — this rule can never apply.`,
+                      fixLabel: `Move above “${shadow.keyword}”`,
+                      onFix: () => onPromoteKeywordRule(r.keyword, shadow.createdAt),
+                    }
+                  }
                 />
               );
             })}
@@ -401,6 +457,7 @@ export default function AdvancedSettingsPage({
   onUpdateKeywordRuleCategory,
   onDeleteKeywordRule,
   onReorderKeywordRule,
+  onPromoteKeywordRuleAbove,
   onUpdateSignatureRuleCategory,
   onDeleteSignatureRule,
   onCreateSubRule,
@@ -515,7 +572,9 @@ export default function AdvancedSettingsPage({
       <p className="muted rules-intro">
         Rules are global by default — a keyword or merchant rule applies to every card unless a card
         defines its own for the same keyword/merchant, which takes precedence just for that card.
-        Give any rule an optional sub-category for a finer split within it.
+        Give any rule an optional sub-category for a finer split within it. When two keyword rules
+        could both match the same transaction, the number on the left (lowest wins) decides — use ▲▼
+        to change it, or ⚠ Fix if a rule is shown as fully blocked by another one.
       </p>
 
       <label className="picker rules-card-picker">
@@ -663,6 +722,7 @@ export default function AdvancedSettingsPage({
         <ScopedCategoryRules
           rules={globalRules}
           keywordRules={globalKeywordRules}
+          effectiveKeywordRules={globalKeywordRules}
           subRules={globalSubRules}
           categoryOptions={categoryOptions}
           onCreateCategory={(name) => onCreateCategory('global', name)}
@@ -672,6 +732,7 @@ export default function AdvancedSettingsPage({
           onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory('global', kw, cat)}
           onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule('global', kw, cat)}
           onReorderKeywordRule={(kw, dir) => onReorderKeywordRule('global', kw, dir)}
+          onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove('global', kw, above)}
           onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory('global', sig, cat)}
           onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule('global', sig, cat)}
           onSetSub={(parent, kw, sub) => onCreateSubRule('global', parent, kw, sub)}
@@ -695,6 +756,7 @@ export default function AdvancedSettingsPage({
             <ScopedCategoryRules
               rules={c.rules}
               keywordRules={c.keywordRules}
+              effectiveKeywordRules={mergeByKey(globalKeywordRules, c.keywordRules, (r) => r.keyword)}
               subRules={c.subRules}
               categoryOptions={categoryOptions}
               onCreateCategory={(name) => onCreateCategory(c.cardId, name)}
@@ -704,6 +766,7 @@ export default function AdvancedSettingsPage({
               onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory(c.cardId, kw, cat)}
               onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule(c.cardId, kw, cat)}
               onReorderKeywordRule={(kw, dir) => onReorderKeywordRule(c.cardId, kw, dir)}
+              onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove(c.cardId, kw, above)}
               onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory(c.cardId, sig, cat)}
               onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule(c.cardId, sig, cat)}
               onSetSub={(parent, kw, sub) => onCreateSubRule(c.cardId, parent, kw, sub)}
