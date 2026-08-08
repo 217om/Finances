@@ -307,6 +307,161 @@ function asArray<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }
 
+const RULES_BACKUP_MAGIC = 'cashflow-rules-backup';
+const RULES_BACKUP_VERSION = 1;
+
+interface CardRulesBackup {
+  id: string;
+  name: string;
+  rules: CategoryRule[];
+  keywordRules: KeywordRule[];
+  subRules: SubRule[];
+  customCategories: string[];
+}
+
+export interface RulesBackupFile {
+  app: typeof RULES_BACKUP_MAGIC;
+  version: number;
+  exportedAt: string;
+  globalRules: CategoryRule[];
+  globalKeywordRules: KeywordRule[];
+  globalSubRules: SubRule[];
+  cards: CardRulesBackup[];
+}
+
+/**
+ * Gathers every categorization rule — global and every card's own — plus
+ * each card's custom categories, without any transaction data. Meant for
+ * moving just the "how do I categorize things" logic between browsers/
+ * profiles, separately from the (much larger, more sensitive) full backup.
+ */
+export async function buildRulesBackup(cards: Card[]): Promise<RulesBackupFile> {
+  const cardBackups = await Promise.all(
+    cards.map(async (card): Promise<CardRulesBackup> => {
+      const [rules, keywordRules, subRules] = await Promise.all([
+        getRules(card.dbName),
+        getKeywordRules(card.dbName),
+        getSubRules(card.dbName),
+      ]);
+      const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
+      return {
+        id: card.id,
+        name: card.name,
+        rules,
+        keywordRules,
+        subRules,
+        customCategories: Array.isArray(customCategoriesRaw)
+          ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
+          : [],
+      };
+    }),
+  );
+
+  const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
+    getRules(GLOBAL_RULES_DB),
+    getKeywordRules(GLOBAL_RULES_DB),
+    getSubRules(GLOBAL_RULES_DB),
+  ]);
+
+  return {
+    app: RULES_BACKUP_MAGIC,
+    version: RULES_BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    globalRules,
+    globalKeywordRules,
+    globalSubRules,
+    cards: cardBackups,
+  };
+}
+
+export function downloadRulesBackup(backup: RulesBackupFile): void {
+  triggerDownload(JSON.stringify(backup, null, 2), `cashflow-rules-${stamp()}.json`, 'application/json');
+}
+
+/** True if a JSON file's magic marker identifies it as a rules-only export
+ *  (as opposed to a per-card or full backup). */
+export function isRulesBackup(text: string): boolean {
+  try {
+    return (JSON.parse(text) as { app?: unknown } | null)?.app === RULES_BACKUP_MAGIC;
+  } catch {
+    return false;
+  }
+}
+
+export function parseRulesBackup(text: string): RulesBackupFile {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('That file is not valid JSON.');
+  }
+  const obj = data as Partial<RulesBackupFile>;
+  if (obj.app !== RULES_BACKUP_MAGIC || !Array.isArray(obj.cards)) {
+    throw new Error('That JSON is not a CashFlow rules export.');
+  }
+  return obj as RulesBackupFile;
+}
+
+/**
+ * Restores a rules-only export on top of whatever's already stored —
+ * additive, same as restoreFullBackup: nothing existing is deleted, matching
+ * keys are overwritten with the imported version. Cards are matched by name
+ * (case-insensitive); a backup card with no local match is skipped rather
+ * than creating an empty card with rules but no transactions to apply them
+ * to — the caller should report which names were skipped.
+ */
+export async function restoreRulesBackup(
+  backup: RulesBackupFile,
+  existingCards: Card[],
+): Promise<{
+  globalRules: CategoryRule[];
+  globalKeywordRules: KeywordRule[];
+  globalSubRules: SubRule[];
+  matchedCards: string[];
+  skippedCards: string[];
+}> {
+  await saveCategorization(GLOBAL_RULES_DB, asArray<CategoryRule>(backup.globalRules), []);
+  await saveKeywordRules(GLOBAL_RULES_DB, asArray<KeywordRule>(backup.globalKeywordRules));
+  await saveSubRules(GLOBAL_RULES_DB, asArray<SubRule>(backup.globalSubRules));
+
+  const matchedCards: string[] = [];
+  const skippedCards: string[] = [];
+
+  for (const cb of asArray<CardRulesBackup>(backup.cards)) {
+    if (!cb || typeof cb.name !== 'string') continue;
+    const nameKey = cb.name.trim().toLowerCase();
+    const target = existingCards.find((c) => c.name.trim().toLowerCase() === nameKey);
+    if (!target) {
+      skippedCards.push(cb.name);
+      continue;
+    }
+    matchedCards.push(cb.name);
+    await saveCategorization(target.dbName, asArray<CategoryRule>(cb.rules), []);
+    await saveKeywordRules(target.dbName, asArray<KeywordRule>(cb.keywordRules));
+    await saveSubRules(target.dbName, asArray<SubRule>(cb.subRules));
+
+    const importedCategories = asArray<unknown>(cb.customCategories).filter(
+      (c): c is string => typeof c === 'string',
+    );
+    if (importedCategories.length > 0) {
+      const existingRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, target.id));
+      const existingCategories = Array.isArray(existingRaw)
+        ? existingRaw.filter((c): c is string => typeof c === 'string')
+        : [];
+      const merged = [...new Set([...existingCategories, ...importedCategories])];
+      writeLS(scopedKey(CUSTOM_CATEGORIES_KEY, target.id), JSON.stringify(merged));
+    }
+  }
+
+  const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
+    getRules(GLOBAL_RULES_DB),
+    getKeywordRules(GLOBAL_RULES_DB),
+    getSubRules(GLOBAL_RULES_DB),
+  ]);
+
+  return { globalRules, globalKeywordRules, globalSubRules, matchedCards, skippedCards };
+}
+
 function isValidNote(v: unknown): v is Note {
   if (!v || typeof v !== 'object') return false;
   const n = v as Record<string, unknown>;

@@ -2239,6 +2239,64 @@ th.num {
   gap: 6px;
   justify-content: flex-end;
 }
+.tree-pop-subadd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+.tree-pop-subadd-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tree-pop-subadd input {
+  width: 100%;
+}
+.tree-zoom-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  box-shadow: var(--shadow);
+  cursor: default;
+}
+.tree-zoom-controls button {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-zoom-controls button:hover {
+  background: var(--surface-2);
+}
+.tree-zoom-reset {
+  font-size: 10.5px !important;
+  width: auto !important;
+  padding: 0 8px;
+  color: var(--muted);
+}
+.rules-backup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 /* ---------- Footer ---------- */
 .footer {

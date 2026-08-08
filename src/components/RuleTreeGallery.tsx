@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CategoryRule, KeywordRule, SubRule } from '../types';
 import type { CardSnapshot } from '../lib/combine';
 import { categoryColor, normalizeCategoryName, signatureOf } from '../lib/categorize';
@@ -241,6 +241,55 @@ interface EditPopoverProps {
   onClose: () => void;
 }
 
+/** A small inline form inside a branch's popover for creating a new
+ *  sub-category split directly from the chart — same effect as the classic
+ *  "Keyword → sub-category" form below, just pre-scoped to this branch's own
+ *  category. Newly created sub-rules show up as leaves (and in the table
+ *  below) on the next render once they have a real matching transaction. */
+function SubAddForm({ node, onSetSub }: { node: TreeNode; onSetSub: EditPopoverProps['onSetSub'] }) {
+  const [kw, setKw] = useState('');
+  const [name, setName] = useState('');
+
+  const commit = () => {
+    const key = kw.trim().toLowerCase();
+    const sub = normalizeCategoryName(name);
+    if (key.length < 2 || !sub || !node.category) return;
+    onSetSub(node.scope, node.category, key, sub);
+    setKw('');
+    setName('');
+  };
+
+  return (
+    <div className="tree-pop-subadd">
+      <span className="tree-pop-subadd-label">Split into a sub-category</span>
+      <input
+        className="rules-sub-input"
+        placeholder="if description also has…"
+        value={kw}
+        maxLength={40}
+        onChange={(e) => setKw(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+      />
+      <input
+        className="rules-sub-input"
+        placeholder="sub-category name"
+        value={name}
+        maxLength={28}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+      />
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={kw.trim().length < 2 || !name.trim()}
+        onClick={commit}
+      >
+        + Add split
+      </button>
+    </div>
+  );
+}
+
 /** The popover a branch or leaf bubble opens — lets you change its category
  *  (branch) or rename it (leaf), or remove it, without leaving the gallery. */
 function EditPopover({
@@ -316,6 +365,7 @@ function EditPopover({
             Remove rule
           </button>
         </div>
+        <SubAddForm node={node} onSetSub={onSetSub} />
       </div>
     );
   }
@@ -344,6 +394,7 @@ function EditPopover({
             Remove rule
           </button>
         </div>
+        <SubAddForm node={node} onSetSub={onSetSub} />
       </div>
     );
   }
@@ -459,6 +510,10 @@ const CELL_GAP_Y = 24;
 const CANVAS_PAD = 16;
 const VIEWPORT_H = 320;
 const DRAG_THRESHOLD = 4;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2;
+const ZOOM_BUTTON_FACTOR = 1.25;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 interface DragState {
   startX: number;
@@ -523,6 +578,7 @@ export default function RuleTreeGallery({
 }: Props) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const justDraggedRef = useRef(false);
@@ -560,14 +616,48 @@ export default function RuleTreeGallery({
     return { items, width, height: y };
   }, [shown]);
 
-  const clampPan = (p: { x: number; y: number }) => {
+  const clampPan = (p: { x: number; y: number }, z: number = zoom) => {
     const vp = viewportRef.current;
     const vw = vp?.clientWidth ?? 0;
     const vh = vp?.clientHeight ?? VIEWPORT_H;
-    const minX = Math.min(0, vw - layout.width);
-    const minY = Math.min(0, vh - layout.height);
+    const minX = Math.min(0, vw - layout.width * z);
+    const minY = Math.min(0, vh - layout.height * z);
     return { x: Math.min(0, Math.max(minX, p.x)), y: Math.min(0, Math.max(minY, p.y)) };
   };
+
+  /** Zoom to `newZoomRaw`, keeping the content point under (anchorX, anchorY)
+   *  — viewport-relative coordinates — fixed in place, so zooming with the
+   *  cursor over a bubble keeps that bubble under the cursor. */
+  const zoomTo = (newZoomRaw: number, anchorX: number, anchorY: number) => {
+    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoomRaw));
+    const cx = (anchorX - pan.x) / zoom;
+    const cy = (anchorY - pan.y) / zoom;
+    setZoom(newZoom);
+    setPan(clampPan({ x: anchorX - cx * newZoom, y: anchorY - cy * newZoom }, newZoom));
+  };
+
+  const zoomByFactor = (factor: number) => {
+    const vp = viewportRef.current;
+    zoomTo(zoom * factor, (vp?.clientWidth ?? 0) / 2, (vp?.clientHeight ?? 0) / 2);
+  };
+
+  // Attached natively (not via the JSX onWheel prop) so preventDefault
+  // actually works — React registers wheel listeners as passive by default,
+  // which silently ignores preventDefault and lets the browser's own
+  // page-zoom handle ctrl+scroll instead of us.
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const factor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY);
+      zoomTo(zoom * factor, e.clientX - rect.left, e.clientY - rect.top);
+    };
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    return () => vp.removeEventListener('wheel', onWheel);
+  }, [zoom, pan, layout.width, layout.height]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, dragging: false };
@@ -630,7 +720,12 @@ export default function RuleTreeGallery({
         >
           <div
             className="tree-canvas-content"
-            style={{ width: layout.width, height: layout.height, transform: `translate(${pan.x}px, ${pan.y}px)` }}
+            style={{
+              width: layout.width,
+              height: layout.height,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0',
+            }}
           >
             <svg className="tree-lines" width={layout.width} height={layout.height}>
               {layout.items.map(({ tree, x, y }) => (
@@ -648,6 +743,29 @@ export default function RuleTreeGallery({
                 popoverProps={popoverProps}
               />
             ))}
+          </div>
+          <div
+            className="tree-zoom-controls"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button type="button" aria-label="Zoom out" onClick={() => zoomByFactor(1 / ZOOM_BUTTON_FACTOR)}>
+              −
+            </button>
+            <button
+              type="button"
+              className="tree-zoom-reset"
+              title="Reset zoom"
+              onClick={() => {
+                const vp = viewportRef.current;
+                zoomTo(1, (vp?.clientWidth ?? 0) / 2, (vp?.clientHeight ?? 0) / 2);
+              }}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button type="button" aria-label="Zoom in" onClick={() => zoomByFactor(ZOOM_BUTTON_FACTOR)}>
+              +
+            </button>
           </div>
         </div>
       )}

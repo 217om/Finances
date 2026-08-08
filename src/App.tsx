@@ -88,6 +88,10 @@ import {
   restoreFullBackup,
   parseBackup,
   sniffBackupKind,
+  buildRulesBackup,
+  downloadRulesBackup,
+  parseRulesBackup,
+  restoreRulesBackup,
 } from './lib/exportData';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
@@ -1457,6 +1461,48 @@ export default function App() {
     [cards, combinedCategoryFilter, filterPresets],
   );
 
+  const handleExportRulesBackup = useCallback(async () => {
+    try {
+      const backup = await buildRulesBackup(cards);
+      downloadRulesBackup(backup);
+    } catch (e) {
+      setToast(`Could not export rules. ${(e as Error).message ?? ''}`.trim());
+    }
+  }, [cards]);
+
+  const handleImportRulesFile = useCallback(
+    async (file: File) => {
+      try {
+        const backup = parseRulesBackup(await file.text());
+        const ruleCount =
+          backup.globalRules.length +
+          backup.globalKeywordRules.length +
+          backup.globalSubRules.length +
+          backup.cards.reduce((a, c) => a + c.rules.length + c.keywordRules.length + c.subRules.length, 0);
+        const ok = confirm(
+          `Import this rules file (from ${backup.exportedAt.slice(0, 10)})? It covers ${ruleCount} rule` +
+            `${ruleCount === 1 ? '' : 's'} across ${backup.cards.length} card` +
+            `${backup.cards.length === 1 ? '' : 's'} plus global rules. Existing rules are kept — ` +
+            'matching keywords/merchants are overwritten with the imported version, nothing is deleted.',
+        );
+        if (!ok) return;
+        const result = await restoreRulesBackup(backup, cards);
+        setGlobalRules(result.globalRules);
+        setGlobalKeywordRules(result.globalKeywordRules);
+        setGlobalSubRules(result.globalSubRules);
+        setReloadToken((n) => n + 1);
+        setToast(
+          result.skippedCards.length > 0
+            ? `Rules imported. Skipped (no matching card): ${result.skippedCards.join(', ')}`
+            : 'Rules imported.',
+        );
+      } catch (e) {
+        setError(`Could not import that rules file. ${(e as Error).message ?? ''}`.trim());
+      }
+    },
+    [cards],
+  );
+
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
       setError(null);
@@ -1835,6 +1881,8 @@ export default function App() {
                 onPromoteSubRuleAbove={handlePromoteSubRuleAbove}
                 onMoveSubRuleToGlobal={handleMoveSubRuleToGlobal}
                 onReparentSubRule={handleReparentSubRule}
+                onExportRules={handleExportRulesBackup}
+                onImportRulesFile={handleImportRulesFile}
               />
             ) : view === 'transactions' ? (
               combineEnabled ? (

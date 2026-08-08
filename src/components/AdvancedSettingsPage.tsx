@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Card } from '../lib/cards';
 import { ALL_CARDS_ID } from '../lib/cards';
 import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
@@ -63,6 +63,10 @@ interface Props {
   onPromoteSubRuleAbove: (scope: string, id: string, aboveCreatedAt: number) => void;
   onMoveSubRuleToGlobal: (scope: string, id: string) => void;
   onReparentSubRule: (scope: string, id: string, newParent: string) => void;
+  /** Downloads every rule (global + every card's own) as one JSON file. */
+  onExportRules: () => void;
+  /** Imports a previously-exported rules JSON file. */
+  onImportRulesFile: (file: File) => void;
 }
 
 function plural(n: number): string {
@@ -602,7 +606,10 @@ export default function AdvancedSettingsPage({
   onPromoteSubRuleAbove,
   onMoveSubRuleToGlobal,
   onReparentSubRule,
+  onExportRules,
+  onImportRulesFile,
 }: Props) {
+  const importRulesInputRef = useRef<HTMLInputElement>(null);
   const categoryOptions = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -1006,6 +1013,38 @@ export default function AdvancedSettingsPage({
             })}
           </div>
         </details>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Backup rules</h2>
+            <p className="muted">
+              Export every rule (global and every card's own) as one file, or import a file exported
+              elsewhere. Importing never deletes an existing rule — a matching keyword or merchant is
+              overwritten with the imported version, everything else is kept.
+            </p>
+          </div>
+        </div>
+        <div className="rules-backup-actions">
+          <button type="button" className="btn btn-secondary" onClick={onExportRules}>
+            Download all rules
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => importRulesInputRef.current?.click()}>
+            Import rules…
+          </button>
+        </div>
+        <input
+          ref={importRulesInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) onImportRulesFile(file);
+          }}
+        />
       </section>
     </div>
   );
