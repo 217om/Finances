@@ -1208,6 +1208,133 @@ export default function App() {
     [getScopeDbName, updateScopeSubRules],
   );
 
+  // Merchant rules never conflict with each other (each is keyed by a unique
+  // signature, so at most one can ever match a given transaction) — this
+  // reorder is purely for the user's own browsing order, not resolution.
+  const handleReorderSignatureRule = useCallback(
+    (scope: string, signature: string, direction: 'up' | 'down') => {
+      updateScopeRules(scope, (prev) => {
+        const sorted = [...prev].sort((a, b) => b.createdAt - a.createdAt);
+        const idx = sorted.findIndex((r) => r.signature === signature);
+        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return prev;
+        const a = sorted[idx];
+        const b = sorted[swapIdx];
+        const updatedA: CategoryRule = { ...a, createdAt: b.createdAt };
+        const updatedB: CategoryRule = { ...b, createdAt: a.createdAt };
+        saveCategorization(getScopeDbName(scope), [updatedA, updatedB], []);
+        return prev.map((r) =>
+          r.signature === updatedA.signature ? updatedA : r.signature === updatedB.signature ? updatedB : r,
+        );
+      });
+    },
+    [getScopeDbName, updateScopeRules],
+  );
+
+  // Drag-and-drop support (and cross-scope drag): bump just this rule's
+  // priority to sit right above whatever it was dropped onto, exactly like
+  // the shadow-warning's "Move above" fix — no need to touch the target.
+  const handlePromoteSignatureRuleAbove = useCallback(
+    (scope: string, signature: string, aboveCreatedAt: number) => {
+      updateScopeRules(scope, (prev) => {
+        const existing = prev.find((r) => r.signature === signature);
+        if (!existing) return prev;
+        const updated: CategoryRule = { ...existing, createdAt: aboveCreatedAt + 1 };
+        saveCategorization(getScopeDbName(scope), [updated], []);
+        return prev.map((r) => (r.signature === signature ? updated : r));
+      });
+    },
+    [getScopeDbName, updateScopeRules],
+  );
+
+  const handlePromoteSubRuleAbove = useCallback(
+    (scope: string, id: string, aboveCreatedAt: number) => {
+      updateScopeSubRules(scope, (prev) => {
+        const existing = prev.find((r) => r.id === id);
+        if (!existing) return prev;
+        const updated: SubRule = { ...existing, createdAt: aboveCreatedAt + 1 };
+        saveSubRules(getScopeDbName(scope), [updated]);
+        return prev.map((r) => (r.id === id ? updated : r));
+      });
+    },
+    [getScopeDbName, updateScopeSubRules],
+  );
+
+  // --- Promote a card-specific rule to global --------------------------------
+  // Read-only lookups mirroring getScopeDbName, for the promote handlers below
+  // to find a rule's current value before moving it.
+  const getScopeKeywordRules = useCallback(
+    (scope: string): KeywordRule[] => {
+      if (scope === 'global') return globalKeywordRules;
+      if (scope === activeCardId) return keywordRules;
+      return otherCardsData[scope]?.keywordRules ?? [];
+    },
+    [globalKeywordRules, activeCardId, keywordRules, otherCardsData],
+  );
+  const getScopeRules = useCallback(
+    (scope: string): CategoryRule[] => {
+      if (scope === 'global') return globalRules;
+      if (scope === activeCardId) return rules;
+      return otherCardsData[scope]?.rules ?? [];
+    },
+    [globalRules, activeCardId, rules, otherCardsData],
+  );
+  const getScopeSubRules = useCallback(
+    (scope: string): SubRule[] => {
+      if (scope === 'global') return globalSubRules;
+      if (scope === activeCardId) return subRules;
+      return otherCardsData[scope]?.subRules ?? [];
+    },
+    [globalSubRules, activeCardId, subRules, otherCardsData],
+  );
+
+  // Moving a card rule to global keeps its category, sub-category coverage,
+  // and createdAt (so its priority position carries over) — it just now
+  // applies everywhere. If a global rule already existed for the same
+  // keyword/signature/id, this intentionally replaces it: promoting a card's
+  // override is "make my version the new default."
+  const handleMoveKeywordRuleToGlobal = useCallback(
+    (fromScope: string, keyword: string) => {
+      if (fromScope === 'global') return;
+      const existing = getScopeKeywordRules(fromScope).find((r) => r.keyword === keyword);
+      if (!existing) return;
+      deleteKeywordRule(getScopeDbName(fromScope), keyword);
+      updateScopeKeywordRules(fromScope, (prev) => prev.filter((r) => r.keyword !== keyword));
+      saveKeywordRule(getScopeDbName('global'), existing);
+      updateScopeKeywordRules('global', (prev) => [...prev.filter((r) => r.keyword !== keyword), existing]);
+      setToast(`"${keyword}" is now a global rule.`);
+    },
+    [getScopeKeywordRules, getScopeDbName, updateScopeKeywordRules],
+  );
+
+  const handleMoveSignatureRuleToGlobal = useCallback(
+    (fromScope: string, signature: string) => {
+      if (fromScope === 'global') return;
+      const existing = getScopeRules(fromScope).find((r) => r.signature === signature);
+      if (!existing) return;
+      deleteRule(getScopeDbName(fromScope), signature);
+      updateScopeRules(fromScope, (prev) => prev.filter((r) => r.signature !== signature));
+      saveCategorization(getScopeDbName('global'), [existing], []);
+      updateScopeRules('global', (prev) => [...prev.filter((r) => r.signature !== signature), existing]);
+      setToast(`Merchant rule "${signature}" is now global.`);
+    },
+    [getScopeRules, getScopeDbName, updateScopeRules],
+  );
+
+  const handleMoveSubRuleToGlobal = useCallback(
+    (fromScope: string, id: string) => {
+      if (fromScope === 'global') return;
+      const existing = getScopeSubRules(fromScope).find((r) => r.id === id);
+      if (!existing) return;
+      deleteSubRule(getScopeDbName(fromScope), id);
+      updateScopeSubRules(fromScope, (prev) => prev.filter((r) => r.id !== id));
+      saveSubRules(getScopeDbName('global'), [existing]);
+      updateScopeSubRules('global', (prev) => [...prev.filter((r) => r.id !== id), existing]);
+      setToast(`Sub-category rule "${existing.keyword}" is now global.`);
+    },
+    [getScopeSubRules, getScopeDbName, updateScopeSubRules],
+  );
+
   // Custom categories have no global store of their own — a category is just
   // a string, valid anywhere regardless of which card's list "offers" it —
   // so a category created for a global rule (or the active card) is simply
@@ -1696,11 +1823,17 @@ export default function App() {
                 onDeleteKeywordRule={handleDeleteKeywordRuleFor}
                 onReorderKeywordRule={handleReorderKeywordRule}
                 onPromoteKeywordRuleAbove={handlePromoteKeywordRuleAbove}
+                onMoveKeywordRuleToGlobal={handleMoveKeywordRuleToGlobal}
                 onUpdateSignatureRuleCategory={handleUpdateSignatureRuleCategory}
                 onDeleteSignatureRule={handleDeleteSignatureRule}
+                onReorderSignatureRule={handleReorderSignatureRule}
+                onPromoteSignatureRuleAbove={handlePromoteSignatureRuleAbove}
+                onMoveSignatureRuleToGlobal={handleMoveSignatureRuleToGlobal}
                 onCreateSubRule={handleCreateSubRule}
                 onDeleteSubRule={handleDeleteSubRule}
                 onReorderSubRule={handleReorderSubRule}
+                onPromoteSubRuleAbove={handlePromoteSubRuleAbove}
+                onMoveSubRuleToGlobal={handleMoveSubRuleToGlobal}
                 onReparentSubRule={handleReparentSubRule}
               />
             ) : view === 'transactions' ? (

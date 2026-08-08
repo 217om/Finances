@@ -45,13 +45,22 @@ interface Props {
   onDeleteKeywordRule: (scope: string, keyword: string, category: string) => void;
   onReorderKeywordRule: (scope: string, keyword: string, direction: 'up' | 'down') => void;
   /** One-click fix for a shadowed keyword rule — bump it to just above the
-   *  rule currently shadowing it (which may live in a different scope). */
+   *  rule currently shadowing it (which may live in a different scope). Also
+   *  used to implement drag-and-drop reordering. */
   onPromoteKeywordRuleAbove: (scope: string, keyword: string, aboveCreatedAt: number) => void;
+  /** Moves a card-specific rule into the global set, keeping its category
+   *  and priority — only relevant for card sections, never the global one. */
+  onMoveKeywordRuleToGlobal: (scope: string, keyword: string) => void;
   onUpdateSignatureRuleCategory: (scope: string, signature: string, category: string) => void;
   onDeleteSignatureRule: (scope: string, signature: string, category: string) => void;
+  onReorderSignatureRule: (scope: string, signature: string, direction: 'up' | 'down') => void;
+  onPromoteSignatureRuleAbove: (scope: string, signature: string, aboveCreatedAt: number) => void;
+  onMoveSignatureRuleToGlobal: (scope: string, signature: string) => void;
   onCreateSubRule: (scope: string, parent: string, keyword: string, sub: string) => void;
   onDeleteSubRule: (scope: string, id: string, info: { parent: string; sub: string; keyword: string }) => void;
   onReorderSubRule: (scope: string, id: string, direction: 'up' | 'down') => void;
+  onPromoteSubRuleAbove: (scope: string, id: string, aboveCreatedAt: number) => void;
+  onMoveSubRuleToGlobal: (scope: string, id: string) => void;
   onReparentSubRule: (scope: string, id: string, newParent: string) => void;
 }
 
@@ -69,6 +78,7 @@ interface RuleWarning {
 
 interface RuleRowProps {
   priority?: number;
+  priorityTitle?: string;
   keyLabel: string;
   titleAttr?: string;
   category: string;
@@ -83,7 +93,13 @@ interface RuleRowProps {
   reorderUpDisabled?: boolean;
   reorderDownDisabled?: boolean;
   onRemove: () => void;
+  onMakeGlobal?: () => void;
   warning?: RuleWarning | null;
+  /** This row's identity for drag-and-drop, and the handler a drop on THIS
+   *  row calls with the dragged row's key — "move the dragged rule to just
+   *  above this one." Both present together, or neither (no drag support). */
+  dragKey?: string;
+  onDragReorder?: (draggedKey: string, targetKey: string) => void;
 }
 
 /** One row of a scope's rule list: keyword/merchant → category → optional
@@ -91,6 +107,7 @@ interface RuleRowProps {
  *  standalone sub-rule) through the same shape so they read as one list. */
 function RuleRow({
   priority,
+  priorityTitle,
   keyLabel,
   titleAttr,
   category,
@@ -105,7 +122,10 @@ function RuleRow({
   reorderUpDisabled,
   reorderDownDisabled,
   onRemove,
+  onMakeGlobal,
   warning,
+  dragKey,
+  onDragReorder,
 }: RuleRowProps) {
   const [draft, setDraft] = useState(subValue);
   useEffect(() => setDraft(subValue), [subValue]);
@@ -113,10 +133,40 @@ function RuleRow({
     const trimmed = draft ? normalizeCategoryName(draft) : '';
     if (trimmed !== subValue) onSubCommit(trimmed);
   };
+  const draggable = Boolean(dragKey && onDragReorder);
   return (
-    <div className="rules-row-wrap">
+    <div
+      className="rules-row-wrap"
+      onDragOver={draggable ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        draggable
+          ? (e) => {
+              e.preventDefault();
+              const draggedKey = e.dataTransfer.getData('text/plain');
+              if (draggedKey && draggedKey !== dragKey) onDragReorder!(draggedKey, dragKey!);
+            }
+          : undefined
+      }
+    >
       <div className="rules-row">
-        {priority != null && <span className="rules-pri">{priority}</span>}
+        {draggable && (
+          <span
+            className="rules-drag-handle"
+            draggable
+            title="Drag to reorder"
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', dragKey!);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+          >
+            ⠿
+          </span>
+        )}
+        {priority != null && (
+          <span className="rules-pri" title={priorityTitle}>
+            {priority}
+          </span>
+        )}
         <span className="rules-kw" title={titleAttr}>
           {keyLabel}
         </span>
@@ -162,6 +212,16 @@ function RuleRow({
               ▼
             </button>
           )}
+          {onMakeGlobal && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title="Apply this rule to every card, not just this one"
+              onClick={onMakeGlobal}
+            >
+              Make global
+            </button>
+          )}
           <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
             Remove
           </button>
@@ -200,11 +260,18 @@ interface ScopedCategoryRulesProps {
   onDeleteKeywordRule: (keyword: string, category: string) => void;
   onReorderKeywordRule: (keyword: string, direction: 'up' | 'down') => void;
   onPromoteKeywordRule: (keyword: string, aboveCreatedAt: number) => void;
+  /** Present only for a card's own section — moves the rule to global. */
+  onMoveKeywordToGlobal?: (keyword: string) => void;
   onUpdateSignatureRuleCategory: (signature: string, category: string) => void;
   onDeleteSignatureRule: (signature: string, category: string) => void;
+  onReorderSignature: (signature: string, direction: 'up' | 'down') => void;
+  onPromoteSignature: (signature: string, aboveCreatedAt: number) => void;
+  onMoveSignatureToGlobal?: (signature: string) => void;
   onSetSub: (parent: string, keyword: string, sub: string) => void;
   onDeleteSub: (id: string, info: { parent: string; sub: string; keyword: string }) => void;
   onReorderSub: (id: string, direction: 'up' | 'down') => void;
+  onPromoteSub: (id: string, aboveCreatedAt: number) => void;
+  onMoveSubToGlobal?: (id: string) => void;
   onReparentSub: (id: string, newParent: string) => void;
 }
 
@@ -226,11 +293,17 @@ function ScopedCategoryRules({
   onDeleteKeywordRule,
   onReorderKeywordRule,
   onPromoteKeywordRule,
+  onMoveKeywordToGlobal,
   onUpdateSignatureRuleCategory,
   onDeleteSignatureRule,
+  onReorderSignature,
+  onPromoteSignature,
+  onMoveSignatureToGlobal,
   onSetSub,
   onDeleteSub,
   onReorderSub,
+  onPromoteSub,
+  onMoveSubToGlobal,
   onReparentSub,
 }: ScopedCategoryRulesProps) {
   // True evaluation order — resolveCategory sorts ALL of a scope's keyword
@@ -246,6 +319,38 @@ function ScopedCategoryRules({
     [effectiveKeywordRules],
   );
   const priorityOf = (keyword: string) => sortedOwnKeyword.findIndex((r) => r.keyword === keyword) + 1;
+
+  // Merchant rules are keyed by signature, so at most one can ever match a
+  // transaction — there's no real conflict to order, but the same manual
+  // ordering mechanism (createdAt) still gives a consistent, reorderable
+  // list, same as keyword rules.
+  const sortedOwnSignature = useMemo(
+    () => [...rules].sort((a, b) => b.createdAt - a.createdAt),
+    [rules],
+  );
+  const prioritySignatureOf = (signature: string) => sortedOwnSignature.findIndex((r) => r.signature === signature) + 1;
+
+  // Sub-rules resolve per-parent (same "newest, first substring match wins"
+  // pattern as keyword rules), and that pool includes BOTH the standalone
+  // rows below and any sub-rule inline-attached to a keyword/merchant row —
+  // so priority/bounds have to come from the full per-parent set, not just
+  // the standalone subset actually rendered as its own row.
+  const subRulesByParent = useMemo(() => {
+    const m = new Map<string, SubRule[]>();
+    for (const r of subRules) {
+      const list = m.get(r.parent);
+      if (list) list.push(r);
+      else m.set(r.parent, [r]);
+    }
+    for (const list of m.values()) list.sort((a, b) => b.createdAt - a.createdAt);
+    return m;
+  }, [subRules]);
+  const prioritySubOf = (id: string, parent: string) => {
+    const list = subRulesByParent.get(parent) ?? [];
+    const idx = list.findIndex((r) => r.id === id);
+    return idx < 0 ? undefined : idx + 1;
+  };
+
   const countCategoryFor = (needle: string, category: string) => {
     let n = 0;
     for (const id of countCardIds) {
@@ -317,8 +422,8 @@ function ScopedCategoryRules({
 
     for (const g of groups.values()) {
       g.keyword.sort((a, b) => b.createdAt - a.createdAt);
-      g.merchant.sort((a, b) => a.signature.localeCompare(b.signature));
-      g.standalone.sort((a, b) => a.keyword.localeCompare(b.keyword));
+      g.merchant.sort((a, b) => b.createdAt - a.createdAt);
+      g.standalone.sort((a, b) => b.createdAt - a.createdAt);
     }
     return [...groups.entries()].sort(
       (a, b) => b[1].keyword.length + b[1].merchant.length + b[1].standalone.length - (a[1].keyword.length + a[1].merchant.length + a[1].standalone.length),
@@ -371,6 +476,7 @@ function ScopedCategoryRules({
                   reorderUpDisabled={priority <= 1}
                   reorderDownDisabled={priority >= sortedOwnKeyword.length}
                   onRemove={() => onDeleteKeywordRule(r.keyword, r.category)}
+                  onMakeGlobal={onMoveKeywordToGlobal ? () => onMoveKeywordToGlobal(r.keyword) : undefined}
                   warning={
                     shadow && {
                       text: `“${shadow.keyword}” (${shadow.category}) always matches first — this rule can never apply.`,
@@ -378,14 +484,22 @@ function ScopedCategoryRules({
                       onFix: () => onPromoteKeywordRule(r.keyword, shadow.createdAt),
                     }
                   }
+                  dragKey={r.keyword}
+                  onDragReorder={(draggedKeyword, targetKeyword) => {
+                    const target = sortedOwnKeyword.find((x) => x.keyword === targetKeyword);
+                    if (target) onPromoteKeywordRule(draggedKeyword, target.createdAt);
+                  }}
                 />
               );
             })}
             {g.merchant.map((r) => {
               const subValue = subByPair.get(`${cat}|${r.signature}`)?.sub ?? '';
+              const priority = prioritySignatureOf(r.signature);
               return (
                 <RuleRow
                   key={`mr-${r.signature}`}
+                  priority={priority}
+                  priorityTitle="Merchant rules never conflict with each other — this order is just for your own browsing."
                   keyLabel={r.signature}
                   titleAttr={r.sample}
                   category={r.category}
@@ -400,14 +514,24 @@ function ScopedCategoryRules({
                         onDeleteSub(`${cat}${r.signature}`, { parent: cat, sub: subValue, keyword: r.signature })
                   }
                   count={countSignature(r.signature)}
+                  onReorderUp={() => onReorderSignature(r.signature, 'up')}
+                  onReorderDown={() => onReorderSignature(r.signature, 'down')}
+                  reorderUpDisabled={priority <= 1}
+                  reorderDownDisabled={priority >= sortedOwnSignature.length}
                   onRemove={() => onDeleteSignatureRule(r.signature, r.category)}
+                  onMakeGlobal={onMoveSignatureToGlobal ? () => onMoveSignatureToGlobal(r.signature) : undefined}
+                  dragKey={r.signature}
+                  onDragReorder={(draggedSignature, targetSignature) => {
+                    const target = sortedOwnSignature.find((x) => x.signature === targetSignature);
+                    if (target) onPromoteSignature(draggedSignature, target.createdAt);
+                  }}
                 />
               );
             })}
-            {g.standalone.map((r, i) => (
+            {g.standalone.map((r) => (
               <RuleRow
                 key={`sr-${r.id}`}
-                priority={i + 1}
+                priority={prioritySubOf(r.id, r.parent)}
                 keyLabel={`contains “${r.keyword}”`}
                 category={r.parent}
                 categoryOptions={categoryOptions}
@@ -422,9 +546,16 @@ function ScopedCategoryRules({
                 count={countSub(r.keyword, r.parent, r.sub)}
                 onReorderUp={() => onReorderSub(r.id, 'up')}
                 onReorderDown={() => onReorderSub(r.id, 'down')}
-                reorderUpDisabled={i === 0}
-                reorderDownDisabled={i === g.standalone.length - 1}
+                reorderUpDisabled={(prioritySubOf(r.id, r.parent) ?? 1) <= 1}
+                reorderDownDisabled={(prioritySubOf(r.id, r.parent) ?? 0) >= (subRulesByParent.get(r.parent)?.length ?? 0)}
                 onRemove={() => onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })}
+                onMakeGlobal={onMoveSubToGlobal ? () => onMoveSubToGlobal(r.id) : undefined}
+                dragKey={r.id}
+                onDragReorder={(draggedId, targetId) => {
+                  const list = subRulesByParent.get(r.parent) ?? [];
+                  const target = list.find((x) => x.id === targetId);
+                  if (target) onPromoteSub(draggedId, target.createdAt);
+                }}
               />
             ))}
           </div>
@@ -458,11 +589,17 @@ export default function AdvancedSettingsPage({
   onDeleteKeywordRule,
   onReorderKeywordRule,
   onPromoteKeywordRuleAbove,
+  onMoveKeywordRuleToGlobal,
   onUpdateSignatureRuleCategory,
   onDeleteSignatureRule,
+  onReorderSignatureRule,
+  onPromoteSignatureRuleAbove,
+  onMoveSignatureRuleToGlobal,
   onCreateSubRule,
   onDeleteSubRule,
   onReorderSubRule,
+  onPromoteSubRuleAbove,
+  onMoveSubRuleToGlobal,
   onReparentSubRule,
 }: Props) {
   const categoryOptions = useMemo(() => {
@@ -735,9 +872,12 @@ export default function AdvancedSettingsPage({
           onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove('global', kw, above)}
           onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory('global', sig, cat)}
           onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule('global', sig, cat)}
+          onReorderSignature={(sig, dir) => onReorderSignatureRule('global', sig, dir)}
+          onPromoteSignature={(sig, above) => onPromoteSignatureRuleAbove('global', sig, above)}
           onSetSub={(parent, kw, sub) => onCreateSubRule('global', parent, kw, sub)}
           onDeleteSub={(id, info) => onDeleteSubRule('global', id, info)}
           onReorderSub={(id, dir) => onReorderSubRule('global', id, dir)}
+          onPromoteSub={(id, above) => onPromoteSubRuleAbove('global', id, above)}
           onReparentSub={(id, newParent) => onReparentSubRule('global', id, newParent)}
         />
       </section>
@@ -767,11 +907,17 @@ export default function AdvancedSettingsPage({
               onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule(c.cardId, kw, cat)}
               onReorderKeywordRule={(kw, dir) => onReorderKeywordRule(c.cardId, kw, dir)}
               onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove(c.cardId, kw, above)}
+              onMoveKeywordToGlobal={(kw) => onMoveKeywordRuleToGlobal(c.cardId, kw)}
               onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory(c.cardId, sig, cat)}
               onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule(c.cardId, sig, cat)}
+              onReorderSignature={(sig, dir) => onReorderSignatureRule(c.cardId, sig, dir)}
+              onPromoteSignature={(sig, above) => onPromoteSignatureRuleAbove(c.cardId, sig, above)}
+              onMoveSignatureToGlobal={(sig) => onMoveSignatureRuleToGlobal(c.cardId, sig)}
               onSetSub={(parent, kw, sub) => onCreateSubRule(c.cardId, parent, kw, sub)}
               onDeleteSub={(id, info) => onDeleteSubRule(c.cardId, id, info)}
               onReorderSub={(id, dir) => onReorderSubRule(c.cardId, id, dir)}
+              onPromoteSub={(id, above) => onPromoteSubRuleAbove(c.cardId, id, above)}
+              onMoveSubToGlobal={(id) => onMoveSubRuleToGlobal(c.cardId, id)}
               onReparentSub={(id, newParent) => onReparentSubRule(c.cardId, id, newParent)}
             />
           </details>
