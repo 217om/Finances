@@ -716,17 +716,20 @@ export default function App() {
     }
   }
 
-  const handleSaveFilterPreset = useCallback((name: string, filter: CategoryFilterState) => {
-    setFilterPresets((prev) => {
-      const next = [...prev, makePreset(name, filter)];
-      try {
-        localStorage.setItem(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
+  const handleSaveFilterPreset = useCallback(
+    (name: string, includedCategories: string[], includedSubs: Record<string, string[]>) => {
+      setFilterPresets((prev) => {
+        const next = [...prev, makePreset(name, includedCategories, includedSubs)];
+        try {
+          localStorage.setItem(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const handleRenameFilterPreset = useCallback(
     (id: string, name: string) => {
@@ -1830,7 +1833,7 @@ export default function App() {
                   onToggleSubFilter={handleToggleCombinedSubFilter}
                   onSetTxNote={handleSetTxNote}
                   presets={filterPresets}
-                  onSavePreset={(name) => handleSaveFilterPreset(name, combinedCategoryFilter)}
+                  onSavePreset={handleSaveFilterPreset}
                   onRenamePreset={handleRenameFilterPreset}
                   onDeletePreset={handleDeleteFilterPreset}
                   onApplyPreset={handleApplyCombinedCategoryFilterPreset}
@@ -1846,7 +1849,7 @@ export default function App() {
                   onToggleCategoryFilter={handleToggleCategoryFilter}
                   onToggleSubFilter={handleToggleSubFilter}
                   presets={filterPresets}
-                  onSavePreset={(name) => handleSaveFilterPreset(name, categoryFilter)}
+                  onSavePreset={handleSaveFilterPreset}
                   onRenamePreset={handleRenameFilterPreset}
                   onDeletePreset={handleDeleteFilterPreset}
                   onApplyPreset={handleApplyCategoryFilterPreset}

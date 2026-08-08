@@ -3,7 +3,7 @@ import type { Transaction } from '../types';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { isCategoryExcluded, isSubExcluded, type CategoryFilterState } from '../lib/categoryFilter';
-import { sameFilter, type CategoryFilterPreset } from '../lib/categoryFilterPresets';
+import { captureIncluded, resolvePresetFilter, sameFilter, type CategoryFilterPreset } from '../lib/categoryFilterPresets';
 import { money } from '../lib/format';
 
 export interface Tagged {
@@ -44,7 +44,7 @@ export default function CategoryFilterPanel({
    *  saved one, rename or delete. Shared globally, not scoped to this card
    *  or view (see lib/categoryFilterPresets.ts). */
   presets: CategoryFilterPreset[];
-  onSavePreset: (name: string) => void;
+  onSavePreset: (name: string, includedCategories: string[], includedSubs: Record<string, string[]>) => void;
   onRenamePreset: (id: string, name: string) => void;
   onDeletePreset: (id: string) => void;
   onApplyPreset: (filter: CategoryFilterState) => void;
@@ -98,9 +98,19 @@ export default function CategoryFilterPanel({
       return next;
     });
 
+  // The universe a preset's allow-list is resolved against — every category
+  // (and, per category, every sub-category) currently known to this view,
+  // whether or not it existed yet when a given preset was saved.
+  const allCategories = useMemo(
+    () => [...new Set([...categoryTotals.map(([c]) => c), ...incomeTotals.map(([c]) => c)])],
+    [categoryTotals, incomeTotals],
+  );
+
   const activePresetId = useMemo(
-    () => presets.find((p) => sameFilter(p.filter, categoryFilter))?.id ?? null,
-    [presets, categoryFilter],
+    () =>
+      presets.find((p) => sameFilter(resolvePresetFilter(p, allCategories, sub.subsForParent), categoryFilter))
+        ?.id ?? null,
+    [presets, categoryFilter, allCategories, sub],
   );
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -122,7 +132,9 @@ export default function CategoryFilterPanel({
   const commitNewPreset = () => {
     setCreatingPreset(false);
     const name = newPresetName.trim();
-    if (name) onSavePreset(name);
+    if (!name) return;
+    const { includedCategories, includedSubs } = captureIncluded(categoryFilter, allCategories, sub.subsForParent);
+    onSavePreset(name, includedCategories, includedSubs);
   };
 
   return (
@@ -161,7 +173,7 @@ export default function CategoryFilterPanel({
                 type="button"
                 className="filter-preset-btn"
                 title="Click to apply, double-click to rename"
-                onClick={() => onApplyPreset(p.filter)}
+                onClick={() => onApplyPreset(resolvePresetFilter(p, allCategories, sub.subsForParent))}
                 onDoubleClick={() => startRename(p)}
               >
                 {p.name}

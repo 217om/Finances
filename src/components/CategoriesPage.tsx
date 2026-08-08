@@ -19,7 +19,7 @@ interface Props {
   onToggleCategoryFilter: (category: string) => void;
   onToggleSubFilter: (category: string, subName: string) => void;
   presets: CategoryFilterPreset[];
-  onSavePreset: (name: string) => void;
+  onSavePreset: (name: string, includedCategories: string[], includedSubs: Record<string, string[]>) => void;
   onRenamePreset: (id: string, name: string) => void;
   onDeletePreset: (id: string) => void;
   onApplyPreset: (filter: CategoryFilterState) => void;
