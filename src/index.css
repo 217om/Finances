@@ -2129,35 +2129,41 @@ th.num {
 
 /* ---------- Rule tree gallery ---------- */
 .tree-gallery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
   margin: 2px 0 16px;
 }
-.tree-card {
+.tree-canvas-viewport {
   position: relative;
+  overflow: hidden;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 12px;
-  flex: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.tree-canvas-viewport:active {
+  cursor: grabbing;
+}
+.tree-canvas-content {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 .tree-lines {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
   pointer-events: none;
 }
 .tree-bubble {
   position: absolute;
-  transform: translate(-50%, -50%);
-  max-width: 140px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.25;
+  transform: translateY(-50%);
+  max-width: 96px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.2;
   text-align: center;
-  white-space: normal;
   z-index: 1;
 }
 .tree-bubble-root {
@@ -2166,9 +2172,11 @@ th.num {
   color: var(--text);
   font-weight: 600;
   cursor: default;
+  max-width: none;
 }
 .tree-bubble-cat,
 .tree-bubble-leaf {
+  transform: translate(-50%, -50%);
   border: none;
   color: #fff;
   cursor: pointer;
@@ -2176,8 +2184,8 @@ th.num {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
 }
 .tree-bubble-leaf {
-  max-width: 110px;
-  font-size: 11px;
+  max-width: 80px;
+  font-size: 10px;
   opacity: 0.92;
 }
 .tree-bubble-cat:hover,
@@ -2192,9 +2200,8 @@ th.num {
 }
 .tree-bubble-count {
   display: block;
-  font-size: 10px;
+  font-size: 9px;
   opacity: 0.85;
-  margin-top: 1px;
 }
 .tree-pop-anchor {
   position: absolute;

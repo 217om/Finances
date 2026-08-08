@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
 import type { CardSnapshot } from '../lib/combine';
 import { categoryColor, normalizeCategoryName, signatureOf } from '../lib/categorize';
@@ -180,12 +180,13 @@ function treeMatches(tree: RuleTree, needle: string): boolean {
   );
 }
 
-const ROOT_X = 26;
-const BRANCH_X = 168;
-const LEAF_X = 300;
-const ROW_H = 46;
-const PAD_Y = 14;
-const CARD_W = 380;
+const ROOT_X = 14;
+const ROOT_W = 84;
+const BRANCH_X = 120;
+const LEAF_X = 216;
+const ROW_H = 30;
+const PAD_Y = 8;
+const TREE_CELL_W = 280;
 
 interface EditPopoverProps {
   node: TreeNode;
@@ -310,40 +311,58 @@ function EditPopover({
   return null;
 }
 
-interface TreeCardProps {
+function treeHeight(tree: RuleTree): number {
+  return Math.max(1, tree.branches.length) * ROW_H + PAD_Y * 2;
+}
+
+/** One tree's connecting lines, offset into a shared canvas coordinate
+ *  space — meant to sit inside one big <svg> covering every tree at once. */
+function TreeLines({ tree, offsetX, offsetY }: { tree: RuleTree; offsetX: number; offsetY: number }) {
+  const rootY = offsetY + (tree.branches.length * ROW_H) / 2 + PAD_Y;
+  const branchY = (i: number) => offsetY + i * ROW_H + ROW_H / 2 + PAD_Y;
+  const rootRightEdge = offsetX + ROOT_X + ROOT_W;
+  const branchX = offsetX + BRANCH_X;
+  const leafX = offsetX + LEAF_X;
+  return (
+    <>
+      {tree.branches.map((b, i) => (
+        <g key={b.node.key}>
+          <line x1={rootRightEdge} y1={rootY} x2={branchX - 42} y2={branchY(i)} stroke="var(--border)" strokeWidth="1.5" />
+          {b.leaf && (
+            <line x1={branchX + 42} y1={branchY(i)} x2={leafX - 36} y2={branchY(i)} stroke="var(--border)" strokeWidth="1.5" />
+          )}
+        </g>
+      ))}
+    </>
+  );
+}
+
+interface TreeBubblesProps {
   tree: RuleTree;
+  offsetX: number;
+  offsetY: number;
   openKey: string | null;
   onOpen: (key: string | null) => void;
   popoverProps: Omit<EditPopoverProps, 'node' | 'onClose'>;
 }
 
-function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
-  const rootY = (tree.branches.length * ROW_H) / 2 + PAD_Y;
-  const height = tree.branches.length * ROW_H + PAD_Y * 2;
-  const branchY = (i: number) => i * ROW_H + ROW_H / 2 + PAD_Y;
+/** One tree's root/branch/leaf bubbles, offset into the same shared canvas
+ *  coordinate space as TreeLines. */
+function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: TreeBubblesProps) {
+  const branchY = (i: number) => offsetY + i * ROW_H + ROW_H / 2 + PAD_Y;
+  const rootY = offsetY + (tree.branches.length * ROW_H) / 2 + PAD_Y;
+  const rootX = offsetX + ROOT_X;
+  const branchX = offsetX + BRANCH_X;
+  const leafX = offsetX + LEAF_X;
 
   return (
-    <div className="tree-card" style={{ width: CARD_W, height }}>
-      <svg className="tree-lines" viewBox={`0 0 ${CARD_W} ${height}`} preserveAspectRatio="none">
-        {tree.branches.map((b, i) => (
-          <g key={b.node.key}>
-            <line x1={ROOT_X + 44} y1={rootY} x2={BRANCH_X - 60} y2={branchY(i)} stroke="var(--border)" strokeWidth="1.5" />
-            {b.leaf && (
-              <line
-                x1={BRANCH_X + 90}
-                y1={branchY(i)}
-                x2={LEAF_X - 56}
-                y2={branchY(i)}
-                stroke="var(--border)"
-                strokeWidth="1.5"
-              />
-            )}
-          </g>
-        ))}
-      </svg>
-
-      <div className="tree-bubble tree-bubble-root" style={{ left: ROOT_X, top: rootY }} title={tree.root.label}>
-        {tree.root.label}
+    <>
+      <div
+        className="tree-bubble tree-bubble-root"
+        style={{ left: rootX, top: rootY, width: ROOT_W }}
+        title={tree.root.label}
+      >
+        <span className="tree-bubble-label">{tree.root.label}</span>
       </div>
 
       {tree.branches.map((b, i) => (
@@ -352,7 +371,7 @@ function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
             type="button"
             className="tree-bubble tree-bubble-cat"
             style={{
-              left: BRANCH_X,
+              left: branchX,
               top: branchY(i),
               background: b.node.category ? categoryColor(b.node.category) : undefined,
             }}
@@ -363,7 +382,7 @@ function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
             {b.node.count != null && <span className="tree-bubble-count">{b.node.count}</span>}
           </button>
           {openKey === b.node.key && (
-            <div className="tree-pop-anchor" style={{ left: BRANCH_X, top: branchY(i) + 26 }}>
+            <div className="tree-pop-anchor" style={{ left: branchX, top: branchY(i) + 18 }}>
               <EditPopover node={b.node} onClose={() => onOpen(null)} {...popoverProps} />
             </div>
           )}
@@ -374,7 +393,7 @@ function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
                 type="button"
                 className="tree-bubble tree-bubble-leaf"
                 style={{
-                  left: LEAF_X,
+                  left: leafX,
                   top: branchY(i),
                   background: b.leaf.category ? categoryColor(b.leaf.category) : undefined,
                 }}
@@ -385,7 +404,7 @@ function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
                 {b.leaf.count != null && <span className="tree-bubble-count">{b.leaf.count}</span>}
               </button>
               {openKey === b.leaf.key && (
-                <div className="tree-pop-anchor" style={{ left: LEAF_X, top: branchY(i) + 26 }}>
+                <div className="tree-pop-anchor" style={{ left: leafX, top: branchY(i) + 18 }}>
                   <EditPopover node={b.leaf} onClose={() => onOpen(null)} {...popoverProps} />
                 </div>
               )}
@@ -393,8 +412,23 @@ function TreeCard({ tree, openKey, onOpen, popoverProps }: TreeCardProps) {
           )}
         </div>
       ))}
-    </div>
+    </>
   );
+}
+
+const COLUMNS = 3;
+const CELL_GAP_X = 24;
+const CELL_GAP_Y = 20;
+const CANVAS_PAD = 16;
+const VIEWPORT_H = 320;
+const DRAG_THRESHOLD = 4;
+
+interface DragState {
+  startX: number;
+  startY: number;
+  startPanX: number;
+  startPanY: number;
+  dragging: boolean;
 }
 
 interface Props {
@@ -422,11 +456,12 @@ interface Props {
 }
 
 /**
- * Always-visible gallery of small trees, one per merchant rule and one per
- * "standalone" keyword rule (a keyword that never diverts a merchant's own
- * transactions elsewhere). Meant as an overview next to the full rule list
- * below — click a colored bubble to change its category or sub-category
- * without hunting through the list.
+ * Always-visible, single pannable widget holding every tree at once — one
+ * per merchant rule, one per "standalone" keyword rule (a keyword that never
+ * diverts a merchant's own transactions elsewhere). Trees sit on a shared
+ * virtual canvas usually larger than the visible viewport; drag anywhere in
+ * the widget to pan around it. Click a colored bubble to change its category
+ * or sub-category without hunting through the list below.
  */
 export default function RuleTreeGallery({
   ownScope,
@@ -448,6 +483,10 @@ export default function RuleTreeGallery({
   onDeleteSub,
 }: Props) {
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const justDraggedRef = useRef(false);
 
   const trees = useMemo(
     () =>
@@ -467,6 +506,61 @@ export default function RuleTreeGallery({
   const needle = query.trim().toLowerCase();
   const shown = useMemo(() => trees.filter((t) => treeMatches(t, needle)), [trees, needle]);
 
+  const layout = useMemo(() => {
+    const cellW = TREE_CELL_W + CELL_GAP_X;
+    const items: { tree: RuleTree; x: number; y: number }[] = [];
+    let y = CANVAS_PAD;
+    for (let i = 0; i < shown.length; i += COLUMNS) {
+      const row = shown.slice(i, i + COLUMNS);
+      const rowH = Math.max(...row.map(treeHeight));
+      row.forEach((tree, c) => items.push({ tree, x: CANVAS_PAD + c * cellW, y }));
+      y += rowH + CELL_GAP_Y;
+    }
+    const cols = Math.min(COLUMNS, shown.length);
+    const width = cols > 0 ? CANVAS_PAD * 2 + cols * cellW - CELL_GAP_X : 0;
+    return { items, width, height: y };
+  }, [shown]);
+
+  const clampPan = (p: { x: number; y: number }) => {
+    const vp = viewportRef.current;
+    const vw = vp?.clientWidth ?? 0;
+    const vh = vp?.clientHeight ?? VIEWPORT_H;
+    const minX = Math.min(0, vw - layout.width);
+    const minY = Math.min(0, vh - layout.height);
+    return { x: Math.min(0, Math.max(minX, p.x)), y: Math.min(0, Math.max(minY, p.y)) };
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, dragging: false };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.dragging && Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) {
+      d.dragging = true;
+      // Capture only once a real drag is confirmed — capturing on every
+      // pointerdown (even a plain click) can suppress the click event that
+      // would otherwise fire on the bubble underneath, since click synthesis
+      // compares the pointerdown/pointerup targets and capture redirects the
+      // up-target to this element.
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    if (d.dragging) setPan(clampPan({ x: d.startPanX + dx, y: d.startPanY + dy }));
+  };
+  const onPointerUp = () => {
+    if (dragRef.current?.dragging) justDraggedRef.current = true;
+    dragRef.current = null;
+  };
+  const onClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (justDraggedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      justDraggedRef.current = false;
+    }
+  };
+
   if (trees.length === 0) return null;
 
   const popoverProps = {
@@ -485,9 +579,38 @@ export default function RuleTreeGallery({
       {shown.length === 0 ? (
         <p className="muted rules-empty">No rule trees match “{query}”.</p>
       ) : (
-        shown.map((tree) => (
-          <TreeCard key={tree.id} tree={tree} openKey={openKey} onOpen={setOpenKey} popoverProps={popoverProps} />
-        ))
+        <div
+          className="tree-canvas-viewport"
+          ref={viewportRef}
+          style={{ height: Math.min(VIEWPORT_H, Math.max(140, layout.height + 8)) }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onClickCapture={onClickCapture}
+        >
+          <div
+            className="tree-canvas-content"
+            style={{ width: layout.width, height: layout.height, transform: `translate(${pan.x}px, ${pan.y}px)` }}
+          >
+            <svg className="tree-lines" width={layout.width} height={layout.height}>
+              {layout.items.map(({ tree, x, y }) => (
+                <TreeLines key={tree.id} tree={tree} offsetX={x} offsetY={y} />
+              ))}
+            </svg>
+            {layout.items.map(({ tree, x, y }) => (
+              <TreeBubbles
+                key={tree.id}
+                tree={tree}
+                offsetX={x}
+                offsetY={y}
+                openKey={openKey}
+                onOpen={setOpenKey}
+                popoverProps={popoverProps}
+              />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
