@@ -2155,42 +2155,54 @@ th.num {
   left: 0;
   pointer-events: none;
 }
+.tree-line {
+  stroke: var(--muted);
+  stroke-width: 2;
+  opacity: 0.55;
+}
 .tree-bubble {
   position: absolute;
   transform: translateY(-50%);
-  max-width: 96px;
-  padding: 4px 8px;
+  max-width: 112px;
+  padding: 5px 10px;
   border-radius: 10px;
   font-size: 11px;
-  line-height: 1.2;
+  line-height: 1.25;
   text-align: center;
   z-index: 1;
 }
 .tree-bubble-root {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-weight: 600;
+  width: auto;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
   cursor: default;
-  max-width: none;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+.tree-bubble-root .tree-bubble-label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 .tree-bubble-cat,
 .tree-bubble-leaf {
   transform: translate(-50%, -50%);
-  border: none;
-  color: #fff;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
   cursor: pointer;
   font-family: inherit;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 .tree-bubble-leaf {
-  max-width: 80px;
-  font-size: 10px;
-  opacity: 0.92;
+  max-width: 96px;
+  font-size: 10.5px;
+  border-style: dashed;
 }
 .tree-bubble-cat:hover,
 .tree-bubble-leaf:hover {
-  filter: brightness(1.08);
+  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 .tree-bubble-label {
   display: block;

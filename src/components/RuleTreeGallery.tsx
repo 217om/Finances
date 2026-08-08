@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { CategoryRule, KeywordRule, SubRule, Transaction } from '../types';
+import type { CategoryRule, KeywordRule, SubRule } from '../types';
 import type { CardSnapshot } from '../lib/combine';
 import { categoryColor, normalizeCategoryName, signatureOf } from '../lib/categorize';
 import CategoryPicker from './CategoryPicker';
@@ -11,8 +11,8 @@ interface TreeNode {
   count?: number;
   editKind?: 'keyword' | 'signature' | 'sub';
   editKey?: string;
-  /** Which scope this node's underlying rule actually lives in — a merchant's
-   *  diverting branch can be a global keyword rule even inside a card's own
+  /** Which scope this node's underlying rule actually lives in — a
+   *  sub-category leaf can be a global sub-rule even inside a card's own
    *  tree, so edits/deletes must be routed there, not hardcoded to whichever
    *  scope this gallery instance is showing. */
   scope: string;
@@ -29,6 +29,7 @@ interface TreeBranch {
 
 interface RuleTree {
   id: string;
+  category: string;
   root: TreeNode;
   branches: TreeBranch[];
 }
@@ -46,18 +47,14 @@ function subLeafFor(
 }
 
 /**
- * Builds one small tree per merchant rule (root = the merchant, branches =
- * where its transactions actually end up) plus one per keyword rule that
- * never shows up as a branch under any merchant tree. Branches are derived
- * from real transaction resolution, not from comparing keyword text — a
- * keyword rule only earns its own branch under a merchant's tree when it
- * demonstrably diverts at least one of that merchant's transactions to a
- * different category than the merchant rule's own.
- *
- * A diverting (or standalone) keyword/sub rule can come from either this
- * scope's own rules or the global set merged on top of them — `ownScope`
- * plus the `own*` id sets say which, so every node can carry the *actual*
- * scope its rule lives in for editing.
+ * Builds one small tree per category actually produced by this scope's own
+ * rules: root = the category, branches = every one of this scope's own
+ * keyword/merchant rules that resolves into it, leaf = that rule's
+ * sub-category split (if any). Branch counts reflect real transaction
+ * resolution (keyword rules always outrank merchant rules; among keyword
+ * rules the newest matching one wins), not just "every transaction whose
+ * description contains this text" — a rule fully shadowed by a
+ * higher-priority one correctly shows a count of 0.
  */
 function buildRuleTrees(
   ownScope: string,
@@ -69,104 +66,86 @@ function buildRuleTrees(
   countCardIds: string[],
   snapshotById: Map<string, CardSnapshot>,
 ): RuleTree[] {
-  const sortedKeyword = [...effectiveKeywordRules].sort((a, b) => b.createdAt - a.createdAt);
-  const ownKeywordSet = new Set(keywordRules.map((r) => r.keyword));
-  const keywordScope = (kw: string) => (ownKeywordSet.has(kw) ? ownScope : 'global');
+  if (rules.length === 0 && keywordRules.length === 0) return [];
 
-  // Sub-rules resolve the same additive way — this scope's own rule for a
-  // given (parent, keyword) pair wins if one exists, else the global one.
+  const sortedKeyword = [...effectiveKeywordRules].sort((a, b) => b.createdAt - a.createdAt);
+
   const subByPair = new Map<string, { rule: SubRule; scope: string }>();
   if (ownScope !== 'global') {
     for (const r of globalSubRules) subByPair.set(`${r.parent}|${r.keyword}`, { rule: r, scope: 'global' });
   }
   for (const r of subRules) subByPair.set(`${r.parent}|${r.keyword}`, { rule: r, scope: ownScope });
 
-  const usedKeywords = new Set<string>();
-  const trees: RuleTree[] = [];
+  const sigRuleMap = new Map(rules.map((r) => [r.signature, r]));
+  const branchCounts = new Map<string, number>();
 
-  for (const rule of rules) {
-    const sig = rule.signature;
-    const txs: Transaction[] = [];
-    for (const id of countCardIds) {
-      const snap = snapshotById.get(id);
-      if (!snap) continue;
-      for (const t of snap.transactions) {
-        if (t.amount < 0 && signatureOf(t.description) === sig) txs.push(t);
-      }
-    }
-
-    const diverted = new Map<string, { category: string; count: number }>();
-    let trunkCount = 0;
-    for (const t of txs) {
-      if (rule.excludedIds.includes(t.id)) continue;
+  for (const id of countCardIds) {
+    const snap = snapshotById.get(id);
+    if (!snap) continue;
+    for (const t of snap.transactions) {
+      if (t.amount >= 0) continue;
       const desc = t.description.toLowerCase();
-      const winner = sortedKeyword.find((k) => k.keyword && desc.includes(k.keyword));
-      if (winner && winner.category !== rule.category) {
-        const entry = diverted.get(winner.keyword);
-        if (entry) entry.count++;
-        else diverted.set(winner.keyword, { category: winner.category, count: 1 });
-      } else {
-        trunkCount++;
+      const kwWinner = sortedKeyword.find((k) => k.keyword && desc.includes(k.keyword));
+      if (kwWinner) {
+        const key = `kw:${kwWinner.keyword}`;
+        branchCounts.set(key, (branchCounts.get(key) ?? 0) + 1);
+        continue;
+      }
+      const sig = signatureOf(t.description);
+      const rule = sigRuleMap.get(sig);
+      if (rule && !rule.excludedIds.includes(t.id)) {
+        const key = `sig:${sig}`;
+        branchCounts.set(key, (branchCounts.get(key) ?? 0) + 1);
       }
     }
+  }
 
-    const branches: TreeBranch[] = [
-      {
-        node: {
-          key: `${sig}::trunk`,
-          label: rule.category,
-          category: rule.category,
-          count: trunkCount,
-          editKind: 'signature',
-          editKey: sig,
-          scope: ownScope,
-        },
-        leaf: subLeafFor(rule.category, sig, subByPair, trunkCount),
-      },
-    ];
-    for (const [kw, { category, count }] of diverted) {
-      usedKeywords.add(kw);
-      branches.push({
-        node: {
-          key: `${sig}::${kw}`,
-          label: `“${kw}” → ${category}`,
-          category,
-          count,
-          editKind: 'keyword',
-          editKey: kw,
-          scope: keywordScope(kw),
-        },
-        leaf: subLeafFor(category, kw, subByPair, count),
-      });
-    }
+  const byCategory = new Map<string, TreeBranch[]>();
 
+  for (const r of keywordRules) {
+    const count = branchCounts.get(`kw:${r.keyword}`) ?? 0;
+    const node: TreeNode = {
+      key: `kw-${r.keyword}`,
+      label: `“${r.keyword}”`,
+      category: r.category,
+      count,
+      editKind: 'keyword',
+      editKey: r.keyword,
+      scope: ownScope,
+    };
+    const list = byCategory.get(r.category) ?? [];
+    list.push({ node, leaf: subLeafFor(r.category, r.keyword, subByPair, count) });
+    byCategory.set(r.category, list);
+  }
+
+  for (const r of rules) {
+    const count = branchCounts.get(`sig:${r.signature}`) ?? 0;
+    const node: TreeNode = {
+      key: `sig-${r.signature}`,
+      label: r.sample || r.signature,
+      category: r.category,
+      count,
+      editKind: 'signature',
+      editKey: r.signature,
+      scope: ownScope,
+    };
+    const list = byCategory.get(r.category) ?? [];
+    list.push({ node, leaf: subLeafFor(r.category, r.signature, subByPair, count) });
+    byCategory.set(r.category, list);
+  }
+
+  const trees: RuleTree[] = [];
+  for (const [category, branches] of byCategory) {
+    branches.sort((a, b) => (b.node.count ?? 0) - (a.node.count ?? 0));
+    const total = branches.reduce((sum, b) => sum + (b.node.count ?? 0), 0);
     trees.push({
-      id: `mr-${sig}`,
-      root: { key: sig, label: rule.sample || sig, scope: ownScope },
+      id: `cat-${category}`,
+      category,
+      root: { key: category, label: category, category, count: total, scope: ownScope },
       branches,
     });
   }
-
-  for (const r of keywordRules) {
-    if (usedKeywords.has(r.keyword)) continue;
-    trees.push({
-      id: `kw-${r.keyword}`,
-      root: { key: r.keyword, label: `“${r.keyword}”`, scope: ownScope },
-      branches: [
-        {
-          node: {
-            key: `${r.keyword}::cat`,
-            label: r.category,
-            category: r.category,
-            editKind: 'keyword',
-            editKey: r.keyword,
-            scope: ownScope,
-          },
-          leaf: subLeafFor(r.category, r.keyword, subByPair),
-        },
-      ],
-    });
-  }
+  trees.sort((a, b) => (b.root.count ?? 0) - (a.root.count ?? 0) || a.category.localeCompare(b.category));
 
   return trees;
 }
@@ -174,19 +153,17 @@ function buildRuleTrees(
 function treeMatches(tree: RuleTree, needle: string): boolean {
   if (!needle) return true;
   const hit = (s: string | undefined) => !!s && s.toLowerCase().includes(needle);
-  if (hit(tree.root.label)) return true;
-  return tree.branches.some(
-    (b) => hit(b.node.label) || hit(b.node.category) || hit(b.leaf?.label) || hit(b.leaf?.category),
-  );
+  if (hit(tree.category)) return true;
+  return tree.branches.some((b) => hit(b.node.label) || hit(b.leaf?.label));
 }
 
 const ROOT_X = 14;
-const ROOT_W = 84;
-const BRANCH_X = 120;
-const LEAF_X = 216;
-const ROW_H = 30;
-const PAD_Y = 8;
-const TREE_CELL_W = 280;
+const ROOT_W = 104;
+const BRANCH_X = 210;
+const LEAF_X = 330;
+const ROW_H = 34;
+const PAD_Y = 10;
+const TREE_CELL_W = 400;
 
 interface EditPopoverProps {
   node: TreeNode;
@@ -327,10 +304,8 @@ function TreeLines({ tree, offsetX, offsetY }: { tree: RuleTree; offsetX: number
     <>
       {tree.branches.map((b, i) => (
         <g key={b.node.key}>
-          <line x1={rootRightEdge} y1={rootY} x2={branchX - 42} y2={branchY(i)} stroke="var(--border)" strokeWidth="1.5" />
-          {b.leaf && (
-            <line x1={branchX + 42} y1={branchY(i)} x2={leafX - 36} y2={branchY(i)} stroke="var(--border)" strokeWidth="1.5" />
-          )}
+          <line x1={rootRightEdge} y1={rootY} x2={branchX - 44} y2={branchY(i)} className="tree-line" />
+          {b.leaf && <line x1={branchX + 44} y1={branchY(i)} x2={leafX - 40} y2={branchY(i)} className="tree-line" />}
         </g>
       ))}
     </>
@@ -359,10 +334,11 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
     <>
       <div
         className="tree-bubble tree-bubble-root"
-        style={{ left: rootX, top: rootY, width: ROOT_W }}
-        title={tree.root.label}
+        style={{ left: rootX, top: rootY, width: ROOT_W, background: categoryColor(tree.category) }}
+        title={tree.category}
       >
-        <span className="tree-bubble-label">{tree.root.label}</span>
+        <span className="tree-bubble-label">{tree.category}</span>
+        {tree.root.count != null && <span className="tree-bubble-count">{tree.root.count}</span>}
       </div>
 
       {tree.branches.map((b, i) => (
@@ -370,11 +346,7 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
           <button
             type="button"
             className="tree-bubble tree-bubble-cat"
-            style={{
-              left: branchX,
-              top: branchY(i),
-              background: b.node.category ? categoryColor(b.node.category) : undefined,
-            }}
+            style={{ left: branchX, top: branchY(i) }}
             title={b.node.label}
             onClick={() => onOpen(openKey === b.node.key ? null : b.node.key)}
           >
@@ -382,7 +354,7 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
             {b.node.count != null && <span className="tree-bubble-count">{b.node.count}</span>}
           </button>
           {openKey === b.node.key && (
-            <div className="tree-pop-anchor" style={{ left: branchX, top: branchY(i) + 18 }}>
+            <div className="tree-pop-anchor" style={{ left: branchX, top: branchY(i) + 20 }}>
               <EditPopover node={b.node} onClose={() => onOpen(null)} {...popoverProps} />
             </div>
           )}
@@ -392,11 +364,7 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
               <button
                 type="button"
                 className="tree-bubble tree-bubble-leaf"
-                style={{
-                  left: leafX,
-                  top: branchY(i),
-                  background: b.leaf.category ? categoryColor(b.leaf.category) : undefined,
-                }}
+                style={{ left: leafX, top: branchY(i) }}
                 title={b.leaf.label}
                 onClick={() => onOpen(openKey === b.leaf!.key ? null : b.leaf!.key)}
               >
@@ -404,7 +372,7 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
                 {b.leaf.count != null && <span className="tree-bubble-count">{b.leaf.count}</span>}
               </button>
               {openKey === b.leaf.key && (
-                <div className="tree-pop-anchor" style={{ left: leafX, top: branchY(i) + 18 }}>
+                <div className="tree-pop-anchor" style={{ left: leafX, top: branchY(i) + 20 }}>
                   <EditPopover node={b.leaf} onClose={() => onOpen(null)} {...popoverProps} />
                 </div>
               )}
@@ -417,8 +385,8 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
 }
 
 const COLUMNS = 3;
-const CELL_GAP_X = 24;
-const CELL_GAP_Y = 20;
+const CELL_GAP_X = 28;
+const CELL_GAP_Y = 24;
 const CANVAS_PAD = 16;
 const VIEWPORT_H = 320;
 const DRAG_THRESHOLD = 4;
@@ -437,8 +405,9 @@ interface Props {
   rules: CategoryRule[];
   keywordRules: KeywordRule[];
   /** Same array as keywordRules when ownScope is 'global'; otherwise the
-   *  global set merged on top — a diverting branch's scope is attributed by
-   *  checking whether its keyword is in `keywordRules` (own) or not (global). */
+   *  global set merged on top — needed so a card's own branch counts are
+   *  reduced correctly when a higher-priority global keyword rule actually
+   *  wins some of its transactions. */
   effectiveKeywordRules: KeywordRule[];
   subRules: SubRule[];
   globalSubRules: SubRule[];
@@ -457,11 +426,12 @@ interface Props {
 
 /**
  * Always-visible, single pannable widget holding every tree at once — one
- * per merchant rule, one per "standalone" keyword rule (a keyword that never
- * diverts a merchant's own transactions elsewhere). Trees sit on a shared
+ * per category this scope's own rules actually produce. Root = the
+ * category, branches = every rule (keyword or merchant) that resolves into
+ * it, leaf = that rule's sub-category split, if any. Trees sit on a shared
  * virtual canvas usually larger than the visible viewport; drag anywhere in
- * the widget to pan around it. Click a colored bubble to change its category
- * or sub-category without hunting through the list below.
+ * the widget to pan around it. Click a branch or leaf bubble to change its
+ * category or sub-category without hunting through the list below.
  */
 export default function RuleTreeGallery({
   ownScope,
