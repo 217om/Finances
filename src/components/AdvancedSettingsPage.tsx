@@ -14,6 +14,7 @@ import {
   signatureOf,
 } from '../lib/categorize';
 import CategoryPicker from './CategoryPicker';
+import RuleTreeGallery from './RuleTreeGallery';
 
 export interface CardRuleSet {
   cardId: string;
@@ -856,6 +857,25 @@ export default function AdvancedSettingsPage({
           </div>
           <span className="badge">{globalRules.length + globalKeywordRules.length}</span>
         </div>
+        <RuleTreeGallery
+          ownScope="global"
+          rules={globalRules}
+          keywordRules={globalKeywordRules}
+          effectiveKeywordRules={globalKeywordRules}
+          subRules={globalSubRules}
+          globalSubRules={globalSubRules}
+          countCardIds={countCardIds}
+          snapshotById={snapshotById}
+          query={query}
+          categoryOptions={categoryOptions}
+          onCreateCategory={onCreateCategory}
+          onUpdateKeywordRuleCategory={onUpdateKeywordRuleCategory}
+          onDeleteKeywordRule={onDeleteKeywordRule}
+          onUpdateSignatureRuleCategory={onUpdateSignatureRuleCategory}
+          onDeleteSignatureRule={onDeleteSignatureRule}
+          onSetSub={onCreateSubRule}
+          onDeleteSub={onDeleteSubRule}
+        />
         <ScopedCategoryRules
           rules={globalRules}
           keywordRules={globalKeywordRules}
@@ -893,6 +913,25 @@ export default function AdvancedSettingsPage({
               Only applies to {c.cardName}, and takes precedence over a global rule for the same keyword
               or merchant.
             </p>
+            <RuleTreeGallery
+              ownScope={c.cardId}
+              rules={c.rules}
+              keywordRules={c.keywordRules}
+              effectiveKeywordRules={mergeByKey(globalKeywordRules, c.keywordRules, (r) => r.keyword)}
+              subRules={c.subRules}
+              globalSubRules={globalSubRules}
+              countCardIds={countCardIds}
+              snapshotById={snapshotById}
+              query={query}
+              categoryOptions={categoryOptions}
+              onCreateCategory={onCreateCategory}
+              onUpdateKeywordRuleCategory={onUpdateKeywordRuleCategory}
+              onDeleteKeywordRule={onDeleteKeywordRule}
+              onUpdateSignatureRuleCategory={onUpdateSignatureRuleCategory}
+              onDeleteSignatureRule={onDeleteSignatureRule}
+              onSetSub={onCreateSubRule}
+              onDeleteSub={onDeleteSubRule}
+            />
             <ScopedCategoryRules
               rules={c.rules}
               keywordRules={c.keywordRules}

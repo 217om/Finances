@@ -2127,6 +2127,100 @@ th.num {
   color: var(--accent-hover);
 }
 
+/* ---------- Rule tree gallery ---------- */
+.tree-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 2px 0 16px;
+}
+.tree-card {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  flex: none;
+}
+.tree-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.tree-bubble {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 140px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  z-index: 1;
+}
+.tree-bubble-root {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+.tree-bubble-cat,
+.tree-bubble-leaf {
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+}
+.tree-bubble-leaf {
+  max-width: 110px;
+  font-size: 11px;
+  opacity: 0.92;
+}
+.tree-bubble-cat:hover,
+.tree-bubble-leaf:hover {
+  filter: brightness(1.08);
+}
+.tree-bubble-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-bubble-count {
+  display: block;
+  font-size: 10px;
+  opacity: 0.85;
+  margin-top: 1px;
+}
+.tree-pop-anchor {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+.tree-pop {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 170px;
+}
+.tree-pop select {
+  width: 100%;
+}
+.tree-pop-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 /* ---------- Footer ---------- */
 .footer {
   text-align: center;
