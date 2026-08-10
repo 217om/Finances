@@ -181,6 +181,28 @@ function buildRuleTrees(
   const trees: RuleTree[] = [];
   for (const [category, branches] of byCategory) {
     branches.sort((a, b) => (b.node.count ?? 0) - (a.node.count ?? 0));
+
+    // A sub-rule with no matching transactions yet still gets a visible
+    // (0-count) leaf — same "ready for future imports" treatment a
+    // brand-new top-level rule already gets — anchored to the top branch
+    // since a sub-rule isn't actually tied to any specific one.
+    const claimedSubIds = new Set(branches.flatMap((b) => b.leaves.map((l) => l.editKey)));
+    const unclaimed = (subsByCategory.get(category) ?? []).filter((entry) => !claimedSubIds.has(entry.rule.id));
+    if (unclaimed.length > 0 && branches.length > 0) {
+      for (const { rule: sr, scope } of unclaimed) {
+        branches[0].leaves.push({
+          key: sr.id,
+          label: sr.sub,
+          category,
+          count: 0,
+          editKind: 'sub',
+          editKey: sr.id,
+          matchKey: sr.keyword,
+          scope,
+        });
+      }
+    }
+
     const total = branches.reduce((sum, b) => sum + (b.node.count ?? 0), 0);
     trees.push({
       id: `cat-${category}`,
@@ -504,8 +526,6 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
   );
 }
 
-const COLUMNS = 3;
-const CELL_GAP_X = 28;
 const CELL_GAP_Y = 24;
 const CANVAS_PAD = 16;
 const VIEWPORT_H = 320;
@@ -579,9 +599,33 @@ export default function RuleTreeGallery({
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  // A plain ref (for the imperative reads below) isn't enough on its own —
+  // the viewport <div> only exists once there's at least one tree to show,
+  // so an effect with an empty dependency array would run before it's ever
+  // mounted and never retry. Mirroring the node into state via a callback
+  // ref makes the ResizeObserver effect re-run whenever the element itself
+  // actually mounts or unmounts.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
+  const setViewportRef = (el: HTMLDivElement | null) => {
+    viewportRef.current = el;
+    setViewportEl(el);
+  };
   const dragRef = useRef<DragState | null>(null);
   const justDraggedRef = useRef(false);
+
+  // Tracked so trees can be centered within however wide the widget actually
+  // renders, rather than packed left-aligned into a fixed-width grid.
+  useEffect(() => {
+    if (!viewportEl) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setViewportWidth(w);
+    });
+    ro.observe(viewportEl);
+    return () => ro.disconnect();
+  }, [viewportEl]);
 
   const trees = useMemo(
     () =>
@@ -602,19 +646,19 @@ export default function RuleTreeGallery({
   const shown = useMemo(() => trees.filter((t) => treeMatches(t, needle)), [trees, needle]);
 
   const layout = useMemo(() => {
-    const cellW = TREE_CELL_W + CELL_GAP_X;
+    // One tree per row, centered horizontally in however wide the widget
+    // currently is (falling back to just fitting one tree before the first
+    // resize measurement lands).
+    const width = Math.max(viewportWidth, TREE_CELL_W + CANVAS_PAD * 2);
+    const treeX = Math.max(CANVAS_PAD, (width - TREE_CELL_W) / 2);
     const items: { tree: RuleTree; x: number; y: number }[] = [];
     let y = CANVAS_PAD;
-    for (let i = 0; i < shown.length; i += COLUMNS) {
-      const row = shown.slice(i, i + COLUMNS);
-      const rowH = Math.max(...row.map(treeHeight));
-      row.forEach((tree, c) => items.push({ tree, x: CANVAS_PAD + c * cellW, y }));
-      y += rowH + CELL_GAP_Y;
+    for (const tree of shown) {
+      items.push({ tree, x: treeX, y });
+      y += treeHeight(tree) + CELL_GAP_Y;
     }
-    const cols = Math.min(COLUMNS, shown.length);
-    const width = cols > 0 ? CANVAS_PAD * 2 + cols * cellW - CELL_GAP_X : 0;
     return { items, width, height: y };
-  }, [shown]);
+  }, [shown, viewportWidth]);
 
   const clampPan = (p: { x: number; y: number }, z: number = zoom) => {
     const vp = viewportRef.current;
@@ -710,7 +754,7 @@ export default function RuleTreeGallery({
       ) : (
         <div
           className="tree-canvas-viewport"
-          ref={viewportRef}
+          ref={setViewportRef}
           style={{ height: Math.min(VIEWPORT_H, Math.max(140, layout.height + 8)) }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
