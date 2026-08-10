@@ -250,6 +250,14 @@ function rowLayout(tree: RuleTree): { starts: number[]; totalRows: number } {
   return { starts, totalRows: Math.max(1, acc) };
 }
 
+/** A tree's root Y, given where it starts on the shared canvas — shared by
+ *  TreeBubbles/TreeLines and the "Total categories" super-root connector so
+ *  they all agree on exactly where each root sits. */
+function treeRootY(tree: RuleTree, offsetY: number): number {
+  const { totalRows } = rowLayout(tree);
+  return offsetY + (totalRows * ROW_H) / 2 + PAD_Y;
+}
+
 interface EditPopoverProps {
   node: TreeNode;
   categoryOptions: string[];
@@ -431,8 +439,8 @@ function treeHeight(tree: RuleTree): number {
 /** One tree's connecting lines, offset into a shared canvas coordinate
  *  space — meant to sit inside one big <svg> covering every tree at once. */
 function TreeLines({ tree, offsetX, offsetY }: { tree: RuleTree; offsetX: number; offsetY: number }) {
-  const { starts, totalRows } = rowLayout(tree);
-  const rootY = offsetY + (totalRows * ROW_H) / 2 + PAD_Y;
+  const { starts } = rowLayout(tree);
+  const rootY = treeRootY(tree, offsetY);
   const branchY = (i: number) => offsetY + (starts[i] + branchSpan(tree.branches[i]) / 2) * ROW_H + PAD_Y;
   const leafY = (i: number, j: number) => offsetY + (starts[i] + j + 0.5) * ROW_H + PAD_Y;
   const rootRightEdge = offsetX + ROOT_X + ROOT_W;
@@ -464,10 +472,10 @@ interface TreeBubblesProps {
 /** One tree's root/branch/leaf bubbles, offset into the same shared canvas
  *  coordinate space as TreeLines. */
 function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: TreeBubblesProps) {
-  const { starts, totalRows } = rowLayout(tree);
+  const { starts } = rowLayout(tree);
   const branchY = (i: number) => offsetY + (starts[i] + branchSpan(tree.branches[i]) / 2) * ROW_H + PAD_Y;
   const leafY = (i: number, j: number) => offsetY + (starts[i] + j + 0.5) * ROW_H + PAD_Y;
-  const rootY = offsetY + (totalRows * ROW_H) / 2 + PAD_Y;
+  const rootY = treeRootY(tree, offsetY);
   const rootX = offsetX + ROOT_X;
   const branchX = offsetX + BRANCH_X;
   const leafX = offsetX + LEAF_X;
@@ -532,6 +540,12 @@ const VIEWPORT_H = 320;
 const DRAG_THRESHOLD = 4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
+const SUPER_ROOT_H = 110;
+const SUPER_ROOT_W = 140;
+/** Extra free-roam room beyond what's strictly needed to see every edge of
+ *  the content — lets you pan a bit further in any direction instead of
+ *  hitting a hard wall exactly at the content's boundary. */
+const PAN_SLACK = 200;
 const ZOOM_BUTTON_FACTOR = 1.25;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
@@ -651,22 +665,43 @@ export default function RuleTreeGallery({
     // resize measurement lands).
     const width = Math.max(viewportWidth, TREE_CELL_W + CANVAS_PAD * 2);
     const treeX = Math.max(CANVAS_PAD, (width - TREE_CELL_W) / 2);
+    const rootCenterX = treeX + ROOT_X + ROOT_W / 2;
     const items: { tree: RuleTree; x: number; y: number }[] = [];
-    let y = CANVAS_PAD;
+    // Extra room up top for the "Total categories" super-root, whose lines
+    // fan down into every category root below it — making the overall
+    // category → rule → sub-category hierarchy explicit at a glance.
+    let y = CANVAS_PAD + (shown.length > 0 ? SUPER_ROOT_H : 0);
     for (const tree of shown) {
       items.push({ tree, x: treeX, y });
       y += treeHeight(tree) + CELL_GAP_Y;
     }
-    return { items, width, height: y };
+    const superRoot = shown.length > 0 ? { x: rootCenterX, y: CANVAS_PAD + SUPER_ROOT_H / 2 } : null;
+    return { items, width, height: y, superRoot };
   }, [shown, viewportWidth]);
+
+  // A single axis's pan range: normally between "flush with the far edge"
+  // and "flush with the near edge" of the content, but when the (possibly
+  // zoomed-out) content is smaller than the viewport those two bounds
+  // invert — clamping to a single point used to hard-pin content into a
+  // corner instead of leaving it centered. Using min/max of the natural
+  // pair keeps it centered in that case, and PAN_SLACK on both ends gives
+  // real room to pan around freely rather than stopping dead at the edge.
+  const clampAxis = (value: number, contentSize: number, viewportSize: number) => {
+    const a = 0;
+    const b = viewportSize - contentSize;
+    const min = Math.min(a, b) - PAN_SLACK;
+    const max = Math.max(a, b) + PAN_SLACK;
+    return Math.min(max, Math.max(min, value));
+  };
 
   const clampPan = (p: { x: number; y: number }, z: number = zoom) => {
     const vp = viewportRef.current;
     const vw = vp?.clientWidth ?? 0;
     const vh = vp?.clientHeight ?? VIEWPORT_H;
-    const minX = Math.min(0, vw - layout.width * z);
-    const minY = Math.min(0, vh - layout.height * z);
-    return { x: Math.min(0, Math.max(minX, p.x)), y: Math.min(0, Math.max(minY, p.y)) };
+    return {
+      x: clampAxis(p.x, layout.width * z, vw),
+      y: clampAxis(p.y, layout.height * z, vh),
+    };
   };
 
   /** Zoom to `newZoomRaw`, keeping the content point under (anchorX, anchorY)
@@ -772,10 +807,31 @@ export default function RuleTreeGallery({
             }}
           >
             <svg className="tree-lines" width={layout.width} height={layout.height}>
+              {layout.superRoot &&
+                layout.items.map(({ tree, y }) => (
+                  <line
+                    key={`super-${tree.id}`}
+                    x1={layout.superRoot!.x}
+                    y1={layout.superRoot!.y + SUPER_ROOT_H / 2 - 8}
+                    x2={layout.superRoot!.x}
+                    y2={treeRootY(tree, y)}
+                    className="tree-line tree-line-super"
+                  />
+                ))}
               {layout.items.map(({ tree, x, y }) => (
                 <TreeLines key={tree.id} tree={tree} offsetX={x} offsetY={y} />
               ))}
             </svg>
+            {layout.superRoot && (
+              <div
+                className="tree-bubble tree-bubble-super"
+                style={{ left: layout.superRoot.x, top: layout.superRoot.y, width: SUPER_ROOT_W }}
+                title="Every category shown below"
+              >
+                <span className="tree-bubble-label">Total categories</span>
+                <span className="tree-bubble-count">{shown.length}</span>
+              </div>
+            )}
             {layout.items.map(({ tree, x, y }) => (
               <TreeBubbles
                 key={tree.id}

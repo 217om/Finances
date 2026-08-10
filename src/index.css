@@ -2160,6 +2160,11 @@ th.num {
   stroke-width: 2;
   opacity: 0.55;
 }
+.tree-line-super {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  opacity: 0.5;
+}
 .tree-bubble {
   position: absolute;
   transform: translateY(-50%);
@@ -2183,6 +2188,15 @@ th.num {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+}
+.tree-bubble-super {
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: default;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
 }
 .tree-bubble-cat,
 .tree-bubble-leaf {
