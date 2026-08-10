@@ -540,6 +540,10 @@ const VIEWPORT_H = 320;
 const DRAG_THRESHOLD = 4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
+/** The view a fresh gallery (and the reset-view button) opens to: a bit
+ *  zoomed out, centered on the "Total categories" hub rather than
+ *  scrolled to whichever category happens to sort first. */
+const DEFAULT_ZOOM = 0.85;
 const SUPER_ROOT_W = 140;
 /** Reserved column width at the canvas's left edge for the "Total
  *  categories" bubble and its connecting lines, before the tree stack. */
@@ -614,8 +618,9 @@ export default function RuleTreeGallery({
 }: Props) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [hasAutoCentered, setHasAutoCentered] = useState(false);
   // A plain ref (for the imperative reads below) isn't enough on its own —
   // the viewport <div> only exists once there's at least one tree to show,
   // so an effect with an empty dependency array would run before it's ever
@@ -711,6 +716,26 @@ export default function RuleTreeGallery({
     };
   };
 
+  /** The pan that vertically centers the "Total categories" hub in the
+   *  viewport at zoom level `z`, keeping it flush near the left edge
+   *  horizontally — the same view a fresh gallery opens to and what the
+   *  reset-view button returns to. */
+  const defaultPanFor = (z: number) => {
+    if (!layout.superRoot) return { x: 0, y: 0 };
+    const vh = viewportRef.current?.clientHeight ?? VIEWPORT_H;
+    return clampPan({ x: 0, y: vh / 2 - layout.superRoot.y * z }, z);
+  };
+
+  // Opens centered on the hub instead of scrolled to whatever tree happens
+  // to sort first — but only once, so it doesn't fight a pan/zoom the user
+  // already made (e.g. after editing a rule causes a re-render).
+  useEffect(() => {
+    if (hasAutoCentered || !viewportEl || !layout.superRoot) return;
+    setPan(defaultPanFor(zoom));
+    setHasAutoCentered(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAutoCentered, viewportEl, layout.superRoot]);
+
   /** Zoom to `newZoomRaw`, keeping the content point under (anchorX, anchorY)
    *  — viewport-relative coordinates — fixed in place, so zooming with the
    *  cursor over a bubble keeps that bubble under the cursor. */
@@ -727,12 +752,12 @@ export default function RuleTreeGallery({
     zoomTo(zoom * factor, (vp?.clientWidth ?? 0) / 2, (vp?.clientHeight ?? 0) / 2);
   };
 
-  /** Back to the default view — 100% zoom, no pan — rather than just
-   *  resetting zoom in place (which keeps whatever pan offset you'd
-   *  wandered off to). */
+  /** Back to the same default view a fresh gallery opens to — centered on
+   *  the hub, slightly zoomed out — rather than just resetting zoom in
+   *  place (which keeps whatever pan offset you'd wandered off to). */
   const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    setZoom(DEFAULT_ZOOM);
+    setPan(defaultPanFor(DEFAULT_ZOOM));
   };
 
   // Attached natively (not via the JSX onWheel prop) so preventDefault
