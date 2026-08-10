@@ -2306,6 +2306,14 @@ th.num {
   padding: 0 8px;
   color: var(--muted);
 }
+.tree-zoom-restore {
+  width: auto !important;
+  margin-left: 4px;
+  padding: 0 8px !important;
+  border-left: 1px solid var(--divider) !important;
+  font-size: 13px !important;
+  color: var(--muted);
+}
 .rules-backup-actions {
   display: flex;
   gap: 10px;

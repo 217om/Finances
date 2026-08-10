@@ -540,8 +540,10 @@ const VIEWPORT_H = 320;
 const DRAG_THRESHOLD = 4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
-const SUPER_ROOT_H = 110;
 const SUPER_ROOT_W = 140;
+/** Reserved column width at the canvas's left edge for the "Total
+ *  categories" bubble and its connecting lines, before the tree stack. */
+const SUPER_ROOT_ZONE_W = 210;
 /** Extra free-roam room beyond what's strictly needed to see every edge of
  *  the content — lets you pan a bit further in any direction instead of
  *  hitting a hard wall exactly at the content's boundary. */
@@ -660,22 +662,27 @@ export default function RuleTreeGallery({
   const shown = useMemo(() => trees.filter((t) => treeMatches(t, needle)), [trees, needle]);
 
   const layout = useMemo(() => {
-    // One tree per row, centered horizontally in however wide the widget
-    // currently is (falling back to just fitting one tree before the first
-    // resize measurement lands).
-    const width = Math.max(viewportWidth, TREE_CELL_W + CANVAS_PAD * 2);
-    const treeX = Math.max(CANVAS_PAD, (width - TREE_CELL_W) / 2);
-    const rootCenterX = treeX + ROOT_X + ROOT_W / 2;
+    // One tree per row, centered horizontally in whatever's left of the
+    // widget's actual width after reserving a column on the left for the
+    // "Total categories" super-root (falling back to just fitting one tree
+    // before the first resize measurement lands).
+    const hasSuper = shown.length > 0;
+    const zoneW = hasSuper ? SUPER_ROOT_ZONE_W : 0;
+    const width = Math.max(viewportWidth, zoneW + TREE_CELL_W + CANVAS_PAD * 2);
+    const treeAreaW = width - zoneW;
+    const treeX = zoneW + Math.max(CANVAS_PAD, (treeAreaW - TREE_CELL_W) / 2);
     const items: { tree: RuleTree; x: number; y: number }[] = [];
-    // Extra room up top for the "Total categories" super-root, whose lines
-    // fan down into every category root below it — making the overall
-    // category → rule → sub-category hierarchy explicit at a glance.
-    let y = CANVAS_PAD + (shown.length > 0 ? SUPER_ROOT_H : 0);
+    let y = CANVAS_PAD;
     for (const tree of shown) {
       items.push({ tree, x: treeX, y });
       y += treeHeight(tree) + CELL_GAP_Y;
     }
-    const superRoot = shown.length > 0 ? { x: rootCenterX, y: CANVAS_PAD + SUPER_ROOT_H / 2 } : null;
+    // Its lines fan out rightward into every category root, making the
+    // overall category → rule → sub-category hierarchy explicit at a
+    // glance — vertically centered against the whole stack, not just the
+    // first tree.
+    const contentBottom = y - CELL_GAP_Y;
+    const superRoot = hasSuper ? { x: CANVAS_PAD + SUPER_ROOT_W / 2, y: (CANVAS_PAD + contentBottom) / 2 } : null;
     return { items, width, height: y, superRoot };
   }, [shown, viewportWidth]);
 
@@ -718,6 +725,14 @@ export default function RuleTreeGallery({
   const zoomByFactor = (factor: number) => {
     const vp = viewportRef.current;
     zoomTo(zoom * factor, (vp?.clientWidth ?? 0) / 2, (vp?.clientHeight ?? 0) / 2);
+  };
+
+  /** Back to the default view — 100% zoom, no pan — rather than just
+   *  resetting zoom in place (which keeps whatever pan offset you'd
+   *  wandered off to). */
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   };
 
   // Attached natively (not via the JSX onWheel prop) so preventDefault
@@ -808,12 +823,12 @@ export default function RuleTreeGallery({
           >
             <svg className="tree-lines" width={layout.width} height={layout.height}>
               {layout.superRoot &&
-                layout.items.map(({ tree, y }) => (
+                layout.items.map(({ tree, x, y }) => (
                   <line
                     key={`super-${tree.id}`}
-                    x1={layout.superRoot!.x}
-                    y1={layout.superRoot!.y + SUPER_ROOT_H / 2 - 8}
-                    x2={layout.superRoot!.x}
+                    x1={layout.superRoot!.x + SUPER_ROOT_W / 2 - 8}
+                    y1={layout.superRoot!.y}
+                    x2={x + ROOT_X - 8}
                     y2={treeRootY(tree, y)}
                     className="tree-line tree-line-super"
                   />
@@ -865,6 +880,9 @@ export default function RuleTreeGallery({
             </button>
             <button type="button" aria-label="Zoom in" onClick={() => zoomByFactor(ZOOM_BUTTON_FACTOR)}>
               +
+            </button>
+            <button type="button" className="tree-zoom-restore" aria-label="Reset view" title="Reset view" onClick={resetView}>
+              ⟲
             </button>
           </div>
         </div>
