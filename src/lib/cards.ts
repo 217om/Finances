@@ -28,11 +28,6 @@ export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
  *  columns) per card, so re-importing a statement with the same layout
  *  skips straight to it instead of re-detecting from scratch. */
 export const COLUMN_MAPPING_KEY = 'cashflow.columnMapping';
-/** Which categories the Budgets tab tracks for this card — a deliberate,
- *  opt-in subset, independent of the "Show in charts & totals" filter. */
-export const BUDGET_CATEGORIES_KEY = 'cashflow.budgetCategories';
-/** Per-category, per-week target amounts set in the Budgets tab. */
-export const BUDGET_ENTRIES_KEY = 'cashflow.budgetEntries';
 export const THEME_KEY = 'cashflow.theme';
 export const COMBINE_KEY = 'cashflow.combineCards';
 /** Independent from any single card's own CATEGORY_FILTER_KEY — a hide/show
@@ -41,6 +36,11 @@ export const COMBINED_CATEGORY_FILTER_KEY = 'cashflow.combinedCategoryFilter';
 /** Named, reusable category filter snapshots — global, shared by every card
  *  and the combined view alike (see lib/categoryFilterPresets.ts). */
 export const CATEGORY_FILTER_PRESETS_KEY = 'cashflow.categoryFilterPresets';
+/** Budgets apply at the total (all-cards-combined) level, not per card — see
+ *  lib/budget.ts. Each budget is a named group of one or more categories;
+ *  its weekly target amounts live under BUDGET_ENTRIES_KEY. */
+export const BUDGETS_KEY = 'cashflow.budgets';
+export const BUDGET_ENTRIES_KEY = 'cashflow.budgetEntries';
 
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */

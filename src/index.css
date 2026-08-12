@@ -335,6 +335,13 @@ main.container {
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
+.tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.tabs button:disabled:hover {
+  color: var(--muted);
+}
 .tabs-right {
   margin-left: auto;
 }
@@ -2843,6 +2850,59 @@ th.num {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.budget-name {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+.budget-name-input {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  min-width: 140px;
+}
+.budget-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.budget-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+}
+.budget-chip:hover {
+  color: var(--neg);
+}
+.budget-add-chip {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.budget-add-chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.budget-chips select {
+  font-size: 11px;
+  padding: 3px 8px;
 }
 .budget-quickfill {
   margin-left: auto;

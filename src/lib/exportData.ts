@@ -4,7 +4,7 @@
 import type { CategoryOverride, CategoryRule, KeywordRule, SubOverride, SubRule, Transaction } from '../types';
 import { categorize } from './categorize';
 import {
-  BUDGET_CATEGORIES_KEY,
+  BUDGETS_KEY,
   BUDGET_ENTRIES_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
@@ -42,7 +42,14 @@ import {
   type CategoryFilterState,
 } from './categoryFilter';
 import { isValidPresetList, mergePresets, type CategoryFilterPreset } from './categoryFilterPresets';
-import { isValidBudgetEntries, isValidCategoryList, type BudgetEntry } from './budget';
+import {
+  isValidBudgetEntries,
+  isValidBudgets,
+  mergeBudgetEntries,
+  mergeBudgets,
+  type Budget,
+  type BudgetEntry,
+} from './budget';
 
 const BACKUP_MAGIC = 'cashflow-backup';
 const BACKUP_VERSION = 1;
@@ -67,8 +74,6 @@ interface CardBackup {
   weekStartDay: number | null;
   customCategories: string[];
   categoryFilter: CategoryFilterState;
-  budgetCategories: string[];
-  budgetEntries: BudgetEntry[];
   transactions: Transaction[];
   rules: CategoryRule[];
   overrides: CategoryOverride[];
@@ -88,6 +93,10 @@ export interface FullBackupFile {
   /** Global (not per-card) preferences — see lib/cards.ts. */
   combinedCategoryFilter: CategoryFilterState;
   filterPresets: CategoryFilterPreset[];
+  /** Budgets apply at the total (all-cards-combined) level — see
+   *  lib/budget.ts and lib/cards' BUDGETS_KEY doc comment. */
+  budgets: Budget[];
+  budgetEntries: BudgetEntry[];
   /** Categorization rules shared by every card by default — see lib/cards'
    *  GLOBAL_RULES_DB doc comment. Card-specific overrides of these live
    *  inside each card's own CardBackup above. */
@@ -231,6 +240,8 @@ export async function buildFullBackup(
   theme: 'light' | 'dark',
   combinedCategoryFilter: CategoryFilterState,
   filterPresets: CategoryFilterPreset[],
+  budgets: Budget[],
+  budgetEntries: BudgetEntry[],
 ): Promise<FullBackupFile> {
   const cardBackups = await Promise.all(
     cards.map(async (card): Promise<CardBackup> => {
@@ -249,8 +260,6 @@ export async function buildFullBackup(
       const weekStartDay = rawWeekStartDay !== null ? Number(rawWeekStartDay) : NaN;
       const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
       const categoryFilterRaw = readJSON(scopedKey(CATEGORY_FILTER_KEY, card.id));
-      const budgetCategoriesRaw = readJSON(scopedKey(BUDGET_CATEGORIES_KEY, card.id));
-      const budgetEntriesRaw = readJSON(scopedKey(BUDGET_ENTRIES_KEY, card.id));
       return {
         id: card.id,
         name: card.name,
@@ -263,8 +272,6 @@ export async function buildFullBackup(
           ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
           : [],
         categoryFilter: isValidCategoryFilter(categoryFilterRaw) ? categoryFilterRaw : defaultCategoryFilter(),
-        budgetCategories: isValidCategoryList(budgetCategoriesRaw) ? budgetCategoriesRaw : [],
-        budgetEntries: isValidBudgetEntries(budgetEntriesRaw) ? budgetEntriesRaw : [],
         transactions,
         rules,
         overrides,
@@ -291,6 +298,8 @@ export async function buildFullBackup(
     notes: await getAllNotes(),
     combinedCategoryFilter,
     filterPresets,
+    budgets,
+    budgetEntries,
     globalRules,
     globalKeywordRules,
     globalSubRules,
@@ -509,12 +518,16 @@ export async function restoreFullBackup(
   existingCards: Card[],
   existingCombinedCategoryFilter: CategoryFilterState,
   existingFilterPresets: CategoryFilterPreset[],
+  existingBudgets: Budget[],
+  existingBudgetEntries: BudgetEntry[],
 ): Promise<{
   cards: Card[];
   activeCardId: string;
   theme: 'light' | 'dark';
   combinedCategoryFilter: CategoryFilterState;
   filterPresets: CategoryFilterPreset[];
+  budgets: Budget[];
+  budgetEntries: BudgetEntry[];
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
@@ -560,12 +573,6 @@ export async function restoreFullBackup(
     if (isValidCategoryFilter(cb.categoryFilter)) {
       writeLS(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(cb.categoryFilter));
     }
-    if (isValidCategoryList(cb.budgetCategories) && cb.budgetCategories.length > 0) {
-      writeLS(scopedKey(BUDGET_CATEGORIES_KEY, target.id), JSON.stringify(cb.budgetCategories));
-    }
-    if (isValidBudgetEntries(cb.budgetEntries) && cb.budgetEntries.length > 0) {
-      writeLS(scopedKey(BUDGET_ENTRIES_KEY, target.id), JSON.stringify(cb.budgetEntries));
-    }
   }
 
   for (const note of asArray<unknown>(backup.notes)) {
@@ -588,6 +595,14 @@ export async function restoreFullBackup(
   const filterPresets = mergePresets(existingFilterPresets, incomingPresets);
   writeLS(CATEGORY_FILTER_PRESETS_KEY, JSON.stringify(filterPresets));
 
+  const incomingBudgets = isValidBudgets(backup.budgets) ? backup.budgets : [];
+  const budgets = mergeBudgets(existingBudgets, incomingBudgets);
+  writeLS(BUDGETS_KEY, JSON.stringify(budgets));
+
+  const incomingBudgetEntries = isValidBudgetEntries(backup.budgetEntries) ? backup.budgetEntries : [];
+  const budgetEntries = mergeBudgetEntries(existingBudgetEntries, incomingBudgetEntries);
+  writeLS(BUDGET_ENTRIES_KEY, JSON.stringify(budgetEntries));
+
   // Global rules (shared by every card by default) upsert into the shared
   // store the same additive way each card's own rules do above — nothing
   // existing is replaced, only added to or overwritten key-for-key.
@@ -606,6 +621,8 @@ export async function restoreFullBackup(
     theme: backup.theme === 'dark' ? 'dark' : 'light',
     combinedCategoryFilter,
     filterPresets,
+    budgets,
+    budgetEntries,
     globalRules,
     globalKeywordRules,
     globalSubRules,

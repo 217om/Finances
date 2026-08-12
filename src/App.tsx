@@ -54,10 +54,10 @@ import {
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
   COLUMN_MAPPING_KEY,
-  BUDGET_CATEGORIES_KEY,
-  BUDGET_ENTRIES_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
+  BUDGETS_KEY,
+  BUDGET_ENTRIES_KEY,
   THEME_KEY,
   COMBINE_KEY,
   COMBINE_CARD_ID,
@@ -115,10 +115,14 @@ import CardManager from './components/CardManager';
 import BudgetsPage from './components/BudgetsPage';
 import {
   isValidBudgetEntries,
-  isValidCategoryList,
-  removeCategoryBudgets,
+  isValidBudgets,
+  makeBudget,
+  removeBudgetEntries,
+  renameBudget,
   setBudgetAmount,
   setBudgetAmountForWeeks,
+  toggleBudgetCategory,
+  type Budget,
   type BudgetEntry,
 } from './lib/budget';
 
@@ -333,10 +337,6 @@ export default function App() {
   const [subRules, setSubRules] = useState<SubRule[]>([]);
   const [subOverrides, setSubOverrides] = useState<SubOverride[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilterState>(defaultCategoryFilter());
-  // Which categories the Budgets tab tracks, and this card's weekly budget
-  // amounts for them — a deliberate opt-in set, independent of categoryFilter.
-  const [budgetCategories, setBudgetCategories] = useState<string[]>([]);
-  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
   // Global (not per-card) — see handleToggleCombinedCategoryFilter above.
   const [combinedCategoryFilter, setCombinedCategoryFilter] = useState<CategoryFilterState>(() => {
     try {
@@ -352,6 +352,24 @@ export default function App() {
     try {
       const saved = JSON.parse(localStorage.getItem(CATEGORY_FILTER_PRESETS_KEY) ?? '[]');
       return isValidPresetList(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  // Budgets apply at the total (combined-across-cards) level, not per card —
+  // global, like the combined filter above. See lib/budget.ts.
+  const [budgets, setBudgets] = useState<Budget[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BUDGETS_KEY) ?? '[]');
+      return isValidBudgets(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BUDGET_ENTRIES_KEY) ?? '[]');
+      return isValidBudgetEntries(saved) ? saved : [];
     } catch {
       return [];
     }
@@ -409,17 +427,11 @@ export default function App() {
       setCustomCategories(Array.isArray(savedCats) ? savedCats.filter((c) => typeof c === 'string') : []);
       const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, cardId)) ?? 'null');
       setCategoryFilter(isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter());
-      const savedBudgetCats = JSON.parse(localStorage.getItem(scopedKey(BUDGET_CATEGORIES_KEY, cardId)) ?? '[]');
-      setBudgetCategories(isValidCategoryList(savedBudgetCats) ? savedBudgetCats : []);
-      const savedBudgetEntries = JSON.parse(localStorage.getItem(scopedKey(BUDGET_ENTRIES_KEY, cardId)) ?? '[]');
-      setBudgetEntries(isValidBudgetEntries(savedBudgetEntries) ? savedBudgetEntries : []);
     } catch {
       setCurrency('OMR');
       setCurrencyState('OMR');
       setMonthStartDay(1);
       setWeekStartDay(1);
-      setBudgetCategories([]);
-      setBudgetEntries([]);
       setCustomCategories([]);
       setCategoryFilter(defaultCategoryFilter());
     }
@@ -506,14 +518,6 @@ export default function App() {
   const subResolver = useMemo(
     () => makeSubResolver(effectiveSubRules, subOverrides),
     [effectiveSubRules, subOverrides],
-  );
-
-  // Every expense category this card could budget for — built-ins plus its
-  // own custom ones. Budgets is expense-only (there's nothing to "budget"
-  // about income).
-  const budgetCategoryOptions = useMemo(
-    () => [...EXPENSE_CATEGORIES, ...customCategories],
-    [customCategories],
   );
 
   // Transactions in an excluded category/sub-category are treated as if they
@@ -683,6 +687,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customCategories, cards, activeCardId, otherCustomCategoriesTick]);
 
+  // Every expense category any card could budget for — built-ins plus every
+  // card's custom ones, since Budgets applies at the total (combined) level.
+  // Expense-only: there's nothing to "budget" about income.
+  const budgetCategoryOptions = useMemo(
+    () => [...EXPENSE_CATEGORIES, ...allCustomCategories],
+    [allCustomCategories],
+  );
+
   // Classification (the wizard's pending groups) is independent of the display
   // filter above — you can still categorize everything even if some of it is
   // excluded from the charts.
@@ -723,75 +735,89 @@ export default function App() {
     [activeCardId],
   );
 
-  const handleAddBudgetCategory = useCallback(
-    (category: string) => {
-      setBudgetCategories((prev) => {
-        if (prev.includes(category)) return prev;
-        const next = [...prev, category];
-        try {
-          localStorage.setItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [activeCardId],
-  );
+  // Budgets apply at the total (combined-across-cards) level — every handler
+  // below writes to the global BUDGETS_KEY/BUDGET_ENTRIES_KEY, not a
+  // per-card one, and none of them depend on activeCardId.
+  const handleCreateBudget = useCallback((name: string) => {
+    setBudgets((prev) => {
+      const next = [...prev, makeBudget(name)];
+      try {
+        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
-  const handleRemoveBudgetCategory = useCallback(
-    (category: string) => {
-      setBudgetCategories((prev) => {
-        const next = prev.filter((c) => c !== category);
-        try {
-          localStorage.setItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-      setBudgetEntries((prev) => {
-        const next = removeCategoryBudgets(prev, category);
-        try {
-          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [activeCardId],
-  );
+  const handleRenameBudget = useCallback((id: string, name: string) => {
+    setBudgets((prev) => {
+      const next = renameBudget(prev, id, name);
+      try {
+        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
-  const handleSetBudgetAmount = useCallback(
-    (category: string, weekStart: string, amount: number) => {
-      setBudgetEntries((prev) => {
-        const next = setBudgetAmount(prev, category, weekStart, amount);
-        try {
-          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [activeCardId],
-  );
+  const handleToggleBudgetCategory = useCallback((id: string, category: string) => {
+    setBudgets((prev) => {
+      const next = toggleBudgetCategory(prev, id, category);
+      try {
+        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
-  const handleSetBudgetAmountForWeeks = useCallback(
-    (category: string, weekStarts: string[], amount: number) => {
-      setBudgetEntries((prev) => {
-        const next = setBudgetAmountForWeeks(prev, category, weekStarts, amount);
-        try {
-          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [activeCardId],
-  );
+  const handleDeleteBudget = useCallback((id: string) => {
+    setBudgets((prev) => {
+      const next = prev.filter((b) => b.id !== id);
+      try {
+        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setBudgetEntries((prev) => {
+      const next = removeBudgetEntries(prev, id);
+      try {
+        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSetBudgetAmount = useCallback((budgetId: string, weekStart: string, amount: number) => {
+    setBudgetEntries((prev) => {
+      const next = setBudgetAmount(prev, budgetId, weekStart, amount);
+      try {
+        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSetBudgetAmountForWeeks = useCallback((budgetId: string, weekStarts: string[], amount: number) => {
+    setBudgetEntries((prev) => {
+      const next = setBudgetAmountForWeeks(prev, budgetId, weekStarts, amount);
+      try {
+        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   // A separate hide/show filter for the combined Categories view — deliberately
   // not scoped to any card, so switching cards or toggling combine mode never
@@ -1591,12 +1617,20 @@ export default function App() {
 
   const handleExportFullBackup = useCallback(async () => {
     try {
-      const backup = await buildFullBackup(cards, activeCardId, theme, combinedCategoryFilter, filterPresets);
+      const backup = await buildFullBackup(
+        cards,
+        activeCardId,
+        theme,
+        combinedCategoryFilter,
+        filterPresets,
+        budgets,
+        budgetEntries,
+      );
       downloadFullBackup(backup);
     } catch (e) {
       setToast(`Could not build the full backup. ${(e as Error).message ?? ''}`.trim());
     }
-  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets]);
+  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets, budgets, budgetEntries]);
 
   const handleRestoreFullBackup = useCallback(
     async (file: File) => {
@@ -1616,12 +1650,21 @@ export default function App() {
             'merged by id, and any cards not already present are added.',
         );
         if (!ok) return;
-        const result = await restoreFullBackup(backup, cards, combinedCategoryFilter, filterPresets);
+        const result = await restoreFullBackup(
+          backup,
+          cards,
+          combinedCategoryFilter,
+          filterPresets,
+          budgets,
+          budgetEntries,
+        );
         setCards(result.cards);
         setActiveCardId(result.activeCardId);
         setTheme(result.theme);
         setCombinedCategoryFilter(result.combinedCategoryFilter);
         setFilterPresets(result.filterPresets);
+        setBudgets(result.budgets);
+        setBudgetEntries(result.budgetEntries);
         setGlobalRules(result.globalRules);
         setGlobalKeywordRules(result.globalKeywordRules);
         setGlobalSubRules(result.globalSubRules);
@@ -1631,7 +1674,7 @@ export default function App() {
         setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [cards, combinedCategoryFilter, filterPresets],
+    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries],
   );
 
   const handleExportRulesBackup = useCallback(async () => {
@@ -1767,8 +1810,6 @@ export default function App() {
     try {
       localStorage.removeItem(scopedKey(CUSTOM_CATEGORIES_KEY, activeCardId));
       localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId));
-      localStorage.removeItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId));
-      localStorage.removeItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId));
     } catch {
       /* ignore */
     }
@@ -1780,8 +1821,6 @@ export default function App() {
     setSubOverrides([]);
     setCustomCategories([]);
     setCategoryFilter(defaultCategoryFilter());
-    setBudgetCategories([]);
-    setBudgetEntries([]);
     setToast('All data cleared for this card.');
   }, [dbName, activeCardId]);
 
@@ -1906,8 +1945,6 @@ export default function App() {
         localStorage.removeItem(scopedKey(CURRENCY_KEY, id));
         localStorage.removeItem(scopedKey(MONTH_START_KEY, id));
         localStorage.removeItem(scopedKey(WEEK_START_KEY, id));
-        localStorage.removeItem(scopedKey(BUDGET_CATEGORIES_KEY, id));
-        localStorage.removeItem(scopedKey(BUDGET_ENTRIES_KEY, id));
       } catch {
         /* ignore */
       }
@@ -1977,13 +2014,6 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className={view === 'budgets' ? 'on' : ''}
-                  onClick={() => handleTabClick('budgets')}
-                >
-                  Budgets
-                </button>
-                <button
-                  type="button"
                   className={view === 'transactions' ? 'on' : ''}
                   onClick={() => handleTabClick('transactions')}
                 >
@@ -1991,7 +2021,16 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className={`tabs-right ${view === 'advanced' ? 'on' : ''}`}
+                  className={`tabs-right ${view === 'budgets' ? 'on' : ''}`}
+                  onClick={() => handleTabClick('budgets')}
+                  disabled={!combineEnabled}
+                  title={combineEnabled ? undefined : 'Switch on "Combine all cards" to use Budgets'}
+                >
+                  Budgets
+                </button>
+                <button
+                  type="button"
+                  className={view === 'advanced' ? 'on' : ''}
                   onClick={() => handleTabClick('advanced')}
                 >
                   Advanced Settings
@@ -2054,26 +2093,29 @@ export default function App() {
                 />
               )
             ) : view === 'budgets' ? (
-              combineEnabled ? (
-                <section className="panel">
-                  <p className="muted">
-                    Budgets tracks one card at a time — switch off "Combine all cards" to use it.
-                  </p>
-                </section>
-              ) : (
+              combineEnabled && combinedAllData ? (
                 <BudgetsPage
-                  transactions={transactions}
-                  categoryOf={categoryOf}
+                  transactions={combinedAllData.transactions}
+                  categoryOf={combinedAllData.categoryOf}
                   monthStartDay={monthStartDay}
                   weekStartDay={weekStartDay}
                   categoryOptions={budgetCategoryOptions}
-                  budgetCategories={budgetCategories}
+                  budgets={budgets}
                   budgetEntries={budgetEntries}
-                  onAddCategory={handleAddBudgetCategory}
-                  onRemoveCategory={handleRemoveBudgetCategory}
+                  onCreateBudget={handleCreateBudget}
+                  onRenameBudget={handleRenameBudget}
+                  onDeleteBudget={handleDeleteBudget}
+                  onToggleBudgetCategory={handleToggleBudgetCategory}
                   onSetAmount={handleSetBudgetAmount}
                   onSetAmountForWeeks={handleSetBudgetAmountForWeeks}
                 />
+              ) : (
+                <section className="panel">
+                  <p className="muted">
+                    Budgets applies at the total level, across every card — switch on "Combine all
+                    cards" above to use it.
+                  </p>
+                </section>
               )
             ) : view === 'advanced' ? (
               <AdvancedSettingsPage

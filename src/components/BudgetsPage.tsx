@@ -9,6 +9,7 @@ import {
   cycleBounds,
   getBudgetAmount,
   weekWindowsForCycle,
+  type Budget,
   type BudgetEntry,
   type WeekWindow,
 } from '../lib/budget';
@@ -19,19 +20,21 @@ interface Props {
   monthStartDay: number;
   weekStartDay: number;
   categoryOptions: string[];
-  budgetCategories: string[];
+  budgets: Budget[];
   budgetEntries: BudgetEntry[];
-  onAddCategory: (category: string) => void;
-  onRemoveCategory: (category: string) => void;
-  onSetAmount: (category: string, weekStart: string, amount: number) => void;
-  onSetAmountForWeeks: (category: string, weekStarts: string[], amount: number) => void;
+  onCreateBudget: (name: string) => void;
+  onRenameBudget: (id: string, name: string) => void;
+  onDeleteBudget: (id: string) => void;
+  onToggleBudgetCategory: (id: string, category: string) => void;
+  onSetAmount: (budgetId: string, weekStart: string, amount: number) => void;
+  onSetAmountForWeeks: (budgetId: string, weekStarts: string[], amount: number) => void;
 }
 
 function weekHeaderLabel(w: WeekWindow): string {
   return w.from === w.to ? dayLabelShort(w.from) : `${dayLabelShort(w.from)} – ${dayLabelShort(w.to)}`;
 }
 
-/** A single week's editable budget input + computed actual, for one category. */
+/** A single week's editable budget input + computed actual, for one budget. */
 function BudgetCell({
   budget,
   actual,
@@ -82,24 +85,163 @@ function BudgetCell({
   );
 }
 
-/** Weekly budget vs. actual for a hand-picked set of categories — separate
- *  from "Show in charts & totals", which controls what counts in every other
- *  chart/total. Budgets tracks only categories you explicitly add here. */
+/** One budget's name (renameable), category membership (editable), and its
+ *  weekly cells. */
+function BudgetRow({
+  budget,
+  weeks,
+  budgetEntries,
+  categoryOptions,
+  actualsByWeek,
+  onRename,
+  onDelete,
+  onToggleCategory,
+  onSetAmount,
+  onSetAmountForWeeks,
+}: {
+  budget: Budget;
+  weeks: WeekWindow[];
+  budgetEntries: BudgetEntry[];
+  categoryOptions: string[];
+  actualsByWeek: number[];
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  onToggleCategory: (category: string) => void;
+  onSetAmount: (weekStart: string, amount: number) => void;
+  onSetAmountForWeeks: (weekStarts: string[], amount: number) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [nameText, setNameText] = useState(budget.name);
+  const [editingCats, setEditingCats] = useState(false);
+
+  const commitName = () => {
+    setRenaming(false);
+    if (nameText.trim() && nameText.trim() !== budget.name) onRename(nameText);
+    else setNameText(budget.name);
+  };
+
+  const availableToAdd = categoryOptions.filter((c) => !budget.categories.includes(c));
+
+  return (
+    <tr>
+      <td>
+        <div className="budget-cat-cell">
+          {renaming ? (
+            <input
+              autoFocus
+              className="budget-name-input"
+              value={nameText}
+              onChange={(e) => setNameText(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitName();
+                if (e.key === 'Escape') {
+                  setNameText(budget.name);
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="budget-name linklike"
+              title="Rename this budget"
+              onClick={() => {
+                setNameText(budget.name);
+                setRenaming(true);
+              }}
+            >
+              {budget.name}
+            </button>
+          )}
+          <button
+            type="button"
+            className="budget-quickfill"
+            title="Copy the first week's amount to every week shown"
+            onClick={() => {
+              const first = getBudgetAmount(budgetEntries, budget.id, weeks[0].weekStart);
+              if (first > 0) onSetAmountForWeeks(weeks.map((w) => w.weekStart), first);
+            }}
+          >
+            apply 1st week to all
+          </button>
+          <button type="button" className="budget-remove" title="Delete this budget" onClick={onDelete}>
+            ✕
+          </button>
+        </div>
+        <div className="budget-chips">
+          {budget.categories.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className="budget-chip"
+              style={{ borderColor: categoryColor(c) }}
+              title="Remove this category from the budget"
+              onClick={() => onToggleCategory(c)}
+            >
+              {c} <span aria-hidden>✕</span>
+            </button>
+          ))}
+          {editingCats ? (
+            <select
+              autoFocus
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onToggleCategory(e.target.value);
+                setEditingCats(false);
+              }}
+              onBlur={() => setEditingCats(false)}
+            >
+              <option value="">{availableToAdd.length === 0 ? 'No more categories' : 'Add category…'}</option>
+              {availableToAdd.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button type="button" className="budget-add-chip" onClick={() => setEditingCats(true)}>
+              + category
+            </button>
+          )}
+        </div>
+      </td>
+      {weeks.map((w, i) => (
+        <td key={w.weekStart} className="num">
+          <BudgetCell
+            budget={getBudgetAmount(budgetEntries, budget.id, w.weekStart)}
+            actual={actualsByWeek[i] ?? 0}
+            onCommit={(amount) => onSetAmount(w.weekStart, amount)}
+          />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+/** Weekly budget vs. actual, applied at the total (all-cards-combined)
+ *  level. A "budget" is a named envelope covering one or more categories —
+ *  the actual spend across all of them is compared against one weekly
+ *  target. */
 export default function BudgetsPage({
   transactions,
   categoryOf,
   monthStartDay,
   weekStartDay,
   categoryOptions,
-  budgetCategories,
+  budgets,
   budgetEntries,
-  onAddCategory,
-  onRemoveCategory,
+  onCreateBudget,
+  onRenameBudget,
+  onDeleteBudget,
+  onToggleBudgetCategory,
   onSetAmount,
   onSetAmountForWeeks,
 }: Props) {
   const [period, setPeriod] = useState(() => currentCyclePeriod(monthStartDay));
   const isCurrentPeriod = period === currentCyclePeriod(monthStartDay);
+  const [newBudgetName, setNewBudgetName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const bounds = useMemo(() => cycleBounds(period, monthStartDay), [period, monthStartDay]);
   const weeks = useMemo(
@@ -113,40 +255,42 @@ export default function BudgetsPage({
     [transactions, bounds],
   );
 
-  const actualsByCategory = useMemo(() => {
+  const actualsByBudget = useMemo(() => {
     const map = new Map<string, number[]>();
-    for (const cat of budgetCategories) {
+    for (const b of budgets) {
       map.set(
-        cat,
-        weeks.map((w) => actualSpend(cycleTx, categoryOf, cat, w.from, w.to)),
+        b.id,
+        weeks.map((w) => actualSpend(cycleTx, categoryOf, b.categories, w.from, w.to)),
       );
     }
     return map;
-  }, [budgetCategories, weeks, cycleTx, categoryOf]);
-
-  const availableToAdd = useMemo(
-    () => categoryOptions.filter((c) => !budgetCategories.includes(c)).sort((a, b) => a.localeCompare(b)),
-    [categoryOptions, budgetCategories],
-  );
+  }, [budgets, weeks, cycleTx, categoryOf]);
 
   const weekTotals = useMemo(
     () =>
       weeks.map((w, i) => {
-        let budget = 0;
-        let actual = 0;
-        for (const cat of budgetCategories) {
-          budget += getBudgetAmount(budgetEntries, cat, w.weekStart);
-          actual += actualsByCategory.get(cat)?.[i] ?? 0;
+        let budgetSum = 0;
+        let actualSum = 0;
+        for (const b of budgets) {
+          budgetSum += getBudgetAmount(budgetEntries, b.id, w.weekStart);
+          actualSum += actualsByBudget.get(b.id)?.[i] ?? 0;
         }
-        return { budget, actual };
+        return { budget: budgetSum, actual: actualSum };
       }),
-    [weeks, budgetCategories, budgetEntries, actualsByCategory],
+    [weeks, budgets, budgetEntries, actualsByBudget],
   );
 
   const cycleLabel =
     bounds.from.slice(0, 4) === bounds.to.slice(0, 4)
       ? `${dayLabelShort(bounds.from)} – ${dayLabelShort(bounds.to)}, ${bounds.to.slice(0, 4)}`
       : `${dayLabelShort(bounds.from)}, ${bounds.from.slice(0, 4)} – ${dayLabelShort(bounds.to)}, ${bounds.to.slice(0, 4)}`;
+
+  const commitNewBudget = () => {
+    setCreating(false);
+    const name = newBudgetName.trim();
+    setNewBudgetName('');
+    onCreateBudget(name || 'New budget');
+  };
 
   return (
     <div className="budgets-page">
@@ -155,9 +299,10 @@ export default function BudgetsPage({
           <div>
             <h2>Budgets</h2>
             <p className="muted">
-              Set a weekly target for the categories you pick below — actual spend is calculated
-              automatically from your transactions. Weeks follow your Week-starts setting and this
-              card's pay cycle, so the first and/or last week shown may be shorter than 7 days.
+              Applied at the total level, across every card. Create a budget, assign it one or more
+              categories, and set a weekly target — actual spend is calculated automatically from
+              your transactions. Weeks follow your Week-starts setting and this pay cycle, so the
+              first and/or last week shown may be shorter than 7 days.
             </p>
           </div>
         </div>
@@ -190,30 +335,35 @@ export default function BudgetsPage({
         </div>
 
         <div className="budget-add-row">
-          <span className="muted">Tracked categories:</span>
-          {budgetCategories.length === 0 && <span className="muted">none yet — add one below</span>}
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) onAddCategory(e.target.value);
-            }}
-            disabled={availableToAdd.length === 0}
-          >
-            <option value="">{availableToAdd.length === 0 ? 'All categories added' : '+ Add a category…'}</option>
-            {availableToAdd.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          {creating ? (
+            <input
+              autoFocus
+              className="budget-name-input"
+              placeholder="Budget name…"
+              value={newBudgetName}
+              onChange={(e) => setNewBudgetName(e.target.value)}
+              onBlur={commitNewBudget}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitNewBudget();
+                if (e.key === 'Escape') {
+                  setCreating(false);
+                  setNewBudgetName('');
+                }
+              }}
+            />
+          ) : (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating(true)}>
+              + New budget
+            </button>
+          )}
         </div>
       </section>
 
-      {budgetCategories.length === 0 ? (
+      {budgets.length === 0 ? (
         <section className="panel">
           <p className="muted">
-            Pick one or more categories above to start tracking a weekly budget against your actual
-            spend.
+            Create a budget above, then assign it one category (like "Groceries") or several (like
+            "Groceries" + "Dining" together) and set a weekly target.
           </p>
         </section>
       ) : (
@@ -222,7 +372,7 @@ export default function BudgetsPage({
             <table className="data-table budget-table">
               <thead>
                 <tr>
-                  <th>Category</th>
+                  <th>Budget</th>
                   {weeks.map((w) => (
                     <th key={w.weekStart} className="num">
                       {weekHeaderLabel(w)}
@@ -232,45 +382,20 @@ export default function BudgetsPage({
                 </tr>
               </thead>
               <tbody>
-                {budgetCategories.map((cat) => (
-                  <tr key={cat}>
-                    <td>
-                      <div className="budget-cat-cell">
-                        <span className="catdot" style={{ background: categoryColor(cat) }} />
-                        <span className="filter-name">{cat}</span>
-                        <button
-                          type="button"
-                          className="budget-quickfill"
-                          title="Copy the first week's amount to every week shown"
-                          onClick={() => {
-                            const first = getBudgetAmount(budgetEntries, cat, weeks[0].weekStart);
-                            if (first > 0) {
-                              onSetAmountForWeeks(cat, weeks.map((w) => w.weekStart), first);
-                            }
-                          }}
-                        >
-                          apply 1st week to all
-                        </button>
-                        <button
-                          type="button"
-                          className="budget-remove"
-                          title="Stop tracking this category"
-                          onClick={() => onRemoveCategory(cat)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </td>
-                    {weeks.map((w, i) => (
-                      <td key={w.weekStart} className="num">
-                        <BudgetCell
-                          budget={getBudgetAmount(budgetEntries, cat, w.weekStart)}
-                          actual={actualsByCategory.get(cat)?.[i] ?? 0}
-                          onCommit={(amount) => onSetAmount(cat, w.weekStart, amount)}
-                        />
-                      </td>
-                    ))}
-                  </tr>
+                {budgets.map((b) => (
+                  <BudgetRow
+                    key={b.id}
+                    budget={b}
+                    weeks={weeks}
+                    budgetEntries={budgetEntries}
+                    categoryOptions={categoryOptions}
+                    actualsByWeek={actualsByBudget.get(b.id) ?? []}
+                    onRename={(name) => onRenameBudget(b.id, name)}
+                    onDelete={() => onDeleteBudget(b.id)}
+                    onToggleCategory={(category) => onToggleBudgetCategory(b.id, category)}
+                    onSetAmount={(weekStart, amount) => onSetAmount(b.id, weekStart, amount)}
+                    onSetAmountForWeeks={(weekStarts, amount) => onSetAmountForWeeks(b.id, weekStarts, amount)}
+                  />
                 ))}
               </tbody>
               <tfoot>
