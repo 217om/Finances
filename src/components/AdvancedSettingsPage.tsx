@@ -278,6 +278,9 @@ interface ScopedCategoryRulesProps {
   onPromoteSub: (id: string, aboveCreatedAt: number) => void;
   onMoveSubToGlobal?: (id: string) => void;
   onReparentSub: (id: string, newParent: string) => void;
+  /** Fires when a category's row is clicked — lets the paired tree gallery
+   *  above pan/focus onto that category. */
+  onSelectCategory?: (category: string) => void;
 }
 
 /** The category-grouped rule list for one scope (global, or a single card's
@@ -310,6 +313,7 @@ function ScopedCategoryRules({
   onPromoteSub,
   onMoveSubToGlobal,
   onReparentSub,
+  onSelectCategory,
 }: ScopedCategoryRulesProps) {
   // True evaluation order — resolveCategory sorts ALL of a scope's keyword
   // rules by createdAt regardless of category, so that's the order priority
@@ -450,8 +454,18 @@ function ScopedCategoryRules({
       {categoryGroups.map(([cat, g]) => (
         <details key={cat} open={searching || undefined}>
           <summary>
-            <span className="catdot" style={{ background: categoryColor(cat) }} />
-            {cat}
+            <span
+              className="rules-group-title"
+              title={onSelectCategory ? `Focus "${cat}" in the chart above` : undefined}
+              onClick={(e) => {
+                if (!onSelectCategory) return;
+                e.preventDefault();
+                onSelectCategory(cat);
+              }}
+            >
+              <span className="catdot" style={{ background: categoryColor(cat) }} />
+              {cat}
+            </span>
             <span className="muted rules-group-count">{g.keyword.length + g.merchant.length + g.standalone.length}</span>
           </summary>
           <div className="rules-list">
@@ -706,6 +720,10 @@ export default function AdvancedSettingsPage({
   };
 
   const [query, setQuery] = useState('');
+  // Shared by every tree gallery below (global + each card's own) — only the
+  // one whose ownScope matches actually reacts, see RuleTreeGallery's own
+  // focusRequest handling.
+  const [focusRequest, setFocusRequest] = useState<{ scope: string; category: string; token: number } | null>(null);
 
   const cardsWithOwnRules = useMemo(
     () => cardRuleSets.filter((c) => c.rules.length + c.keywordRules.length + c.subRules.length > 0),
@@ -882,6 +900,7 @@ export default function AdvancedSettingsPage({
           onDeleteSignatureRule={onDeleteSignatureRule}
           onSetSub={onCreateSubRule}
           onDeleteSub={onDeleteSubRule}
+          focusRequest={focusRequest}
         />
         <ScopedCategoryRules
           rules={globalRules}
@@ -889,6 +908,7 @@ export default function AdvancedSettingsPage({
           effectiveKeywordRules={globalKeywordRules}
           subRules={globalSubRules}
           categoryOptions={categoryOptions}
+          onSelectCategory={(cat) => setFocusRequest({ scope: 'global', category: cat, token: Date.now() })}
           onCreateCategory={(name) => onCreateCategory('global', name)}
           countCardIds={countCardIds}
           snapshotById={snapshotById}
@@ -938,6 +958,7 @@ export default function AdvancedSettingsPage({
               onDeleteSignatureRule={onDeleteSignatureRule}
               onSetSub={onCreateSubRule}
               onDeleteSub={onDeleteSubRule}
+              focusRequest={focusRequest}
             />
             <ScopedCategoryRules
               rules={c.rules}
@@ -945,6 +966,7 @@ export default function AdvancedSettingsPage({
               effectiveKeywordRules={mergeByKey(globalKeywordRules, c.keywordRules, (r) => r.keyword)}
               subRules={c.subRules}
               categoryOptions={categoryOptions}
+              onSelectCategory={(cat) => setFocusRequest({ scope: c.cardId, category: cat, token: Date.now() })}
               onCreateCategory={(name) => onCreateCategory(c.cardId, name)}
               countCardIds={countCardIds}
               snapshotById={snapshotById}

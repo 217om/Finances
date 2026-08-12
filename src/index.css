@@ -2096,6 +2096,16 @@ th.num {
   font-weight: 400;
   font-size: 12px;
 }
+.rules-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.rules-group-title:hover {
+  color: var(--accent);
+}
 .rules-groups .rules-list {
   margin-top: 8px;
 }
@@ -2190,6 +2200,20 @@ th.num {
   font-size: 12px;
   cursor: default;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+.tree-bubble-focused {
+  animation: tree-bubble-pulse 1.6s ease-out;
+}
+@keyframes tree-bubble-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 159, 133, 0.7), 0 1px 3px rgba(15, 23, 42, 0.2);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(220, 159, 133, 0), 0 1px 3px rgba(15, 23, 42, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 159, 133, 0), 0 1px 3px rgba(15, 23, 42, 0.2);
+  }
 }
 .tree-bubble-root .tree-bubble-label {
   white-space: normal;
@@ -2856,6 +2880,10 @@ th.num {
 }
 .budget-table td.budget-col-current {
   background: rgba(220, 159, 133, 0.08);
+}
+.budget-table tfoot td {
+  padding-top: 22px;
+  border-top: 2px solid var(--border);
 }
 .budget-cat-cell {
   display: flex;

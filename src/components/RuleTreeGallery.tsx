@@ -467,11 +467,14 @@ interface TreeBubblesProps {
   openKey: string | null;
   onOpen: (key: string | null) => void;
   popoverProps: Omit<EditPopoverProps, 'node' | 'onClose'>;
+  /** True right after this tree's category was picked from the list below —
+   *  briefly highlights its root bubble so the pan-to-focus is easy to spot. */
+  focused: boolean;
 }
 
 /** One tree's root/branch/leaf bubbles, offset into the same shared canvas
  *  coordinate space as TreeLines. */
-function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: TreeBubblesProps) {
+function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps, focused }: TreeBubblesProps) {
   const { starts } = rowLayout(tree);
   const branchY = (i: number) => offsetY + (starts[i] + branchSpan(tree.branches[i]) / 2) * ROW_H + PAD_Y;
   const leafY = (i: number, j: number) => offsetY + (starts[i] + j + 0.5) * ROW_H + PAD_Y;
@@ -483,7 +486,7 @@ function TreeBubbles({ tree, offsetX, offsetY, openKey, onOpen, popoverProps }: 
   return (
     <>
       <div
-        className="tree-bubble tree-bubble-root"
+        className={`tree-bubble tree-bubble-root ${focused ? 'tree-bubble-focused' : ''}`}
         style={{ left: rootX, top: rootY, width: ROOT_W, background: categoryColor(tree.category) }}
         title={tree.category}
       >
@@ -586,6 +589,11 @@ interface Props {
   onDeleteSignatureRule: (scope: string, signature: string, category: string) => void;
   onSetSub: (scope: string, parent: string, key: string, sub: string) => void;
   onDeleteSub: (scope: string, id: string, info: { parent: string; sub: string; keyword: string }) => void;
+  /** Set (with a fresh `token` on every click, even for the same category
+   *  twice in a row) when a category is picked from the list below this
+   *  gallery — pans the canvas to center that category's tree. Ignored when
+   *  `scope` doesn't match this gallery's own `ownScope`. */
+  focusRequest?: { scope: string; category: string; token: number } | null;
 }
 
 /**
@@ -615,12 +623,14 @@ export default function RuleTreeGallery({
   onDeleteSignatureRule,
   onSetSub,
   onDeleteSub,
+  focusRequest,
 }: Props) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [hasAutoCentered, setHasAutoCentered] = useState(false);
+  const [focusedTreeId, setFocusedTreeId] = useState<string | null>(null);
   // A plain ref (for the imperative reads below) isn't enough on its own —
   // the viewport <div> only exists once there's at least one tree to show,
   // so an effect with an empty dependency array would run before it's ever
@@ -735,6 +745,27 @@ export default function RuleTreeGallery({
     setHasAutoCentered(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAutoCentered, viewportEl, layout.superRoot]);
+
+  // Pans to center a category's tree when it's clicked in the list below —
+  // `token` changes on every click (even repeats of the same category), so
+  // clicking the same one twice re-centers it rather than being a no-op.
+  useEffect(() => {
+    if (!focusRequest || focusRequest.scope !== ownScope) return;
+    const item = layout.items.find((it) => it.tree.category === focusRequest.category);
+    if (!item) return;
+    const { tree, x, y } = item;
+    const rootCenterX = x + ROOT_X + ROOT_W / 2;
+    const rootCenterY = treeRootY(tree, y);
+    const vp = viewportRef.current;
+    const vw = vp?.clientWidth ?? 0;
+    const vh = vp?.clientHeight ?? VIEWPORT_H;
+    setPan(clampPan({ x: vw / 2 - rootCenterX * zoom, y: vh / 2 - rootCenterY * zoom }));
+    setOpenKey(null);
+    setFocusedTreeId(tree.id);
+    const t = setTimeout(() => setFocusedTreeId(null), 1600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest, ownScope]);
 
   /** Zoom to `newZoomRaw`, keeping the content point under (anchorX, anchorY)
    *  — viewport-relative coordinates — fixed in place, so zooming with the
@@ -881,6 +912,7 @@ export default function RuleTreeGallery({
                 openKey={openKey}
                 onOpen={setOpenKey}
                 popoverProps={popoverProps}
+                focused={tree.id === focusedTreeId}
               />
             ))}
           </div>
