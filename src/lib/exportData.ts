@@ -4,6 +4,8 @@
 import type { CategoryOverride, CategoryRule, KeywordRule, SubOverride, SubRule, Transaction } from '../types';
 import { categorize } from './categorize';
 import {
+  BUDGET_CATEGORIES_KEY,
+  BUDGET_ENTRIES_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
@@ -40,6 +42,7 @@ import {
   type CategoryFilterState,
 } from './categoryFilter';
 import { isValidPresetList, mergePresets, type CategoryFilterPreset } from './categoryFilterPresets';
+import { isValidBudgetEntries, isValidCategoryList, type BudgetEntry } from './budget';
 
 const BACKUP_MAGIC = 'cashflow-backup';
 const BACKUP_VERSION = 1;
@@ -64,6 +67,8 @@ interface CardBackup {
   weekStartDay: number | null;
   customCategories: string[];
   categoryFilter: CategoryFilterState;
+  budgetCategories: string[];
+  budgetEntries: BudgetEntry[];
   transactions: Transaction[];
   rules: CategoryRule[];
   overrides: CategoryOverride[];
@@ -244,6 +249,8 @@ export async function buildFullBackup(
       const weekStartDay = rawWeekStartDay !== null ? Number(rawWeekStartDay) : NaN;
       const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
       const categoryFilterRaw = readJSON(scopedKey(CATEGORY_FILTER_KEY, card.id));
+      const budgetCategoriesRaw = readJSON(scopedKey(BUDGET_CATEGORIES_KEY, card.id));
+      const budgetEntriesRaw = readJSON(scopedKey(BUDGET_ENTRIES_KEY, card.id));
       return {
         id: card.id,
         name: card.name,
@@ -256,6 +263,8 @@ export async function buildFullBackup(
           ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
           : [],
         categoryFilter: isValidCategoryFilter(categoryFilterRaw) ? categoryFilterRaw : defaultCategoryFilter(),
+        budgetCategories: isValidCategoryList(budgetCategoriesRaw) ? budgetCategoriesRaw : [],
+        budgetEntries: isValidBudgetEntries(budgetEntriesRaw) ? budgetEntriesRaw : [],
         transactions,
         rules,
         overrides,
@@ -550,6 +559,12 @@ export async function restoreFullBackup(
     }
     if (isValidCategoryFilter(cb.categoryFilter)) {
       writeLS(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(cb.categoryFilter));
+    }
+    if (isValidCategoryList(cb.budgetCategories) && cb.budgetCategories.length > 0) {
+      writeLS(scopedKey(BUDGET_CATEGORIES_KEY, target.id), JSON.stringify(cb.budgetCategories));
+    }
+    if (isValidBudgetEntries(cb.budgetEntries) && cb.budgetEntries.length > 0) {
+      writeLS(scopedKey(BUDGET_ENTRIES_KEY, target.id), JSON.stringify(cb.budgetEntries));
     }
   }
 

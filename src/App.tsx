@@ -54,6 +54,8 @@ import {
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
   COLUMN_MAPPING_KEY,
+  BUDGET_CATEGORIES_KEY,
+  BUDGET_ENTRIES_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
   THEME_KEY,
@@ -110,6 +112,15 @@ import CategoriesPage from './components/CategoriesPage';
 import CombinedCategoriesPage from './components/CombinedCategoriesPage';
 import AdvancedSettingsPage from './components/AdvancedSettingsPage';
 import CardManager from './components/CardManager';
+import BudgetsPage from './components/BudgetsPage';
+import {
+  isValidBudgetEntries,
+  isValidCategoryList,
+  removeCategoryBudgets,
+  setBudgetAmount,
+  setBudgetAmountForWeeks,
+  type BudgetEntry,
+} from './lib/budget';
 
 type Theme = 'light' | 'dark';
 
@@ -322,6 +333,10 @@ export default function App() {
   const [subRules, setSubRules] = useState<SubRule[]>([]);
   const [subOverrides, setSubOverrides] = useState<SubOverride[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilterState>(defaultCategoryFilter());
+  // Which categories the Budgets tab tracks, and this card's weekly budget
+  // amounts for them — a deliberate opt-in set, independent of categoryFilter.
+  const [budgetCategories, setBudgetCategories] = useState<string[]>([]);
+  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
   // Global (not per-card) — see handleToggleCombinedCategoryFilter above.
   const [combinedCategoryFilter, setCombinedCategoryFilter] = useState<CategoryFilterState>(() => {
     try {
@@ -342,13 +357,15 @@ export default function App() {
     }
   });
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'advanced'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'budgets' | 'advanced'>(
+    'dashboard',
+  );
   // Set only when jumping in from a chart click (Dashboard -> a specific
   // day/week/month's transactions); cleared on any normal tab navigation, so
   // the Transactions tab is never affected by category filters otherwise.
   const [txJump, setTxJump] = useState<{ from: string; to: string; token: number } | null>(null);
 
-  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories' | 'advanced') => {
+  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'advanced') => {
     setTxJump(null);
     setView(next);
   }, []);
@@ -392,11 +409,17 @@ export default function App() {
       setCustomCategories(Array.isArray(savedCats) ? savedCats.filter((c) => typeof c === 'string') : []);
       const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, cardId)) ?? 'null');
       setCategoryFilter(isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter());
+      const savedBudgetCats = JSON.parse(localStorage.getItem(scopedKey(BUDGET_CATEGORIES_KEY, cardId)) ?? '[]');
+      setBudgetCategories(isValidCategoryList(savedBudgetCats) ? savedBudgetCats : []);
+      const savedBudgetEntries = JSON.parse(localStorage.getItem(scopedKey(BUDGET_ENTRIES_KEY, cardId)) ?? '[]');
+      setBudgetEntries(isValidBudgetEntries(savedBudgetEntries) ? savedBudgetEntries : []);
     } catch {
       setCurrency('OMR');
       setCurrencyState('OMR');
       setMonthStartDay(1);
       setWeekStartDay(1);
+      setBudgetCategories([]);
+      setBudgetEntries([]);
       setCustomCategories([]);
       setCategoryFilter(defaultCategoryFilter());
     }
@@ -483,6 +506,14 @@ export default function App() {
   const subResolver = useMemo(
     () => makeSubResolver(effectiveSubRules, subOverrides),
     [effectiveSubRules, subOverrides],
+  );
+
+  // Every expense category this card could budget for — built-ins plus its
+  // own custom ones. Budgets is expense-only (there's nothing to "budget"
+  // about income).
+  const budgetCategoryOptions = useMemo(
+    () => [...EXPENSE_CATEGORIES, ...customCategories],
+    [customCategories],
   );
 
   // Transactions in an excluded category/sub-category are treated as if they
@@ -683,6 +714,76 @@ export default function App() {
         const next = toggleSub(prev, category, subName);
         try {
           localStorage.setItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [activeCardId],
+  );
+
+  const handleAddBudgetCategory = useCallback(
+    (category: string) => {
+      setBudgetCategories((prev) => {
+        if (prev.includes(category)) return prev;
+        const next = [...prev, category];
+        try {
+          localStorage.setItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [activeCardId],
+  );
+
+  const handleRemoveBudgetCategory = useCallback(
+    (category: string) => {
+      setBudgetCategories((prev) => {
+        const next = prev.filter((c) => c !== category);
+        try {
+          localStorage.setItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      setBudgetEntries((prev) => {
+        const next = removeCategoryBudgets(prev, category);
+        try {
+          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [activeCardId],
+  );
+
+  const handleSetBudgetAmount = useCallback(
+    (category: string, weekStart: string, amount: number) => {
+      setBudgetEntries((prev) => {
+        const next = setBudgetAmount(prev, category, weekStart, amount);
+        try {
+          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [activeCardId],
+  );
+
+  const handleSetBudgetAmountForWeeks = useCallback(
+    (category: string, weekStarts: string[], amount: number) => {
+      setBudgetEntries((prev) => {
+        const next = setBudgetAmountForWeeks(prev, category, weekStarts, amount);
+        try {
+          localStorage.setItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId), JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -1666,6 +1767,8 @@ export default function App() {
     try {
       localStorage.removeItem(scopedKey(CUSTOM_CATEGORIES_KEY, activeCardId));
       localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId));
+      localStorage.removeItem(scopedKey(BUDGET_CATEGORIES_KEY, activeCardId));
+      localStorage.removeItem(scopedKey(BUDGET_ENTRIES_KEY, activeCardId));
     } catch {
       /* ignore */
     }
@@ -1677,6 +1780,8 @@ export default function App() {
     setSubOverrides([]);
     setCustomCategories([]);
     setCategoryFilter(defaultCategoryFilter());
+    setBudgetCategories([]);
+    setBudgetEntries([]);
     setToast('All data cleared for this card.');
   }, [dbName, activeCardId]);
 
@@ -1801,6 +1906,8 @@ export default function App() {
         localStorage.removeItem(scopedKey(CURRENCY_KEY, id));
         localStorage.removeItem(scopedKey(MONTH_START_KEY, id));
         localStorage.removeItem(scopedKey(WEEK_START_KEY, id));
+        localStorage.removeItem(scopedKey(BUDGET_CATEGORIES_KEY, id));
+        localStorage.removeItem(scopedKey(BUDGET_ENTRIES_KEY, id));
       } catch {
         /* ignore */
       }
@@ -1867,6 +1974,13 @@ export default function App() {
                   onClick={() => handleTabClick('categories')}
                 >
                   Categories
+                </button>
+                <button
+                  type="button"
+                  className={view === 'budgets' ? 'on' : ''}
+                  onClick={() => handleTabClick('budgets')}
+                >
+                  Budgets
                 </button>
                 <button
                   type="button"
@@ -1937,6 +2051,28 @@ export default function App() {
                   onRenamePreset={handleRenameFilterPreset}
                   onDeletePreset={handleDeleteFilterPreset}
                   onApplyPreset={handleApplyCategoryFilterPreset}
+                />
+              )
+            ) : view === 'budgets' ? (
+              combineEnabled ? (
+                <section className="panel">
+                  <p className="muted">
+                    Budgets tracks one card at a time — switch off "Combine all cards" to use it.
+                  </p>
+                </section>
+              ) : (
+                <BudgetsPage
+                  transactions={transactions}
+                  categoryOf={categoryOf}
+                  monthStartDay={monthStartDay}
+                  weekStartDay={weekStartDay}
+                  categoryOptions={budgetCategoryOptions}
+                  budgetCategories={budgetCategories}
+                  budgetEntries={budgetEntries}
+                  onAddCategory={handleAddBudgetCategory}
+                  onRemoveCategory={handleRemoveBudgetCategory}
+                  onSetAmount={handleSetBudgetAmount}
+                  onSetAmountForWeeks={handleSetBudgetAmountForWeeks}
                 />
               )
             ) : view === 'advanced' ? (

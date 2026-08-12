@@ -34,7 +34,7 @@ export interface Overview {
   txCount: number;
 }
 
-function addMonths(ym: string, delta: number): string {
+export function addMonths(ym: string, delta: number): string {
   const [y, m] = ym.split('-').map(Number);
   const idx = y * 12 + (m - 1) + delta;
   const ny = Math.floor(idx / 12);

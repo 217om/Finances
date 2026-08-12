@@ -2792,6 +2792,129 @@ th.num {
   margin: 0;
 }
 
+/* ---------- Budgets ---------- */
+.budgets-page {
+  display: grid;
+  gap: 16px;
+}
+.budget-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 4px 0 14px;
+}
+.budget-nav-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 220px;
+  text-align: center;
+  font-size: 14px;
+}
+.budget-add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.budget-table-wrap {
+  max-height: none;
+  overflow-x: auto;
+}
+.budget-table {
+  min-width: 640px;
+}
+.budget-table th {
+  position: static;
+}
+.budget-partial-tag {
+  display: block;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--warn-text);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.budget-cat-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.budget-quickfill {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.budget-quickfill:hover {
+  color: var(--accent);
+}
+.budget-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.budget-remove:hover {
+  color: var(--neg);
+}
+.budget-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 92px;
+}
+.budget-input {
+  width: 84px;
+  text-align: center;
+  padding: 5px 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.budget-actual {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.budget-over {
+  color: var(--neg);
+  font-weight: 600;
+}
+.budget-bar {
+  width: 84px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--divider);
+  overflow: hidden;
+}
+.budget-bar-fill {
+  height: 100%;
+  background: var(--pos);
+  border-radius: 999px;
+}
+.budget-bar-fill.budget-bar-over {
+  background: var(--neg);
+}
+.budget-total-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 880px) {
   .container {

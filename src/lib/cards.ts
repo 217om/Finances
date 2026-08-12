@@ -28,6 +28,11 @@ export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
  *  columns) per card, so re-importing a statement with the same layout
  *  skips straight to it instead of re-detecting from scratch. */
 export const COLUMN_MAPPING_KEY = 'cashflow.columnMapping';
+/** Which categories the Budgets tab tracks for this card — a deliberate,
+ *  opt-in subset, independent of the "Show in charts & totals" filter. */
+export const BUDGET_CATEGORIES_KEY = 'cashflow.budgetCategories';
+/** Per-category, per-week target amounts set in the Budgets tab. */
+export const BUDGET_ENTRIES_KEY = 'cashflow.budgetEntries';
 export const THEME_KEY = 'cashflow.theme';
 export const COMBINE_KEY = 'cashflow.combineCards';
 /** Independent from any single card's own CATEGORY_FILTER_KEY — a hide/show
