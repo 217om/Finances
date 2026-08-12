@@ -2846,6 +2846,22 @@ th.num {
   font-size: 10px;
   margin-top: 2px;
 }
+.budget-current-tag {
+  display: block;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--accent);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.budget-table th.budget-col-current {
+  color: var(--accent);
+  background: rgba(220, 159, 133, 0.14);
+}
+.budget-table td.budget-col-current {
+  background: rgba(220, 159, 133, 0.08);
+}
 .budget-cat-cell {
   display: flex;
   align-items: center;

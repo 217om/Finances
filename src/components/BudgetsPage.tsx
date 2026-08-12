@@ -8,6 +8,7 @@ import {
   currentCyclePeriod,
   cycleBounds,
   getBudgetAmount,
+  todayISO,
   weekWindowsForCycle,
   type Budget,
   type BudgetEntry,
@@ -93,6 +94,7 @@ function BudgetRow({
   budgetEntries,
   categoryOptions,
   actualsByWeek,
+  today,
   onRename,
   onDelete,
   onToggleCategory,
@@ -104,6 +106,7 @@ function BudgetRow({
   budgetEntries: BudgetEntry[];
   categoryOptions: string[];
   actualsByWeek: number[];
+  today: string;
   onRename: (name: string) => void;
   onDelete: () => void;
   onToggleCategory: (category: string) => void;
@@ -207,7 +210,7 @@ function BudgetRow({
         </div>
       </td>
       {weeks.map((w, i) => (
-        <td key={w.weekStart} className="num">
+        <td key={w.weekStart} className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}>
           <BudgetCell
             budget={getBudgetAmount(budgetEntries, budget.id, w.weekStart)}
             actual={actualsByWeek[i] ?? 0}
@@ -242,6 +245,7 @@ export default function BudgetsPage({
   const isCurrentPeriod = period === currentCyclePeriod(monthStartDay);
   const [newBudgetName, setNewBudgetName] = useState('');
   const [creating, setCreating] = useState(false);
+  const today = useMemo(() => todayISO(), []);
 
   const bounds = useMemo(() => cycleBounds(period, monthStartDay), [period, monthStartDay]);
   const weeks = useMemo(
@@ -374,8 +378,12 @@ export default function BudgetsPage({
                 <tr>
                   <th>Budget</th>
                   {weeks.map((w) => (
-                    <th key={w.weekStart} className="num">
+                    <th
+                      key={w.weekStart}
+                      className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
+                    >
                       {weekHeaderLabel(w)}
+                      {w.from <= today && today <= w.to && <span className="budget-current-tag">this week</span>}
                       {w.partial && <span className="budget-partial-tag">partial</span>}
                     </th>
                   ))}
@@ -390,6 +398,7 @@ export default function BudgetsPage({
                     budgetEntries={budgetEntries}
                     categoryOptions={categoryOptions}
                     actualsByWeek={actualsByBudget.get(b.id) ?? []}
+                    today={today}
                     onRename={(name) => onRenameBudget(b.id, name)}
                     onDelete={() => onDeleteBudget(b.id)}
                     onToggleCategory={(category) => onToggleBudgetCategory(b.id, category)}
@@ -403,8 +412,12 @@ export default function BudgetsPage({
                   <td className="strong">Total</td>
                   {weekTotals.map((t, i) => {
                     const over = t.budget > 0 && t.actual > t.budget;
+                    const w = weeks[i];
                     return (
-                      <td key={weeks[i].weekStart} className="num">
+                      <td
+                        key={w.weekStart}
+                        className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
+                      >
                         <div className="budget-total-cell">
                           <span className="muted">{money(t.budget, { compact: true })} budget</span>
                           <span className={`strong ${over ? 'budget-over' : ''}`}>

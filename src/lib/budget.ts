@@ -58,7 +58,7 @@ function addDays(iso: string, delta: number): string {
   return fromUTC(d);
 }
 
-function todayISO(): string {
+export function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
