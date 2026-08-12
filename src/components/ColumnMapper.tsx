@@ -161,8 +161,8 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
                 </tr>
               </thead>
               <tbody>
-                {preview.transactions.map((t) => (
-                  <tr key={t.id}>
+                {preview.transactions.map((t, i) => (
+                  <tr key={i}>
                     <td>{monthLabel(t.month)}</td>
                     <td>{t.date}</td>
                     <td className="desc">{t.description || '—'}</td>

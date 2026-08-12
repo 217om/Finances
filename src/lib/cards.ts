@@ -24,6 +24,10 @@ export const MONTH_START_KEY = 'cashflow.monthStartDay';
 export const WEEK_START_KEY = 'cashflow.weekStartDay';
 export const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
+/** Remembers the last-used import column mapping (date/description/amount
+ *  columns) per card, so re-importing a statement with the same layout
+ *  skips straight to it instead of re-detecting from scratch. */
+export const COLUMN_MAPPING_KEY = 'cashflow.columnMapping';
 export const THEME_KEY = 'cashflow.theme';
 export const COMBINE_KEY = 'cashflow.combineCards';
 /** Independent from any single card's own CATEGORY_FILTER_KEY — a hide/show

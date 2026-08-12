@@ -53,6 +53,7 @@ import {
   WEEK_START_KEY,
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
+  COLUMN_MAPPING_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
   THEME_KEY,
@@ -1566,12 +1567,19 @@ export default function App() {
           setError(`No rows found in "${parsed.fileName}". Is it an exported transaction file?`);
           return;
         }
-        setPending(parsed);
+        // Prefer the mapping this card used last time — but only if every
+        // column it names still exists in this file, so a bank's changed
+        // export format falls back to fresh auto-detection instead of
+        // silently applying a stale/broken mapping.
+        const savedMapping = loadSavedColumnMapping(activeCardId);
+        const suggestedMapping =
+          savedMapping && mappingFitsHeaders(savedMapping, parsed.headers) ? savedMapping : parsed.suggestedMapping;
+        setPending({ ...parsed, suggestedMapping });
       } catch (e) {
         setError(`Could not read that file. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [dbName, handleRestoreFullBackup],
+    [dbName, handleRestoreFullBackup, activeCardId],
   );
 
   const handleConfirmMapping = useCallback(
@@ -1590,13 +1598,18 @@ export default function App() {
         setTransactions(fresh);
         setPending(null);
         setToast(buildToast(result, skipped));
+        try {
+          localStorage.setItem(scopedKey(COLUMN_MAPPING_KEY, activeCardId), JSON.stringify(mapping));
+        } catch {
+          /* ignore unavailable localStorage */
+        }
       } catch (e) {
         setError(`Import failed. ${(e as Error).message ?? ''}`.trim());
       } finally {
         setBusy(false);
       }
     },
-    [dbName],
+    [dbName, activeCardId],
   );
 
   const handleClearAll = useCallback(async () => {
@@ -2011,4 +2024,29 @@ function buildToast(result: ImportResult, skipped: number): string {
   if (result.duplicates > 0) parts.push(`${result.duplicates} already imported`);
   if (skipped > 0) parts.push(`${skipped} skipped`);
   return parts.join(' · ');
+}
+
+/** The column mapping this card used the last time a statement was
+ *  imported, so re-importing a similarly-formatted file can skip straight
+ *  to it instead of re-detecting columns from scratch. */
+function loadSavedColumnMapping(cardId: string): ColumnMapping | null {
+  try {
+    const raw = localStorage.getItem(scopedKey(COLUMN_MAPPING_KEY, cardId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && typeof parsed.dateColumn === 'string') {
+      return parsed as ColumnMapping;
+    }
+  } catch {
+    /* ignore malformed/unavailable localStorage */
+  }
+  return null;
+}
+
+/** Whether every column a saved mapping references still exists in a newly
+ *  dropped file's headers — guards against silently applying a stale
+ *  mapping after a bank changes its export format. */
+function mappingFitsHeaders(mapping: ColumnMapping, headers: string[]): boolean {
+  const cols = [mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn, mapping.debitColumn, mapping.creditColumn];
+  return cols.every((c) => !c || headers.includes(c));
 }
