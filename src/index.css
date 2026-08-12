@@ -2881,6 +2881,9 @@ th.num {
 .budget-table td.budget-col-current {
   background: rgba(220, 159, 133, 0.08);
 }
+.budget-table tbody tr:last-child td {
+  padding-bottom: 22px;
+}
 .budget-table tfoot td {
   padding-top: 22px;
   border-top: 2px solid var(--border);
