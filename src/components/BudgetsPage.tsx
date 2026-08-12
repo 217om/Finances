@@ -460,31 +460,36 @@ export default function BudgetsPage({
                   />
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td className="strong">
-                    Total
-                    <BudgetSummaryCards budget={grandCycleTotal.budget} actual={grandCycleTotal.actual} />
-                  </td>
-                  {weekTotals.map((t, i) => {
-                    const over = t.budget > 0 && t.actual > t.budget;
-                    const w = weeks[i];
-                    return (
-                      <td
-                        key={w.weekStart}
-                        className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
-                      >
-                        <div className="budget-total-cell">
-                          <span className="muted">{money(t.budget, { compact: true })} budget</span>
-                          <span className={`strong ${over ? 'budget-over' : ''}`}>
-                            {money(t.actual, { compact: true })} actual
-                          </span>
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              </tfoot>
+              {/* A "Total" row is only informative once there's more than one
+                  budget to add up — with just one, it's an exact duplicate
+                  of that budget's own row and numbers. */}
+              {budgets.length > 1 && (
+                <tfoot>
+                  <tr>
+                    <td className="strong">
+                      Total
+                      <BudgetSummaryCards budget={grandCycleTotal.budget} actual={grandCycleTotal.actual} />
+                    </td>
+                    {weekTotals.map((t, i) => {
+                      const over = t.budget > 0 && t.actual > t.budget;
+                      const w = weeks[i];
+                      return (
+                        <td
+                          key={w.weekStart}
+                          className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
+                        >
+                          <div className="budget-total-cell">
+                            <span className="muted">{money(t.budget, { compact: true })} budget</span>
+                            <span className={`strong ${over ? 'budget-over' : ''}`}>
+                              {money(t.actual, { compact: true })} actual
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </section>
