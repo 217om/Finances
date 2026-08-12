@@ -86,6 +86,33 @@ function BudgetCell({
   );
 }
 
+/** The whole displayed cycle's budget vs. actual for one row (or the
+ *  grand-total row), as three small stat cards — so the cycle-level picture
+ *  doesn't require mentally summing every weekly cell. */
+function BudgetSummaryCards({ budget, actual }: { budget: number; actual: number }) {
+  const diff = budget - actual;
+  const hasBudget = budget > 0;
+  const over = hasBudget && actual > budget;
+  return (
+    <div className="budget-summary">
+      <div className="budget-stat">
+        <div className="budget-stat-label">Cycle budget</div>
+        <div className="budget-stat-value">{money(budget, { compact: true })}</div>
+      </div>
+      <div className="budget-stat">
+        <div className="budget-stat-label">Cycle actual</div>
+        <div className={`budget-stat-value ${over ? 'budget-over' : ''}`}>{money(actual, { compact: true })}</div>
+      </div>
+      <div className="budget-stat">
+        <div className="budget-stat-label">{hasBudget ? (over ? 'Over by' : 'Under by') : 'Over/under'}</div>
+        <div className={`budget-stat-value ${!hasBudget ? 'muted' : over ? 'budget-over' : 'pos'}`}>
+          {hasBudget ? money(Math.abs(diff), { compact: true }) : '—'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** One budget's name (renameable), category membership (editable), and its
  *  weekly cells. */
 function BudgetRow({
@@ -94,6 +121,7 @@ function BudgetRow({
   budgetEntries,
   categoryOptions,
   actualsByWeek,
+  cycleTotal,
   today,
   onRename,
   onDelete,
@@ -106,6 +134,7 @@ function BudgetRow({
   budgetEntries: BudgetEntry[];
   categoryOptions: string[];
   actualsByWeek: number[];
+  cycleTotal: { budget: number; actual: number };
   today: string;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -208,6 +237,7 @@ function BudgetRow({
             </button>
           )}
         </div>
+        <BudgetSummaryCards budget={cycleTotal.budget} actual={cycleTotal.actual} />
       </td>
       {weeks.map((w, i) => (
         <td key={w.weekStart} className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}>
@@ -282,6 +312,28 @@ export default function BudgetsPage({
         return { budget: budgetSum, actual: actualSum };
       }),
     [weeks, budgets, budgetEntries, actualsByBudget],
+  );
+
+  // Whole-cycle (all weeks shown, summed) totals — per budget, and the
+  // grand total across every budget — for the small summary cards.
+  const cycleTotalsByBudget = useMemo(() => {
+    const map = new Map<string, { budget: number; actual: number }>();
+    for (const b of budgets) {
+      const actuals = actualsByBudget.get(b.id) ?? [];
+      const budgetSum = weeks.reduce((a, w) => a + getBudgetAmount(budgetEntries, b.id, w.weekStart), 0);
+      const actualSum = actuals.reduce((a, x) => a + x, 0);
+      map.set(b.id, { budget: budgetSum, actual: actualSum });
+    }
+    return map;
+  }, [budgets, weeks, budgetEntries, actualsByBudget]);
+
+  const grandCycleTotal = useMemo(
+    () =>
+      weekTotals.reduce(
+        (acc, t) => ({ budget: acc.budget + t.budget, actual: acc.actual + t.actual }),
+        { budget: 0, actual: 0 },
+      ),
+    [weekTotals],
   );
 
   const cycleLabel =
@@ -398,6 +450,7 @@ export default function BudgetsPage({
                     budgetEntries={budgetEntries}
                     categoryOptions={categoryOptions}
                     actualsByWeek={actualsByBudget.get(b.id) ?? []}
+                    cycleTotal={cycleTotalsByBudget.get(b.id) ?? { budget: 0, actual: 0 }}
                     today={today}
                     onRename={(name) => onRenameBudget(b.id, name)}
                     onDelete={() => onDeleteBudget(b.id)}
@@ -409,7 +462,10 @@ export default function BudgetsPage({
               </tbody>
               <tfoot>
                 <tr>
-                  <td className="strong">Total</td>
+                  <td className="strong">
+                    Total
+                    <BudgetSummaryCards budget={grandCycleTotal.budget} actual={grandCycleTotal.actual} />
+                  </td>
                   {weekTotals.map((t, i) => {
                     const over = t.budget > 0 && t.actual > t.budget;
                     const w = weeks[i];
