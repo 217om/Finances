@@ -205,10 +205,7 @@ export default function CategorizeWizard({
               </label>
             </div>
 
-            <p className="muted wiz-hint">
-              Uncheck any that don’t belong — they’ll move to the leftovers step. Or, if you know what
-              identifies them (a name, a merchant), split them off below and it becomes a rule too.
-            </p>
+            <p className="muted wiz-hint">Uncheck any that don't belong, they'll move to leftovers.</p>
 
             <KeywordSplitTool
               candidates={group.txs.filter((t) => !excluded.has(t.id) && !splitIds.has(t.id))}
@@ -276,13 +273,10 @@ export default function CategorizeWizard({
         ) : (
           <>
             {allLeftovers.length === 0 ? (
-              <p className="muted wiz-hint">Nothing left to classify — you’re all set.</p>
+              <p className="muted wiz-hint">Nothing left to classify. You're all set.</p>
             ) : (
               <>
-                <p className="muted wiz-hint">
-                  If several of these share a recognizable word (a merchant or a person’s name), split
-                  them off into a rule instead of picking one by one — it applies to future imports too.
-                </p>
+                <p className="muted wiz-hint">Share a recognizable word? Split them off into a rule below.</p>
 
                 <KeywordSplitTool
                   candidates={leftoverRows}

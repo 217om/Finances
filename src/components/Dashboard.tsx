@@ -231,7 +231,7 @@ export default function Dashboard({
         {combineEnabled && (
           <p className="muted controls-note">
             Combining {combinedCardNames.join(', ')} into these charts.
-            {mixedCurrency && ' These cards use different currencies — totals mix units.'}
+            {mixedCurrency && ' These cards use different currencies, so totals mix units.'}
           </p>
         )}
       </section>
@@ -279,7 +279,7 @@ export default function Dashboard({
         </div>
         {chartMonths.length > DENSE_POINT_WARNING && (
           <p className="muted chart-dense-note">
-            {chartMonths.length} bars shown — narrow the date range above for a clearer view.
+            {chartMonths.length} bars shown. Narrow the date range for a clearer view.
           </p>
         )}
         <MonthlyCashflowChart

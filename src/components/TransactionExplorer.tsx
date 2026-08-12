@@ -164,7 +164,7 @@ export default function TransactionExplorer({ transactions, categoryOf, lo, hi, 
         </table>
         {filtered.length > MAX_ROWS && (
           <div className="muted refine-more">
-            Showing the first {MAX_ROWS} of {filtered.length} — narrow the filters to see more.
+            Showing the first {MAX_ROWS} of {filtered.length}. Narrow the filters to see more.
           </div>
         )}
         {filtered.length === 0 && <div className="muted refine-more">No transactions match these filters.</div>}

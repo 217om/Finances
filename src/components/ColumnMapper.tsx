@@ -58,8 +58,8 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
 
   const columnSelect = (value: string, onChange: (v: string) => void, allowNone = false) => (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
-      {allowNone && <option value={NONE}>— none —</option>}
-      {!allowNone && <option value={NONE}>— select —</option>}
+      {allowNone && <option value={NONE}>(none)</option>}
+      {!allowNone && <option value={NONE}>Select…</option>}
       {parsed.headers.map((h) => (
         <option key={h} value={h}>
           {h}
@@ -73,9 +73,7 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Review “{parsed.fileName}”</h2>
-          <p>
-            We detected the columns below — adjust them if anything looks off, then import.
-          </p>
+          <p>We detected the columns below. Adjust anything that looks off, then import.</p>
         </div>
 
         <div className="map-grid">

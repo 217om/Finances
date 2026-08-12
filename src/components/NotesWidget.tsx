@@ -1006,10 +1006,7 @@ export default function NotesWidget() {
                   </div>
                 )}
               </div>
-              <p className="muted notes-hint">
-                Write anything — “rent = 500” saves a number you can reuse, and “+ Insert value” pulls a number
-                straight from a card without typing any code. Select text to bold, color, or resize it.
-              </p>
+              <p className="muted notes-hint">Write anything. “rent = 500” saves a number, “+ Insert value” pulls one.</p>
             </>
           ) : (
             <div className="notes-empty">

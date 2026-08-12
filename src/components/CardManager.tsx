@@ -69,10 +69,7 @@ export default function CardManager({
         <div className="wiz-head">
           <div>
             <h2>Cards</h2>
-            <p className="muted">
-              Each card is a separate account — its own transactions, categories, and filters.
-              You can start a new one from scratch or carry over categorization rules from another card.
-            </p>
+            <p className="muted">Each card is a separate account with its own transactions and filters.</p>
           </div>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Done
@@ -142,7 +139,7 @@ export default function CardManager({
           <label className="picker">
             <span className="picker-label">Carry over categorization from</span>
             <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-              <option value="">Start fresh — no copying</option>
+              <option value="">Start fresh, no copying</option>
               {cards.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -185,11 +182,7 @@ export default function CardManager({
                 />
                 Custom categories
               </label>
-              <p className="muted card-copy-note">
-                The new card starts empty of transactions — only the categorization rules above
-                are copied. Manual per-transaction assignments and hidden-category filters stay
-                with the original card.
-              </p>
+              <p className="muted card-copy-note">Only the rules above are copied, not transactions.</p>
             </div>
           )}
 

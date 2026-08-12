@@ -142,10 +142,7 @@ export default function CategoryFilterPanel({
       <div className="panel-head">
         <div>
           <h2>Show in charts &amp; totals</h2>
-          <p className="muted">
-            Uncheck anything that isn’t real spending (like a transfer to your own savings) to remove
-            it from every chart, KPI, and total across the app — not just here.
-          </p>
+          <p className="muted">Uncheck anything that isn't real spending, like a transfer to savings.</p>
         </div>
       </div>
 

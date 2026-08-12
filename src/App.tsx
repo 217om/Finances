@@ -478,7 +478,7 @@ export default function App() {
         if (cancelled) return;
         setError(
           (e as Error)?.message === 'timed-out'
-            ? 'Loading your saved data is taking too long. Your data is safe — try Reload. If this app is open in another tab, close it first.'
+            ? 'Loading your saved data is taking too long. Your data is safe, try Reload. If this app is open in another tab, close it first.'
             : 'Could not open local storage. If this is a private/incognito window, browser storage may be blocked.',
         );
       } finally {
@@ -1646,8 +1646,8 @@ export default function App() {
           `Restore this backup (from ${backup.exportedAt.slice(0, 10)})? It covers ${txCount} ` +
             `transaction${txCount === 1 ? '' : 's'} across ${backupCards.length} card` +
             `${backupCards.length === 1 ? '' : 's'} and ${noteCount} note` +
-            `${noteCount === 1 ? '' : 's'}. Existing data is kept — matching cards are ` +
-            'merged by id, and any cards not already present are added.',
+            `${noteCount === 1 ? '' : 's'}. Existing data is kept, matching cards are ` +
+            'merged and new cards are added.',
         );
         if (!ok) return;
         const result = await restoreFullBackup(
@@ -1698,8 +1698,8 @@ export default function App() {
         const ok = confirm(
           `Import this rules file (from ${backup.exportedAt.slice(0, 10)})? It covers ${ruleCount} rule` +
             `${ruleCount === 1 ? '' : 's'} across ${backup.cards.length} card` +
-            `${backup.cards.length === 1 ? '' : 's'} plus global rules. Existing rules are kept — ` +
-            'matching keywords/merchants are overwritten with the imported version, nothing is deleted.',
+            `${backup.cards.length === 1 ? '' : 's'} plus global rules. Existing rules are kept, ` +
+            'matching ones are overwritten, nothing is deleted.',
         );
         if (!ok) return;
         const result = await restoreRulesBackup(backup, cards);
@@ -1827,16 +1827,15 @@ export default function App() {
   const handleClearTransactionsOnly = useCallback(async () => {
     if (
       !confirm(
-        'Remove all transactions from this card? Category rules, keyword rules, sub-categories, ' +
-          'custom categories, and the hidden-category filter are all kept — this just clears the ' +
-          'statements themselves.',
+        'Remove all transactions from this card? Categories, rules, and filters are all kept, ' +
+          'this just clears the statements themselves.',
       )
     ) {
       return;
     }
     await clearTransactionsOnly(dbName);
     setTransactions([]);
-    setToast('Transactions cleared — categories and rules were kept.');
+    setToast('Transactions cleared. Categories and rules were kept.');
   }, [dbName]);
 
   // --- Card management ---------------------------------------------------
@@ -2126,10 +2125,7 @@ export default function App() {
                 />
               ) : (
                 <section className="panel">
-                  <p className="muted">
-                    Budgets applies at the total level, across every card — switch on "Combine all
-                    cards" above to use it.
-                  </p>
+                  <p className="muted">Switch on "Combine all cards" above to use Budgets.</p>
                 </section>
               )
             ) : view === 'advanced' ? (
@@ -2250,7 +2246,7 @@ export default function App() {
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
       <footer className="footer">
-        Your statements never leave this browser — all parsing and storage happens on your device.
+        Your statements never leave this browser. All parsing and storage happens on your device.
       </footer>
 
       <NotesWidget />

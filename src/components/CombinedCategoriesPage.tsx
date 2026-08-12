@@ -182,19 +182,14 @@ export default function CombinedCategoriesPage({
   return (
     <div className="cats-page">
       <p className="muted combine-readonly-note">
-        Showing every card's spending together. Hiding a category or sub-category below only
-        affects this combined view — it won't touch any individual card's own filter. Switch to a
-        single card in the selector above to manage sub-category rules.
+        All cards combined. Hiding a category here only affects this view, not any card's own
+        filter.
       </p>
       <section className="panel">
         <div className="panel-head">
           <div>
             <h2>Category map</h2>
-            <p className="muted">
-              Sized by spending across every combined card (all time, regardless of what any card
-              hides on its own). Click a category to break it down; click it again to list every
-              transaction in it.
-            </p>
+            <p className="muted">Sized by spending, all time. Click to break down, click again for transactions.</p>
           </div>
         </div>
 

@@ -355,12 +355,7 @@ export default function BudgetsPage({
         <div className="panel-head">
           <div>
             <h2>Budgets</h2>
-            <p className="muted">
-              Applied at the total level, across every card. Create a budget, assign it one or more
-              categories, and set a weekly target — actual spend is calculated automatically from
-              your transactions. Weeks follow your Week-starts setting and this pay cycle, so the
-              first and/or last week shown may be shorter than 7 days.
-            </p>
+            <p className="muted">Applies across every card. Set a weekly target, actuals fill in automatically.</p>
           </div>
         </div>
 
@@ -418,10 +413,7 @@ export default function BudgetsPage({
 
       {budgets.length === 0 ? (
         <section className="panel">
-          <p className="muted">
-            Create a budget above, then assign it one category (like "Groceries") or several (like
-            "Groceries" + "Dining" together) and set a weekly target.
-          </p>
+          <p className="muted">Create a budget above, then assign it one or more categories.</p>
         </section>
       ) : (
         <section className="panel">

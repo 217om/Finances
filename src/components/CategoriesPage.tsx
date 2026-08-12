@@ -153,10 +153,7 @@ export default function CategoriesPage({
         <div className="panel-head">
           <div>
             <h2>Category map</h2>
-            <p className="muted">
-              Sized by spending (all time). Click a category to break it down; click it again to list
-              every transaction in it.
-            </p>
+            <p className="muted">Sized by spending, all time. Click to break down, click again for transactions.</p>
           </div>
         </div>
 

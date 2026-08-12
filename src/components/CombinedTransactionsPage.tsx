@@ -133,8 +133,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
   return (
     <div className="tx-page">
       <p className="muted combine-readonly-note">
-        Showing every card together. Switch to a single card in the selector above to edit
-        categories — notes and deletion work right here.
+        Showing every card together. Switch to a single card to edit categories.
       </p>
       <div className="tx-controls">
         <input

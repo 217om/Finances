@@ -443,7 +443,7 @@ function ScopedCategoryRules({
   const total = rules.length + keywordRules.length;
 
   if (total === 0 && standaloneSubRules.length === 0) {
-    return <p className="muted rules-empty">No rules here yet — add one above.</p>;
+    return <p className="muted rules-empty">No rules here yet. Add one above.</p>;
   }
   if (categoryGroups.length === 0) {
     return <p className="muted rules-empty">No rules match “{query}”.</p>;
@@ -494,7 +494,7 @@ function ScopedCategoryRules({
                   onMakeGlobal={onMoveKeywordToGlobal ? () => onMoveKeywordToGlobal(r.keyword) : undefined}
                   warning={
                     shadow && {
-                      text: `“${shadow.keyword}” (${shadow.category}) always matches first — this rule can never apply.`,
+                      text: `“${shadow.keyword}” (${shadow.category}) always matches first, so this rule can never apply.`,
                       fixLabel: `Move above “${shadow.keyword}”`,
                       onFix: () => onPromoteKeywordRule(r.keyword, shadow.createdAt),
                     }
@@ -514,7 +514,7 @@ function ScopedCategoryRules({
                 <RuleRow
                   key={`mr-${r.signature}`}
                   priority={priority}
-                  priorityTitle="Merchant rules never conflict with each other — this order is just for your own browsing."
+                  priorityTitle="Merchant rules never conflict, this order is just for browsing."
                   keyLabel={r.signature}
                   titleAttr={r.sample}
                   category={r.category}
@@ -729,11 +729,8 @@ export default function AdvancedSettingsPage({
   return (
     <div className="rules-page">
       <p className="muted rules-intro">
-        Rules are global by default — a keyword or merchant rule applies to every card unless a card
-        defines its own for the same keyword/merchant, which takes precedence just for that card.
-        Give any rule an optional sub-category for a finer split within it. When two keyword rules
-        could both match the same transaction, the number on the left (lowest wins) decides — use ▲▼
-        to change it, or ⚠ Fix if a rule is shown as fully blocked by another one.
+        Rules are global by default. A card's own rule takes precedence for that card. When two
+        rules could match, the lowest number wins, use ▲▼ to reorder.
       </p>
 
       <label className="picker rules-card-picker">
@@ -752,10 +749,7 @@ export default function AdvancedSettingsPage({
         <div className="panel-head">
           <div>
             <h2>Add a rule</h2>
-            <p className="muted">
-              Applies immediately to matching transactions, and automatically to anything you import
-              later — even with zero matches today.
-            </p>
+            <p className="muted">Applies to matching transactions now and anything you import later.</p>
           </div>
           <div className="seg seg-sm">
             <button type="button" className={mode === 'keyword' ? 'seg-on' : ''} onClick={() => setMode('keyword')}>
@@ -808,7 +802,7 @@ export default function AdvancedSettingsPage({
             {kwNeedle.length >= 2 && (
               <span className="rules-preview muted">
                 {kwMatches === 0
-                  ? 'No transactions match yet — the rule will still apply to future imports'
+                  ? 'No matches yet, but it will apply to future imports'
                   : `${kwMatches} matching ${plural(kwMatches)} now`}
               </span>
             )}
@@ -855,7 +849,7 @@ export default function AdvancedSettingsPage({
             {subParent && subNeedle.length >= 2 && (
               <span className="rules-preview muted">
                 {subMatches === 0
-                  ? 'No transactions match yet — the rule will still apply to future imports'
+                  ? 'No matches yet, but it will apply to future imports'
                   : `${subMatches} matching ${plural(subMatches)} now`}
               </span>
             )}
@@ -929,13 +923,10 @@ export default function AdvancedSettingsPage({
         <section className="panel" key={c.cardId}>
           <details open>
             <summary>
-              <strong>{c.cardName} — card-specific rules</strong>
+              <strong>{c.cardName}, card-specific rules</strong>
               <span className="muted rules-group-count">{c.rules.length + c.keywordRules.length}</span>
             </summary>
-            <p className="muted rules-card-scope-note">
-              Only applies to {c.cardName}, and takes precedence over a global rule for the same keyword
-              or merchant.
-            </p>
+            <p className="muted rules-card-scope-note">Only applies to {c.cardName}, and takes precedence.</p>
             <RuleTreeGallery
               ownScope={c.cardId}
               rules={c.rules}
@@ -994,10 +985,7 @@ export default function AdvancedSettingsPage({
             <strong>Built-in reference patterns</strong>
             <span className="muted rules-group-count">read-only</span>
           </summary>
-          <p className="muted">
-            Always applied as the last resort, when nothing above matches. Add a rule above to override
-            any of these for a specific transaction.
-          </p>
+          <p className="muted">Used as a last resort when nothing above matches.</p>
           <div className="rules-builtin">
             {BUILT_IN_RULES.map((r) => {
               const isOpen = expandedBuiltIn.has(r.category);
@@ -1037,11 +1025,7 @@ export default function AdvancedSettingsPage({
         <div className="panel-head">
           <div>
             <h2>Backup rules</h2>
-            <p className="muted">
-              Export every rule (global and every card's own) as one file, or import a file exported
-              elsewhere. Importing never deletes an existing rule — a matching keyword or merchant is
-              overwritten with the imported version, everything else is kept.
-            </p>
+            <p className="muted">Export every rule as one file, or import one. Nothing existing is deleted.</p>
           </div>
         </div>
         <div className="rules-backup-actions">
