@@ -2841,21 +2841,12 @@ th.num {
 .budget-table th:first-child {
   min-width: 260px;
 }
-.budget-partial-tag {
+.budget-days-tag {
   display: block;
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--warn-text);
-  font-size: 10px;
-  margin-top: 2px;
-}
-.budget-current-tag {
-  display: block;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 10px;
   margin-top: 2px;
 }

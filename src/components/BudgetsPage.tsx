@@ -10,6 +10,7 @@ import {
   getBudgetAmount,
   todayISO,
   weekWindowsForCycle,
+  windowDayCount,
   type Budget,
   type BudgetEntry,
   type WeekWindow,
@@ -435,8 +436,9 @@ export default function BudgetsPage({
                       className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
                     >
                       {weekHeaderLabel(w)}
-                      {w.from <= today && today <= w.to && <span className="budget-current-tag">this week</span>}
-                      {w.partial && <span className="budget-partial-tag">partial</span>}
+                      <span className="budget-days-tag">
+                        {windowDayCount(w)} day{windowDayCount(w) === 1 ? '' : 's'}
+                      </span>
                     </th>
                   ))}
                 </tr>

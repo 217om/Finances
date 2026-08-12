@@ -109,6 +109,12 @@ export function cycleBounds(period: string, monthStartDay: number): { from: stri
   return { from, to: addDays(nextStart, -1) };
 }
 
+/** How many days a week window's clipped [from, to] span actually covers —
+ *  7 for a full week, fewer for one clipped short at a cycle boundary. */
+export function windowDayCount(w: { from: string; to: string }): number {
+  return Math.round((toUTC(w.to).getTime() - toUTC(w.from).getTime()) / 86400000) + 1;
+}
+
 /** The week-aligned buckets (per weekStartDay) that overlap a pay cycle,
  *  clipped to the cycle's own [from, to] — see file doc comment. */
 export function weekWindowsForCycle(
