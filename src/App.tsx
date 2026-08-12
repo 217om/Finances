@@ -72,6 +72,7 @@ import { makeSubResolver, UNSORTED } from './lib/subcategory';
 import { makePreset, isValidPresetList, type CategoryFilterPreset } from './lib/categoryFilterPresets';
 import {
   defaultCategoryFilter,
+  excludeNewCategory,
   excludedCount,
   isExcluded,
   isValidCategoryFilter,
@@ -914,6 +915,30 @@ export default function App() {
         }
         return next;
       });
+      // A category that didn't exist when the user narrowed "Show in charts &
+      // totals" down to a subset shouldn't silently start out visible — keep
+      // it hidden (both this card's filter and the combined view's) until
+      // it's explicitly checked back on.
+      setCategoryFilter((prev) => {
+        const next = excludeNewCategory(prev, rawName);
+        if (next === prev) return prev;
+        try {
+          localStorage.setItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId), JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      setCombinedCategoryFilter((prev) => {
+        const next = excludeNewCategory(prev, rawName);
+        if (next === prev) return prev;
+        try {
+          localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
     },
     [activeCardId],
   );
@@ -1371,6 +1396,27 @@ export default function App() {
           EXPENSE_CATEGORIES.some((c) => c.toLowerCase() === rawName.toLowerCase());
         if (exists) return;
         localStorage.setItem(scopedKey(CUSTOM_CATEGORIES_KEY, scope), JSON.stringify([...prev, rawName]));
+        // Keep the new category hidden in that card's own filter if it's
+        // already a curated subset — same reasoning as handleCreateCategory.
+        try {
+          const filterKey = scopedKey(CATEGORY_FILTER_KEY, scope);
+          const savedFilter = JSON.parse(localStorage.getItem(filterKey) ?? 'null');
+          const scopeFilter = isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter();
+          const nextFilter = excludeNewCategory(scopeFilter, rawName);
+          if (nextFilter !== scopeFilter) localStorage.setItem(filterKey, JSON.stringify(nextFilter));
+        } catch {
+          /* ignore */
+        }
+        setCombinedCategoryFilter((prevFilter) => {
+          const next = excludeNewCategory(prevFilter, rawName);
+          if (next === prevFilter) return prevFilter;
+          try {
+            localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
         setOtherCustomCategoriesTick((n) => n + 1);
       } catch {
         /* ignore */

@@ -56,6 +56,25 @@ export function toggleSub(
   return { ...filter, subs: { ...filter.subs, [category]: nextList } };
 }
 
+/** True once the user has hidden at least one category or sub-category —
+ *  signals this filter is a deliberate, narrowed-down subset rather than the
+ *  untouched "show everything" default. */
+export function isCuratedFilter(filter: CategoryFilterState): boolean {
+  return filter.categories.length > 0 || Object.values(filter.subs).some((list) => list.length > 0);
+}
+
+/** Applied when a brand-new category is created: if the filter is still the
+ *  untouched default, a new category should stay visible like everything
+ *  else. But once the user has deliberately narrowed the filter down to a
+ *  subset, a category that didn't exist yet at the time shouldn't silently
+ *  reappear in every chart and total the moment it's created — it stays
+ *  hidden until explicitly checked back on, same as a saved preset treats
+ *  anything outside its allow-list. */
+export function excludeNewCategory(filter: CategoryFilterState, category: string): CategoryFilterState {
+  if (!isCuratedFilter(filter) || isCategoryExcluded(filter, category)) return filter;
+  return { ...filter, categories: [...filter.categories, category] };
+}
+
 export function excludedCount(filter: CategoryFilterState): number {
   return (
     filter.categories.length +
