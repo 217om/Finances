@@ -1958,9 +1958,24 @@ export default function App() {
         saveActiveCardId(fallback.id);
         setWizardOpen(false);
       }
+      // "Combine all cards" only makes sense (and is only reachable to turn
+      // back off) with 2+ cards — dropping to a single one would otherwise
+      // strand the app in a combined view with no way back to it via the UI.
+      if (next.length <= 1 && combineEnabled) {
+        setCombineEnabled(false);
+        try {
+          localStorage.setItem(COMBINE_KEY, '0');
+        } catch {
+          /* ignore */
+        }
+        if (next[0] && next[0].id !== activeCardId) {
+          setActiveCardId(next[0].id);
+          saveActiveCardId(next[0].id);
+        }
+      }
       setToast(`Deleted card · ${card.name}`);
     },
-    [cards, activeCardId],
+    [cards, activeCardId, combineEnabled],
   );
 
   const hasData = transactions.length > 0;

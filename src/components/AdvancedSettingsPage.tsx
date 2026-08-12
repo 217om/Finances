@@ -457,11 +457,7 @@ function ScopedCategoryRules({
             <span
               className="rules-group-title"
               title={onSelectCategory ? `Focus "${cat}" in the chart above` : undefined}
-              onClick={(e) => {
-                if (!onSelectCategory) return;
-                e.preventDefault();
-                onSelectCategory(cat);
-              }}
+              onClick={() => onSelectCategory?.(cat)}
             >
               <span className="catdot" style={{ background: categoryColor(cat) }} />
               {cat}
