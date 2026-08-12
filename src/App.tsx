@@ -50,6 +50,7 @@ import {
   scopedKey,
   CURRENCY_KEY,
   MONTH_START_KEY,
+  WEEK_START_KEY,
   CUSTOM_CATEGORIES_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
@@ -311,6 +312,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrencyState] = useState(getCurrency());
   const [monthStartDay, setMonthStartDay] = useState(1);
+  const [weekStartDay, setWeekStartDay] = useState(1);
   const [rules, setRules] = useState<CategoryRule[]>([]);
   const [overrides, setOverrides] = useState<CategoryOverride[]>([]);
   const [customCategories, setCustomCategories] = useState<string[]>([]);
@@ -377,6 +379,13 @@ export default function App() {
       setCurrencyState(cur);
       const savedDay = Number(localStorage.getItem(scopedKey(MONTH_START_KEY, cardId)));
       setMonthStartDay(savedDay >= 1 && savedDay <= 28 ? savedDay : 1);
+      // Number(null) is 0 — a legitimately valid day (Sunday), unlike
+      // monthStartDay's 1-28 range where 0 always means "unset". Check for
+      // presence first so an unset preference doesn't get silently read as
+      // an explicit choice of Sunday.
+      const rawWeekDay = localStorage.getItem(scopedKey(WEEK_START_KEY, cardId));
+      const savedWeekDay = rawWeekDay !== null ? Number(rawWeekDay) : NaN;
+      setWeekStartDay(savedWeekDay >= 0 && savedWeekDay <= 6 ? savedWeekDay : 1);
       const savedCats = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, cardId)) ?? '[]');
       setCustomCategories(Array.isArray(savedCats) ? savedCats.filter((c) => typeof c === 'string') : []);
       const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, cardId)) ?? 'null');
@@ -385,6 +394,7 @@ export default function App() {
       setCurrency('OMR');
       setCurrencyState('OMR');
       setMonthStartDay(1);
+      setWeekStartDay(1);
       setCustomCategories([]);
       setCategoryFilter(defaultCategoryFilter());
     }
@@ -1416,6 +1426,18 @@ export default function App() {
     [activeCardId],
   );
 
+  const handleWeekStartChange = useCallback(
+    (day: number) => {
+      setWeekStartDay(day);
+      try {
+        localStorage.setItem(scopedKey(WEEK_START_KEY, activeCardId), String(day));
+      } catch {
+        /* ignore */
+      }
+    },
+    [activeCardId],
+  );
+
   const handleExportJSON = useCallback(() => downloadBackup(transactions), [transactions]);
   const handleExportCSV = useCallback(() => downloadCSV(transactions), [transactions]);
 
@@ -1719,6 +1741,7 @@ export default function App() {
         localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, id));
         localStorage.removeItem(scopedKey(CURRENCY_KEY, id));
         localStorage.removeItem(scopedKey(MONTH_START_KEY, id));
+        localStorage.removeItem(scopedKey(WEEK_START_KEY, id));
       } catch {
         /* ignore */
       }
@@ -1747,6 +1770,8 @@ export default function App() {
         onCurrencyChange={handleCurrencyChange}
         monthStartDay={monthStartDay}
         onMonthStartChange={handleMonthStartChange}
+        weekStartDay={weekStartDay}
+        onWeekStartChange={handleWeekStartChange}
         hasData={hasData}
         onClearAll={handleClearAll}
         onClearTransactionsOnly={handleClearTransactionsOnly}
@@ -1919,6 +1944,7 @@ export default function App() {
                 transactions={dashboardTransactions}
                 categoryOf={dashboardCategoryOf}
                 monthStartDay={monthStartDay}
+                weekStartDay={weekStartDay}
                 pendingCount={grouping.pendingCount}
                 onReview={canCategorize ? () => setWizardOpen(true) : undefined}
                 hiddenCount={excludedCount(combineEnabled ? combinedCategoryFilter : categoryFilter)}

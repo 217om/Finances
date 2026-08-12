@@ -12,6 +12,7 @@ interface Props {
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   monthStartDay: number;
+  weekStartDay: number;
   pendingCount: number;
   onReview?: () => void;
   hiddenCount?: number;
@@ -82,6 +83,7 @@ export default function Dashboard({
   transactions,
   categoryOf,
   monthStartDay,
+  weekStartDay,
   pendingCount,
   onReview,
   hiddenCount = 0,
@@ -135,8 +137,8 @@ export default function Dashboard({
     if (granularity === 'month') return monthBuckets;
     return granularity === 'day'
       ? summarizeByDay(rangedTransactions, categoryOf)
-      : summarizeByWeek(rangedTransactions, categoryOf);
-  }, [granularity, monthBuckets, rangedTransactions, categoryOf]);
+      : summarizeByWeek(rangedTransactions, weekStartDay, categoryOf);
+  }, [granularity, monthBuckets, rangedTransactions, weekStartDay, categoryOf]);
 
   const applyPreset = (years: number | 'all') => {
     if (!dateBounds.max) return; // nothing to range over — see the empty-state below

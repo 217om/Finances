@@ -7,6 +7,8 @@ interface Props {
   onCurrencyChange: (code: string) => void;
   monthStartDay: number;
   onMonthStartChange: (day: number) => void;
+  weekStartDay: number;
+  onWeekStartChange: (day: number) => void;
   hasData: boolean;
   onClearAll: () => void;
   onClearTransactionsOnly: () => void;
@@ -28,6 +30,8 @@ export default function Header({
   onCurrencyChange,
   monthStartDay,
   onMonthStartChange,
+  weekStartDay,
+  onWeekStartChange,
   hasData,
   onClearAll,
   onClearTransactionsOnly,
@@ -71,6 +75,8 @@ export default function Header({
             onCurrencyChange={onCurrencyChange}
             monthStartDay={monthStartDay}
             onMonthStartChange={onMonthStartChange}
+            weekStartDay={weekStartDay}
+            onWeekStartChange={onWeekStartChange}
             theme={theme}
             onToggleTheme={onToggleTheme}
             hasData={hasData}

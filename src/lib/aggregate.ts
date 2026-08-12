@@ -136,12 +136,14 @@ function addDays(iso: string, delta: number): string {
   return fromUTC(d);
 }
 
-/** The Monday that starts the ISO week containing this date. */
-export function startOfWeek(iso: string): string {
+/** The start of the week containing this date, given the day the user's week
+ *  starts on (0 = Sunday .. 6 = Saturday, matching Date#getUTCDay). Defaults
+ *  to Monday, the app's original hardcoded behavior. */
+export function startOfWeek(iso: string, weekStartDay = 1): string {
   const d = toUTC(iso);
   const day = d.getUTCDay(); // 0 = Sunday .. 6 = Saturday
-  const sinceMonday = day === 0 ? 6 : day - 1;
-  d.setUTCDate(d.getUTCDate() - sinceMonday);
+  const sinceStart = (day - weekStartDay + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - sinceStart);
   return fromUTC(d);
 }
 
@@ -179,12 +181,14 @@ export function summarizeByDay(
   return all.map((d) => map.get(d) ?? emptySummary(d));
 }
 
-/** Group transactions per Monday-start week, gap-filled so quiet weeks show as zero. */
+/** Group transactions per week (starting on `weekStartDay`), gap-filled so
+ *  quiet weeks show as zero. */
 export function summarizeByWeek(
   txs: Transaction[],
+  weekStartDay = 1,
   categoryOf: CategoryOf = defaultCategoryOf,
 ): MonthlySummary[] {
-  const map = bucketTransactions(txs, (t) => startOfWeek(t.date), categoryOf);
+  const map = bucketTransactions(txs, (t) => startOfWeek(t.date, weekStartDay), categoryOf);
   const present = [...map.keys()].sort();
   if (present.length === 0) return [];
   const all = weeksBetween(present[0], present[present.length - 1]);

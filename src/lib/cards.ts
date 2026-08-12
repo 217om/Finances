@@ -19,6 +19,9 @@ const ACTIVE_CARD_KEY = 'cashflow.activeCardId';
 // backup/restore code share a single source of truth for the literal strings.
 export const CURRENCY_KEY = 'cashflow.currency';
 export const MONTH_START_KEY = 'cashflow.monthStartDay';
+/** 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay. Defaults to Monday
+ *  (1) — the app's original hardcoded week-start behavior. */
+export const WEEK_START_KEY = 'cashflow.weekStartDay';
 export const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
 export const THEME_KEY = 'cashflow.theme';

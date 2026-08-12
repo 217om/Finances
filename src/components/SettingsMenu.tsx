@@ -6,6 +6,8 @@ interface Props {
   onCurrencyChange: (code: string) => void;
   monthStartDay: number;
   onMonthStartChange: (day: number) => void;
+  weekStartDay: number;
+  onWeekStartChange: (day: number) => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   hasData: boolean;
@@ -19,6 +21,10 @@ interface Props {
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
 
+// Index matches Date#getUTCDay (0 = Sunday .. 6 = Saturday), same convention
+// lib/aggregate.ts's startOfWeek uses.
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 /**
  * Everything that isn't a day-to-day action — appearance, month-start day,
  * currency, and the data/backup tools — gathered under one icon so the
@@ -29,6 +35,8 @@ export default function SettingsMenu({
   onCurrencyChange,
   monthStartDay,
   onMonthStartChange,
+  weekStartDay,
+  onWeekStartChange,
   theme,
   onToggleTheme,
   hasData,
@@ -99,6 +107,16 @@ export default function SettingsMenu({
               {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                 <option key={d} value={d}>
                   {d === 1 ? '1st (calendar)' : ORDINALS[d]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="picker settings-field" title="Which day the weekly chart's bars start on">
+            <span className="picker-label">Week starts</span>
+            <select value={weekStartDay} onChange={(e) => onWeekStartChange(Number(e.target.value))}>
+              {WEEKDAY_NAMES.map((name, d) => (
+                <option key={d} value={d}>
+                  {name}
                 </option>
               ))}
             </select>

@@ -11,6 +11,7 @@ import {
   CUSTOM_CATEGORIES_KEY,
   GLOBAL_RULES_DB,
   MONTH_START_KEY,
+  WEEK_START_KEY,
   THEME_KEY,
   makeCard,
   saveActiveCardId,
@@ -60,6 +61,7 @@ interface CardBackup {
   createdAt: number;
   currency: string | null;
   monthStartDay: number | null;
+  weekStartDay: number | null;
   customCategories: string[];
   categoryFilter: CategoryFilterState;
   transactions: Transaction[];
@@ -236,6 +238,10 @@ export async function buildFullBackup(
         getSubOverrides(card.dbName),
       ]);
       const monthStartDay = Number(readLS(scopedKey(MONTH_START_KEY, card.id)));
+      // Same null-vs-zero care as App.tsx's load effect — Number(null) is a
+      // valid Sunday (0), so presence has to be checked before parsing.
+      const rawWeekStartDay = readLS(scopedKey(WEEK_START_KEY, card.id));
+      const weekStartDay = rawWeekStartDay !== null ? Number(rawWeekStartDay) : NaN;
       const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
       const categoryFilterRaw = readJSON(scopedKey(CATEGORY_FILTER_KEY, card.id));
       return {
@@ -245,6 +251,7 @@ export async function buildFullBackup(
         createdAt: card.createdAt,
         currency: readLS(scopedKey(CURRENCY_KEY, card.id)),
         monthStartDay: monthStartDay >= 1 && monthStartDay <= 28 ? monthStartDay : null,
+        weekStartDay: weekStartDay >= 0 && weekStartDay <= 6 ? weekStartDay : null,
         customCategories: Array.isArray(customCategoriesRaw)
           ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
           : [],
@@ -531,6 +538,9 @@ export async function restoreFullBackup(
     if (cb.currency) writeLS(scopedKey(CURRENCY_KEY, target.id), cb.currency);
     if (typeof cb.monthStartDay === 'number' && cb.monthStartDay >= 1 && cb.monthStartDay <= 28) {
       writeLS(scopedKey(MONTH_START_KEY, target.id), String(cb.monthStartDay));
+    }
+    if (typeof cb.weekStartDay === 'number' && cb.weekStartDay >= 0 && cb.weekStartDay <= 6) {
+      writeLS(scopedKey(WEEK_START_KEY, target.id), String(cb.weekStartDay));
     }
     const customCategories = asArray<unknown>(cb.customCategories).filter(
       (c): c is string => typeof c === 'string',
