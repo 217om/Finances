@@ -71,7 +71,6 @@ import {
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
 import { combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
-import { buildOverview } from './lib/aggregate';
 import { buildGroups } from './lib/grouping';
 import { EXPENSE_CATEGORIES, makeResolver, mergeByKey, signatureOf } from './lib/categorize';
 import { makeSubResolver, UNSORTED } from './lib/subcategory';
@@ -582,11 +581,6 @@ export default function App() {
     });
   }, [transactions, categoryOf, subResolver, categoryFilter]);
 
-  const overview = useMemo(
-    () => buildOverview(visibleTransactions, monthStartDay, categoryOf, weekStartDay),
-    [visibleTransactions, monthStartDay, categoryOf, weekStartDay],
-  );
-
   // Every card's own resolver, built from its own rules merged with the
   // global ones — a card's transactions are always categorized by its own
   // effective rules, never the active card's. Always available (not gated on
@@ -677,14 +671,6 @@ export default function App() {
     );
   }, [combineEnabled, combinedAllData, combinedCategoryFilter]);
 
-  const combinedOverview = useMemo(
-    () =>
-      combinedDashboardTransactions && combinedAllData
-        ? buildOverview(combinedDashboardTransactions, monthStartDay, combinedAllData.categoryOf, weekStartDay)
-        : null,
-    [combinedDashboardTransactions, combinedAllData, monthStartDay, weekStartDay],
-  );
-
   // The read-only merged Transactions view — every card's transactions
   // together, unfiltered by any card's hidden-category filter (matching the
   // single-card Transactions tab, which is likewise never affected by it).
@@ -696,7 +682,6 @@ export default function App() {
   const dashboardTransactions =
     combineEnabled && combinedDashboardTransactions ? combinedDashboardTransactions : visibleTransactions;
   const dashboardCategoryOf = combineEnabled && combinedAllData ? combinedAllData.categoryOf : categoryOf;
-  const dashboardOverview = combineEnabled && combinedOverview ? combinedOverview : overview;
 
   // Advanced Settings shows every card's rules (plus the global ones) all
   // at once — cardRuleSets carries each card's own card-specific rules,
@@ -2412,7 +2397,6 @@ export default function App() {
               )
             ) : (
               <Dashboard
-                overview={dashboardOverview}
                 transactions={dashboardTransactions}
                 categoryOf={dashboardCategoryOf}
                 monthStartDay={monthStartDay}

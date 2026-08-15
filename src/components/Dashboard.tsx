@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Overview } from '../lib/aggregate';
-import { summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
-import { adjacentPeriod, cycleBounds, currentCyclePeriod } from '../lib/budget';
+import { buildOverview, startOfWeek, summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
+import { adjacentPeriod, cycleBounds, currentCyclePeriod, todayISO } from '../lib/budget';
 import type { Transaction } from '../types';
 import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
@@ -9,7 +8,6 @@ import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
 
 interface Props {
-  overview: Overview;
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
   monthStartDay: number;
@@ -35,25 +33,33 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 // Above this many bars the chart gets hard to read — just a nudge, not a limit.
 const DENSE_POINT_WARNING = 120;
 
-type PresetKey = 'mtd' | 'lastMonth' | 'last3';
+type PresetKey = 'wtd' | 'mtd' | 'lastMonth' | 'last3';
 
 const PRESETS: { key: PresetKey; label: string }[] = [
+  { key: 'wtd', label: 'Week to date' },
   { key: 'mtd', label: 'Month to date' },
   { key: 'lastMonth', label: 'Last month' },
   { key: 'last3', label: 'Last 3 months' },
 ];
 
-/** A preset's [from, to] span, in terms of the user's own pay-cycle start
- *  day rather than calendar months — "last month" is the cycle right before
- *  the one containing today, not the 1st-to-last-day calendar month. */
+/** A preset's [from, to] span, in terms of the user's own pay-cycle and week
+ *  start days rather than calendar months/weeks — "last month" is the cycle
+ *  right before the one containing today, not the 1st-to-last-day calendar
+ *  month, and "week to date" starts on the same weekday the Budgets tab's
+ *  own weekly columns do. */
 function presetRange(
   key: PresetKey,
   monthStartDay: number,
+  weekStartDay: number,
   bounds: { min: string; max: string },
 ): { from: string; to: string } {
-  const current = currentCyclePeriod(monthStartDay);
   const clamp = (d: string) => (d < bounds.min ? bounds.min : d > bounds.max ? bounds.max : d);
 
+  if (key === 'wtd') {
+    return { from: clamp(startOfWeek(todayISO(), weekStartDay)), to: bounds.max };
+  }
+
+  const current = currentCyclePeriod(monthStartDay);
   if (key === 'lastMonth') {
     const { from, to } = cycleBounds(adjacentPeriod(current, -1), monthStartDay);
     return { from: clamp(from), to: clamp(to) };
@@ -99,7 +105,6 @@ function periodBounds(key: string, granularity: Granularity, monthStartDay: numb
 }
 
 export default function Dashboard({
-  overview,
   transactions,
   categoryOf,
   monthStartDay,
@@ -128,14 +133,22 @@ export default function Dashboard({
     return { min, max };
   }, [transactions]);
 
-  const [from, setFrom] = useState(dateBounds.min);
-  const [to, setTo] = useState(dateBounds.max);
+  // Which preset (if any) is driving the range — null means the user typed a
+  // custom From/To. Tracking this explicitly (rather than comparing dates
+  // back against each preset's formula) means the active button stays
+  // correctly highlighted, and re-applies itself under the new definition,
+  // if the user changes their pay-cycle or week-start-day setting while a
+  // preset is selected.
+  const [preset, setPreset] = useState<PresetKey | null>('mtd');
+  const [from, setFrom] = useState(() => presetRange('mtd', monthStartDay, weekStartDay, dateBounds).from);
+  const [to, setTo] = useState(() => presetRange('mtd', monthStartDay, weekStartDay, dateBounds).to);
 
-  // Reset the window to the full range whenever the available span changes.
   useEffect(() => {
-    setFrom(dateBounds.min);
-    setTo(dateBounds.max);
-  }, [dateBounds.min, dateBounds.max]);
+    if (preset === null || !dateBounds.max) return;
+    const range = presetRange(preset, monthStartDay, weekStartDay, dateBounds);
+    setFrom(range.from);
+    setTo(range.to);
+  }, [preset, monthStartDay, weekStartDay, dateBounds.min, dateBounds.max]);
 
   const lo = from <= to ? from : to;
   const hi = from <= to ? to : from;
@@ -146,6 +159,14 @@ export default function Dashboard({
   const rangedTransactions = useMemo(
     () => transactions.filter((t) => t.date >= lo && t.date <= hi),
     [transactions, lo, hi],
+  );
+
+  // Driven by the same ranged transactions as the chart below, so the
+  // Overview cards always describe whatever the date range controls above
+  // are currently showing, not the card's whole history.
+  const overview = useMemo(
+    () => buildOverview(rangedTransactions, monthStartDay, categoryOf, weekStartDay),
+    [rangedTransactions, monthStartDay, categoryOf, weekStartDay],
   );
 
   const monthBuckets = useMemo(
@@ -162,15 +183,7 @@ export default function Dashboard({
 
   const applyPreset = (key: PresetKey) => {
     if (!dateBounds.max) return; // nothing to range over — see the empty-state below
-    const { from, to } = presetRange(key, monthStartDay, dateBounds);
-    setFrom(from);
-    setTo(to);
-  };
-
-  const activePreset = (key: PresetKey): boolean => {
-    if (!dateBounds.max) return false;
-    const { from, to } = presetRange(key, monthStartDay, dateBounds);
-    return lo === from && hi === to;
+    setPreset(key);
   };
 
   const rangedNote =
@@ -210,7 +223,7 @@ export default function Dashboard({
               <button
                 key={p.key}
                 type="button"
-                className={activePreset(p.key) ? 'seg-on' : ''}
+                className={preset === p.key ? 'seg-on' : ''}
                 onClick={() => applyPreset(p.key)}
               >
                 {p.label}
@@ -225,7 +238,10 @@ export default function Dashboard({
                 value={lo}
                 min={dateBounds.min}
                 max={dateBounds.max}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => {
+                  setPreset(null);
+                  setFrom(e.target.value);
+                }}
               />
             </label>
             <span className="range-dash">→</span>
@@ -236,7 +252,10 @@ export default function Dashboard({
                 value={hi}
                 min={dateBounds.min}
                 max={dateBounds.max}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={(e) => {
+                  setPreset(null);
+                  setTo(e.target.value);
+                }}
               />
             </label>
           </div>
