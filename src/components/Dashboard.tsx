@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Overview } from '../lib/aggregate';
 import { summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
+import { adjacentPeriod, cycleBounds, currentCyclePeriod } from '../lib/budget';
 import type { Transaction } from '../types';
 import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
@@ -34,24 +35,43 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 // Above this many bars the chart gets hard to read — just a nudge, not a limit.
 const DENSE_POINT_WARNING = 120;
 
-const PRESETS: { years: number | 'all'; label: string }[] = [
-  { years: 1, label: '1Y' },
-  { years: 2, label: '2Y' },
-  { years: 5, label: '5Y' },
-  { years: 'all', label: 'All' },
+type PresetKey = 'mtd' | 'lastMonth' | 'last3';
+
+const PRESETS: { key: PresetKey; label: string }[] = [
+  { key: 'mtd', label: 'Month to date' },
+  { key: 'lastMonth', label: 'Last month' },
+  { key: 'last3', label: 'Last 3 months' },
 ];
+
+/** A preset's [from, to] span, in terms of the user's own pay-cycle start
+ *  day rather than calendar months — "last month" is the cycle right before
+ *  the one containing today, not the 1st-to-last-day calendar month. */
+function presetRange(
+  key: PresetKey,
+  monthStartDay: number,
+  bounds: { min: string; max: string },
+): { from: string; to: string } {
+  const current = currentCyclePeriod(monthStartDay);
+  const clamp = (d: string) => (d < bounds.min ? bounds.min : d > bounds.max ? bounds.max : d);
+
+  if (key === 'lastMonth') {
+    const { from, to } = cycleBounds(adjacentPeriod(current, -1), monthStartDay);
+    return { from: clamp(from), to: clamp(to) };
+  }
+  // 'mtd' starts at the current cycle; 'last3' starts two cycles earlier, so
+  // it spans this partial cycle plus the two full ones before it. Both run
+  // through the latest data available, not all the way to today, so a card
+  // whose last import is old doesn't show a mostly-empty trailing gap.
+  const startPeriod = key === 'last3' ? adjacentPeriod(current, -2) : current;
+  const { from } = cycleBounds(startPeriod, monthStartDay);
+  return { from: clamp(from), to: bounds.max };
+}
 
 function ordinal(d: number): string {
   if (d % 10 === 1 && d !== 11) return `${d}st`;
   if (d % 10 === 2 && d !== 12) return `${d}nd`;
   if (d % 10 === 3 && d !== 13) return `${d}rd`;
   return `${d}th`;
-}
-
-/** "2024-06-15" shifted by whole years, e.g. addYears(x, -1) -> "2023-06-15". */
-function addYears(iso: string, n: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y + n, m - 1, d)).toISOString().slice(0, 10);
 }
 
 function addDaysISO(iso: string, delta: number): string {
@@ -140,23 +160,17 @@ export default function Dashboard({
       : summarizeByWeek(rangedTransactions, weekStartDay, categoryOf);
   }, [granularity, monthBuckets, rangedTransactions, weekStartDay, categoryOf]);
 
-  const applyPreset = (years: number | 'all') => {
+  const applyPreset = (key: PresetKey) => {
     if (!dateBounds.max) return; // nothing to range over — see the empty-state below
-    if (years === 'all') {
-      setFrom(dateBounds.min);
-    } else {
-      const candidate = addYears(dateBounds.max, -years);
-      setFrom(candidate < dateBounds.min ? dateBounds.min : candidate);
-    }
-    setTo(dateBounds.max);
+    const { from, to } = presetRange(key, monthStartDay, dateBounds);
+    setFrom(from);
+    setTo(to);
   };
 
-  const activePreset = (years: number | 'all'): boolean => {
-    if (!dateBounds.max || hi !== dateBounds.max) return false;
-    if (years === 'all') return lo === dateBounds.min;
-    const candidate = addYears(dateBounds.max, -years);
-    const expected = candidate < dateBounds.min ? dateBounds.min : candidate;
-    return lo === expected && dateBounds.min < expected;
+  const activePreset = (key: PresetKey): boolean => {
+    if (!dateBounds.max) return false;
+    const { from, to } = presetRange(key, monthStartDay, dateBounds);
+    return lo === from && hi === to;
   };
 
   const rangedNote =
@@ -194,10 +208,10 @@ export default function Dashboard({
           <div className="seg seg-sm">
             {PRESETS.map((p) => (
               <button
-                key={p.label}
+                key={p.key}
                 type="button"
-                className={activePreset(p.years) ? 'seg-on' : ''}
-                onClick={() => applyPreset(p.years)}
+                className={activePreset(p.key) ? 'seg-on' : ''}
+                onClick={() => applyPreset(p.key)}
               >
                 {p.label}
               </button>
