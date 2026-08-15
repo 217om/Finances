@@ -58,6 +58,10 @@ import {
   CATEGORY_FILTER_PRESETS_KEY,
   BUDGETS_KEY,
   BUDGET_ENTRIES_KEY,
+  CARD_TYPE_KEY,
+  BALANCE_CHECKPOINTS_KEY,
+  ASSETS_KEY,
+  ASSET_VALUES_KEY,
   THEME_KEY,
   COMBINE_KEY,
   COMBINE_CARD_ID,
@@ -125,6 +129,19 @@ import {
   type Budget,
   type BudgetEntry,
 } from './lib/budget';
+import BalancesPage from './components/BalancesPage';
+import {
+  isValidAssetValues,
+  isValidAssets,
+  isValidCheckpoints,
+  makeAsset,
+  makeAssetValueEntry,
+  makeCheckpoint,
+  type Asset,
+  type AssetValueEntry,
+  type BalanceCheckpoint,
+  type CardType,
+} from './lib/balances';
 
 type Theme = 'light' | 'dark';
 
@@ -374,8 +391,35 @@ export default function App() {
       return [];
     }
   });
+  // Balances: per-card type (debit/credit) and manual checkpoints, keyed by
+  // card id — plain localStorage reads, not IndexedDB, so (unlike rules or
+  // transactions) they don't need an async load effect; handleCreateCard and
+  // handleDeleteCard below keep these records in sync with the card list.
+  // Assets are global, like budgets. See lib/balances.ts.
+  const [cardTypes, setCardTypes] = useState<Record<string, CardType>>(() =>
+    Object.fromEntries(loadCards().map((c) => [c.id, loadCardType(c.id)])),
+  );
+  const [cardCheckpoints, setCardCheckpoints] = useState<Record<string, BalanceCheckpoint[]>>(() =>
+    Object.fromEntries(loadCards().map((c) => [c.id, loadCardCheckpoints(c.id)])),
+  );
+  const [assets, setAssets] = useState<Asset[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ASSETS_KEY) ?? '[]');
+      return isValidAssets(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [assetValues, setAssetValues] = useState<AssetValueEntry[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ASSET_VALUES_KEY) ?? '[]');
+      return isValidAssetValues(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'budgets' | 'advanced'>(
+  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced'>(
     'dashboard',
   );
   // Set only when jumping in from a chart click (Dashboard -> a specific
@@ -383,10 +427,13 @@ export default function App() {
   // the Transactions tab is never affected by category filters otherwise.
   const [txJump, setTxJump] = useState<{ from: string; to: string; token: number } | null>(null);
 
-  const handleTabClick = useCallback((next: 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'advanced') => {
-    setTxJump(null);
-    setView(next);
-  }, []);
+  const handleTabClick = useCallback(
+    (next: 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced') => {
+      setTxJump(null);
+      setView(next);
+    },
+    [],
+  );
 
   const handleDrillToTransactions = useCallback((from: string, to: string) => {
     setTxJump({ from, to, token: Date.now() });
@@ -594,6 +641,23 @@ export default function App() {
   const combinedSnapshots = useMemo<CardSnapshot[]>(
     () => (combineEnabled ? allCardSnapshots : []),
     [combineEnabled, allCardSnapshots],
+  );
+
+  // Every card's balance data for the Balances tab — always every card,
+  // regardless of combine mode, since it's inherently a cross-card overview.
+  // Reuses allCardSnapshots' already-loaded raw transactions (unfiltered by
+  // any card's own category filter, which balances shouldn't be affected by).
+  const balanceCardRows = useMemo(
+    () =>
+      allCardSnapshots.map((s) => ({
+        cardId: s.cardId,
+        cardName: s.cardName,
+        currency: s.currency,
+        type: cardTypes[s.cardId] ?? 'debit',
+        transactions: s.transactions,
+        checkpoints: cardCheckpoints[s.cardId] ?? [],
+      })),
+    [allCardSnapshots, cardTypes, cardCheckpoints],
   );
 
   // Unfiltered by any card's own hidden-category filter — every combined view
@@ -812,6 +876,113 @@ export default function App() {
       const next = setBudgetAmountForWeeks(prev, budgetId, weekStarts, amount);
       try {
         localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  // --- Balances ------------------------------------------------------------
+
+  const handleSetCardType = useCallback((cardId: string, type: CardType) => {
+    setCardTypes((prev) => ({ ...prev, [cardId]: type }));
+    try {
+      localStorage.setItem(scopedKey(CARD_TYPE_KEY, cardId), type);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleAddCheckpoint = useCallback((cardId: string, date: string, balance: number) => {
+    setCardCheckpoints((prev) => {
+      const next = { ...prev, [cardId]: [...(prev[cardId] ?? []), makeCheckpoint(date, balance)] };
+      try {
+        localStorage.setItem(scopedKey(BALANCE_CHECKPOINTS_KEY, cardId), JSON.stringify(next[cardId]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleDeleteCheckpoint = useCallback((cardId: string, checkpointId: string) => {
+    setCardCheckpoints((prev) => {
+      const next = { ...prev, [cardId]: (prev[cardId] ?? []).filter((c) => c.id !== checkpointId) };
+      try {
+        localStorage.setItem(scopedKey(BALANCE_CHECKPOINTS_KEY, cardId), JSON.stringify(next[cardId]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  // Assets apply at the total (all-cards) level, not per card — global, like
+  // budgets above.
+  const handleCreateAsset = useCallback((name: string) => {
+    setAssets((prev) => {
+      const next = [...prev, makeAsset(name)];
+      try {
+        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRenameAsset = useCallback((id: string, name: string) => {
+    setAssets((prev) => {
+      const trimmed = name.trim();
+      const next = trimmed ? prev.map((a) => (a.id === id ? { ...a, name: trimmed } : a)) : prev;
+      try {
+        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleDeleteAsset = useCallback((id: string) => {
+    setAssets((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      try {
+        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setAssetValues((prev) => {
+      const next = prev.filter((v) => v.assetId !== id);
+      try {
+        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleAddAssetValue = useCallback((assetId: string, date: string, value: number) => {
+    setAssetValues((prev) => {
+      const next = [...prev, makeAssetValueEntry(assetId, date, value)];
+      try {
+        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleDeleteAssetValue = useCallback((id: string) => {
+    setAssetValues((prev) => {
+      const next = prev.filter((v) => v.id !== id);
+      try {
+        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -1625,12 +1796,14 @@ export default function App() {
         filterPresets,
         budgets,
         budgetEntries,
+        assets,
+        assetValues,
       );
       downloadFullBackup(backup);
     } catch (e) {
       setToast(`Could not build the full backup. ${(e as Error).message ?? ''}`.trim());
     }
-  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets, budgets, budgetEntries]);
+  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues]);
 
   const handleRestoreFullBackup = useCallback(
     async (file: File) => {
@@ -1657,6 +1830,8 @@ export default function App() {
           filterPresets,
           budgets,
           budgetEntries,
+          assets,
+          assetValues,
         );
         setCards(result.cards);
         setActiveCardId(result.activeCardId);
@@ -1665,6 +1840,14 @@ export default function App() {
         setFilterPresets(result.filterPresets);
         setBudgets(result.budgets);
         setBudgetEntries(result.budgetEntries);
+        setAssets(result.assets);
+        setAssetValues(result.assetValues);
+        // Restored cards may carry a card type / balance checkpoints that
+        // restoreFullBackup already wrote to localStorage above — reload
+        // this in-memory record from every current card so the Balances tab
+        // reflects them immediately instead of only after a refresh.
+        setCardTypes(Object.fromEntries(result.cards.map((c) => [c.id, loadCardType(c.id)])));
+        setCardCheckpoints(Object.fromEntries(result.cards.map((c) => [c.id, loadCardCheckpoints(c.id)])));
         setGlobalRules(result.globalRules);
         setGlobalKeywordRules(result.globalKeywordRules);
         setGlobalSubRules(result.globalSubRules);
@@ -1674,7 +1857,7 @@ export default function App() {
         setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries],
+    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues],
   );
 
   const handleExportRulesBackup = useCallback(async () => {
@@ -1908,6 +2091,8 @@ export default function App() {
         const next = [...cards, card];
         setCards(next);
         saveCards(next);
+        setCardTypes((prev) => ({ ...prev, [card.id]: 'debit' }));
+        setCardCheckpoints((prev) => ({ ...prev, [card.id]: [] }));
         setActiveCardId(card.id);
         saveActiveCardId(card.id);
         setWizardOpen(false);
@@ -1944,6 +2129,8 @@ export default function App() {
         localStorage.removeItem(scopedKey(CURRENCY_KEY, id));
         localStorage.removeItem(scopedKey(MONTH_START_KEY, id));
         localStorage.removeItem(scopedKey(WEEK_START_KEY, id));
+        localStorage.removeItem(scopedKey(CARD_TYPE_KEY, id));
+        localStorage.removeItem(scopedKey(BALANCE_CHECKPOINTS_KEY, id));
       } catch {
         /* ignore */
       }
@@ -1951,6 +2138,8 @@ export default function App() {
       const next = cards.filter((c) => c.id !== id);
       setCards(next);
       saveCards(next);
+      setCardTypes((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== id)));
+      setCardCheckpoints((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== id)));
       if (id === activeCardId) {
         const fallback = next[0];
         setActiveCardId(fallback.id);
@@ -2044,6 +2233,13 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  className={view === 'balances' ? 'on' : ''}
+                  onClick={() => handleTabClick('balances')}
+                >
+                  Balances
+                </button>
+                <button
+                  type="button"
                   className={view === 'advanced' ? 'on' : ''}
                   onClick={() => handleTabClick('advanced')}
                 >
@@ -2128,6 +2324,20 @@ export default function App() {
                   <p className="muted">Switch on "Combine all cards" above to use Budgets.</p>
                 </section>
               )
+            ) : view === 'balances' ? (
+              <BalancesPage
+                cards={balanceCardRows}
+                assets={assets}
+                assetValues={assetValues}
+                onSetCardType={handleSetCardType}
+                onAddCheckpoint={handleAddCheckpoint}
+                onDeleteCheckpoint={handleDeleteCheckpoint}
+                onCreateAsset={handleCreateAsset}
+                onRenameAsset={handleRenameAsset}
+                onDeleteAsset={handleDeleteAsset}
+                onAddAssetValue={handleAddAssetValue}
+                onDeleteAssetValue={handleDeleteAssetValue}
+              />
             ) : view === 'advanced' ? (
               <AdvancedSettingsPage
                 cards={cards}
@@ -2282,6 +2492,30 @@ function loadSavedColumnMapping(cardId: string): ColumnMapping | null {
  *  dropped file's headers — guards against silently applying a stale
  *  mapping after a bank changes its export format. */
 function mappingFitsHeaders(mapping: ColumnMapping, headers: string[]): boolean {
-  const cols = [mapping.dateColumn, mapping.descriptionColumn, mapping.amountColumn, mapping.debitColumn, mapping.creditColumn];
+  const cols = [
+    mapping.dateColumn,
+    mapping.descriptionColumn,
+    mapping.amountColumn,
+    mapping.debitColumn,
+    mapping.creditColumn,
+    mapping.balanceColumn,
+  ];
   return cols.every((c) => !c || headers.includes(c));
+}
+
+function loadCardType(cardId: string): CardType {
+  try {
+    return localStorage.getItem(scopedKey(CARD_TYPE_KEY, cardId)) === 'credit' ? 'credit' : 'debit';
+  } catch {
+    return 'debit';
+  }
+}
+
+function loadCardCheckpoints(cardId: string): BalanceCheckpoint[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(scopedKey(BALANCE_CHECKPOINTS_KEY, cardId)) ?? '[]');
+    return isValidCheckpoints(raw) ? raw : [];
+  } catch {
+    return [];
+  }
 }

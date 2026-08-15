@@ -6,6 +6,10 @@ import { categorize } from './categorize';
 import {
   BUDGETS_KEY,
   BUDGET_ENTRIES_KEY,
+  CARD_TYPE_KEY,
+  BALANCE_CHECKPOINTS_KEY,
+  ASSETS_KEY,
+  ASSET_VALUES_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
@@ -50,6 +54,19 @@ import {
   type Budget,
   type BudgetEntry,
 } from './budget';
+import {
+  isValidAssetValues,
+  isValidAssets,
+  isValidCardType,
+  isValidCheckpoints,
+  mergeAssetValues,
+  mergeAssets,
+  mergeCheckpoints,
+  type Asset,
+  type AssetValueEntry,
+  type BalanceCheckpoint,
+  type CardType,
+} from './balances';
 
 const BACKUP_MAGIC = 'cashflow-backup';
 const BACKUP_VERSION = 1;
@@ -74,6 +91,9 @@ interface CardBackup {
   weekStartDay: number | null;
   customCategories: string[];
   categoryFilter: CategoryFilterState;
+  /** See lib/balances.ts — null cardType means "unset" (defaults to 'debit'). */
+  cardType: CardType | null;
+  checkpoints: BalanceCheckpoint[];
   transactions: Transaction[];
   rules: CategoryRule[];
   overrides: CategoryOverride[];
@@ -97,6 +117,10 @@ export interface FullBackupFile {
    *  lib/budget.ts and lib/cards' BUDGETS_KEY doc comment. */
   budgets: Budget[];
   budgetEntries: BudgetEntry[];
+  /** Free-form assets tracked for net worth, independent of any card — see
+   *  lib/balances.ts and lib/cards' ASSETS_KEY doc comment. */
+  assets: Asset[];
+  assetValues: AssetValueEntry[];
   /** Categorization rules shared by every card by default — see lib/cards'
    *  GLOBAL_RULES_DB doc comment. Card-specific overrides of these live
    *  inside each card's own CardBackup above. */
@@ -242,6 +266,8 @@ export async function buildFullBackup(
   filterPresets: CategoryFilterPreset[],
   budgets: Budget[],
   budgetEntries: BudgetEntry[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
 ): Promise<FullBackupFile> {
   const cardBackups = await Promise.all(
     cards.map(async (card): Promise<CardBackup> => {
@@ -260,6 +286,8 @@ export async function buildFullBackup(
       const weekStartDay = rawWeekStartDay !== null ? Number(rawWeekStartDay) : NaN;
       const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
       const categoryFilterRaw = readJSON(scopedKey(CATEGORY_FILTER_KEY, card.id));
+      const cardTypeRaw = readLS(scopedKey(CARD_TYPE_KEY, card.id));
+      const checkpointsRaw = readJSON(scopedKey(BALANCE_CHECKPOINTS_KEY, card.id));
       return {
         id: card.id,
         name: card.name,
@@ -272,6 +300,8 @@ export async function buildFullBackup(
           ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
           : [],
         categoryFilter: isValidCategoryFilter(categoryFilterRaw) ? categoryFilterRaw : defaultCategoryFilter(),
+        cardType: isValidCardType(cardTypeRaw) ? cardTypeRaw : null,
+        checkpoints: isValidCheckpoints(checkpointsRaw) ? checkpointsRaw : [],
         transactions,
         rules,
         overrides,
@@ -300,6 +330,8 @@ export async function buildFullBackup(
     filterPresets,
     budgets,
     budgetEntries,
+    assets,
+    assetValues,
     globalRules,
     globalKeywordRules,
     globalSubRules,
@@ -520,6 +552,8 @@ export async function restoreFullBackup(
   existingFilterPresets: CategoryFilterPreset[],
   existingBudgets: Budget[],
   existingBudgetEntries: BudgetEntry[],
+  existingAssets: Asset[],
+  existingAssetValues: AssetValueEntry[],
 ): Promise<{
   cards: Card[];
   activeCardId: string;
@@ -528,6 +562,8 @@ export async function restoreFullBackup(
   filterPresets: CategoryFilterPreset[];
   budgets: Budget[];
   budgetEntries: BudgetEntry[];
+  assets: Asset[];
+  assetValues: AssetValueEntry[];
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
@@ -573,6 +609,15 @@ export async function restoreFullBackup(
     if (isValidCategoryFilter(cb.categoryFilter)) {
       writeLS(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(cb.categoryFilter));
     }
+    if (isValidCardType(cb.cardType)) {
+      writeLS(scopedKey(CARD_TYPE_KEY, target.id), cb.cardType);
+    }
+    if (isValidCheckpoints(cb.checkpoints) && cb.checkpoints.length > 0) {
+      const existingRaw = readJSON(scopedKey(BALANCE_CHECKPOINTS_KEY, target.id));
+      const existingCheckpoints = isValidCheckpoints(existingRaw) ? existingRaw : [];
+      const mergedCheckpoints = mergeCheckpoints(existingCheckpoints, cb.checkpoints);
+      writeLS(scopedKey(BALANCE_CHECKPOINTS_KEY, target.id), JSON.stringify(mergedCheckpoints));
+    }
   }
 
   for (const note of asArray<unknown>(backup.notes)) {
@@ -603,6 +648,14 @@ export async function restoreFullBackup(
   const budgetEntries = mergeBudgetEntries(existingBudgetEntries, incomingBudgetEntries);
   writeLS(BUDGET_ENTRIES_KEY, JSON.stringify(budgetEntries));
 
+  const incomingAssets = isValidAssets(backup.assets) ? backup.assets : [];
+  const assets = mergeAssets(existingAssets, incomingAssets);
+  writeLS(ASSETS_KEY, JSON.stringify(assets));
+
+  const incomingAssetValues = isValidAssetValues(backup.assetValues) ? backup.assetValues : [];
+  const assetValues = mergeAssetValues(existingAssetValues, incomingAssetValues);
+  writeLS(ASSET_VALUES_KEY, JSON.stringify(assetValues));
+
   // Global rules (shared by every card by default) upsert into the shared
   // store the same additive way each card's own rules do above — nothing
   // existing is replaced, only added to or overwritten key-for-key.
@@ -623,6 +676,8 @@ export async function restoreFullBackup(
     filterPresets,
     budgets,
     budgetEntries,
+    assets,
+    assetValues,
     globalRules,
     globalKeywordRules,
     globalSubRules,

@@ -33,6 +33,7 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
   const [positiveMeans, setPositiveMeans] = useState<'income' | 'expense'>(
     detected?.positiveMeans ?? 'income',
   );
+  const [balanceColumn, setBalanceColumn] = useState(detected?.balanceColumn ?? NONE);
 
   const mapping: ColumnMapping = useMemo(
     () => ({
@@ -42,8 +43,9 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
       debitColumn: mode === 'split' ? debitColumn : undefined,
       creditColumn: mode === 'split' ? creditColumn : undefined,
       positiveMeans,
+      balanceColumn: balanceColumn || undefined,
     }),
-    [dateColumn, descriptionColumn, amountColumn, debitColumn, creditColumn, mode, positiveMeans],
+    [dateColumn, descriptionColumn, amountColumn, debitColumn, creditColumn, mode, positiveMeans, balanceColumn],
   );
 
   const valid =
@@ -85,6 +87,11 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
           <label className="field">
             <span>Description column</span>
             {columnSelect(descriptionColumn, setDescriptionColumn, true)}
+          </label>
+
+          <label className="field">
+            <span>Balance column (optional)</span>
+            {columnSelect(balanceColumn, setBalanceColumn, true)}
           </label>
 
           <div className="field field-full">

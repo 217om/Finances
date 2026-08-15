@@ -19,6 +19,11 @@ export interface Transaction {
   /** Optional free-text note the user attached to this one transaction. Empty
    *  by default; absent entirely rather than an empty string when unset. */
   note?: string;
+  /** Raw running balance from the statement's own Balance column, if it had
+   *  one, exactly as parsed with no sign adjustment. Absent when the
+   *  statement didn't include one. See lib/balances.ts for how this and any
+   *  manual checkpoints combine into a card's current balance. */
+  balance?: number;
 }
 
 /** How a raw spreadsheet maps onto our normalized fields. */
@@ -35,6 +40,8 @@ export interface ColumnMapping {
    * Most exports use positive = in, but some use positive = out.
    */
   positiveMeans: 'income' | 'expense';
+  /** Optional running-balance column, if the statement includes one. */
+  balanceColumn?: string;
 }
 
 /** Result of inspecting an uploaded file before committing it to storage. */

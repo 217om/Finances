@@ -3045,6 +3045,96 @@ th.num {
   font-size: 12px;
 }
 
+/* ---------- Balances ---------- */
+.balances-page {
+  display: grid;
+  gap: 16px;
+}
+.balance-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+.balance-caveat {
+  margin-top: 10px;
+}
+.balance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.balance-card {
+  background: rgba(235, 220, 196, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.balance-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.balance-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.balance-amount {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.balance-freshness {
+  margin-top: -6px;
+}
+.balance-entry-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(235, 220, 196, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.balance-entry-form .picker {
+  flex: 1;
+  min-width: 120px;
+}
+.balance-entry-actions {
+  display: flex;
+  gap: 6px;
+}
+.balance-history {
+  font-size: 12px;
+}
+.balance-history summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+.balance-history-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.balance-history-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.balance-history-remove {
+  font-size: 12px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 880px) {
   .container {

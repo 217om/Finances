@@ -41,6 +41,17 @@ export const CATEGORY_FILTER_PRESETS_KEY = 'cashflow.categoryFilterPresets';
  *  its weekly target amounts live under BUDGET_ENTRIES_KEY. */
 export const BUDGETS_KEY = 'cashflow.budgets';
 export const BUDGET_ENTRIES_KEY = 'cashflow.budgetEntries';
+/** 'debit' or 'credit', per card — see lib/balances.ts for why credit
+ *  balances are shown as negative debt. Defaults to 'debit' when unset. */
+export const CARD_TYPE_KEY = 'cashflow.cardType';
+/** Manually-entered balance snapshots per card, used to bring a card's
+ *  balance up to date when its statements don't include a running-balance
+ *  column — see lib/balances.ts. */
+export const BALANCE_CHECKPOINTS_KEY = 'cashflow.balanceCheckpoints';
+/** Free-form assets tracked for net worth, independent of any card. Global,
+ *  like the combined filter and budgets above. See lib/balances.ts. */
+export const ASSETS_KEY = 'cashflow.assets';
+export const ASSET_VALUES_KEY = 'cashflow.assetValues';
 
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */

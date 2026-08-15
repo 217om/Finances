@@ -25,6 +25,7 @@ const DESC_HINTS = [
 const AMOUNT_HINTS = [/^amount$/i, /amount/i, /value/i];
 const DEBIT_HINTS = [/debit/i, /withdrawal/i, /paid\s*out/i, /money\s*out/i, /^out$/i];
 const CREDIT_HINTS = [/credit/i, /deposit/i, /paid\s*in/i, /money\s*in/i, /^in$/i];
+const BALANCE_HINTS = [/running\s*balance/i, /available\s*balance/i, /closing\s*balance/i, /^balance$/i, /balance/i];
 
 function matchesAny(header: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(header.trim()));
@@ -275,6 +276,20 @@ export function detectMapping(
 
   if (!dateColumn || (!amountColumn && !haveSplit)) return null;
 
+  // Optional running-balance column, if the statement includes one. Only
+  // matched by name (not by number-shape, since a balance column looks just
+  // like any other numeric column) and never one already claimed above.
+  const balanceColumn = headers.find(
+    (h) =>
+      matchesAny(h, BALANCE_HINTS) &&
+      h !== dateColumn &&
+      h !== descriptionColumn &&
+      h !== amountColumn &&
+      h !== debitColumn &&
+      h !== creditColumn &&
+      numberScore(columnValues(rows, h)) > 0.5,
+  );
+
   return {
     dateColumn,
     descriptionColumn,
@@ -282,6 +297,7 @@ export function detectMapping(
     debitColumn: haveSplit ? debitColumn : undefined,
     creditColumn: haveSplit ? creditColumn : undefined,
     positiveMeans: 'income',
+    balanceColumn,
   };
 }
 
@@ -426,6 +442,13 @@ export function normalize(
     const month = date.slice(0, 7);
     const id = hashId(`${date}|${amount.toFixed(2)}|${description.toLowerCase()}`);
 
+    // Raw, unmodified value — no sign convention applied here (see lib/balances.ts).
+    let balance: number | undefined;
+    if (mapping.balanceColumn) {
+      const b = parseAmount(row[mapping.balanceColumn]);
+      if (!Number.isNaN(b)) balance = b;
+    }
+
     transactions.push({
       id,
       date,
@@ -434,6 +457,7 @@ export function normalize(
       month,
       source: parsed.fileName,
       importedAt,
+      ...(balance !== undefined ? { balance } : {}),
     });
   }
 
