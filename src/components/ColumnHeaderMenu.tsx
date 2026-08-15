@@ -89,17 +89,26 @@ export default function ColumnHeaderMenu({
     }
     const rect = btnRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // On the mobile card layout the header row wraps into several lines of
+    // filter chips — anchoring to just the clicked button's own bottom edge
+    // would land the popup on top of whichever chip wrapped onto the next
+    // line. Anchor to the whole header row's bottom instead, which unions
+    // every wrapped line, so the popup always clears all of them. On
+    // desktop (a real, unwrapped table header) this is the same value as
+    // the button's own bottom.
+    const rowRect = btnRef.current?.closest('tr')?.getBoundingClientRect() ?? rect;
     // Matches .col-menu-pop's max-width — used to keep the popup fully
     // on-screen on narrow viewports, since it isn't in the DOM yet at the
     // point we need to size it (the portal only mounts once `pos` is set).
     const POPUP_WIDTH = 280;
     const margin = 8;
+    const top = rowRect.bottom + 8;
     if (align === 'right') {
       const right = Math.min(window.innerWidth - rect.right, window.innerWidth - POPUP_WIDTH - margin);
-      setPos({ top: rect.bottom + 6, right: Math.max(margin, right) });
+      setPos({ top, right: Math.max(margin, right) });
     } else {
       const left = Math.min(rect.left, window.innerWidth - POPUP_WIDTH - margin);
-      setPos({ top: rect.bottom + 6, left: Math.max(margin, left) });
+      setPos({ top, left: Math.max(margin, left) });
     }
   }, [open, align]);
 
