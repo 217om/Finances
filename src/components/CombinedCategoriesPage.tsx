@@ -264,25 +264,25 @@ export default function CombinedCategoriesPage({
               <table className="data-table tx-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Card</th>
-                    <th>Description</th>
-                    <th className="num">Amount</th>
+                    <th className="tx-th-label">Date</th>
+                    <th className="tx-th-label">Card</th>
+                    <th className="tx-th-label">Description</th>
+                    <th className="num tx-th-label">Amount</th>
                     <th className="tx-note">Note</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rowsToShow.map((t) => (
                     <tr key={`${cardIdOf(t)}:${t.id}`}>
-                      <td className="tx-date">{t.date}</td>
-                      <td>
+                      <td className="tx-date" data-label="Date">{t.date}</td>
+                      <td data-label="Card">
                         <span className="tx-card-badge">{cardNameOf(t)}</span>
                       </td>
-                      <td className="desc" title={t.description}>
+                      <td className="desc" data-label="Description" title={t.description}>
                         {t.description || '—'}
                       </td>
-                      <td className="num neg">{money(t.amount)}</td>
-                      <td className="tx-note">
+                      <td className="num neg" data-label="Amount">{money(t.amount)}</td>
+                      <td className="tx-note" data-label="Note">
                         <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(cardIdOf(t), t.id, note)} />
                       </td>
                     </tr>

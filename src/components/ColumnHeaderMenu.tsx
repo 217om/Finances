@@ -89,11 +89,18 @@ export default function ColumnHeaderMenu({
     }
     const rect = btnRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setPos(
-      align === 'right'
-        ? { top: rect.bottom + 6, right: window.innerWidth - rect.right }
-        : { top: rect.bottom + 6, left: rect.left },
-    );
+    // Matches .col-menu-pop's max-width — used to keep the popup fully
+    // on-screen on narrow viewports, since it isn't in the DOM yet at the
+    // point we need to size it (the portal only mounts once `pos` is set).
+    const POPUP_WIDTH = 280;
+    const margin = 8;
+    if (align === 'right') {
+      const right = Math.min(window.innerWidth - rect.right, window.innerWidth - POPUP_WIDTH - margin);
+      setPos({ top: rect.bottom + 6, right: Math.max(margin, right) });
+    } else {
+      const left = Math.min(rect.left, window.innerWidth - POPUP_WIDTH - margin);
+      setPos({ top: rect.bottom + 6, left: Math.max(margin, left) });
+    }
   }, [open, align]);
 
   const hasFilter = filterValues !== undefined && onChangeSelected !== undefined;

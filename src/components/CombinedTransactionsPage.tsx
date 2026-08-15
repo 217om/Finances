@@ -262,20 +262,20 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
           <tbody>
             {shown.map((r) => (
               <tr key={`${r.cardId}:${r.t.id}`}>
-                <td className="tx-date">{r.t.date}</td>
-                <td>
+                <td className="tx-date" data-label="Date">{r.t.date}</td>
+                <td data-label="Card">
                   <span className="tx-card-badge">{r.cardName}</span>
                 </td>
-                <td className="desc" title={r.t.description}>
+                <td className="desc" data-label="Description" title={r.t.description}>
                   {r.t.description || '—'}
                 </td>
-                <td className="tx-cat">
+                <td className="tx-cat" data-label="Category">
                   <span className="catdot" style={{ background: categoryColor(r.category) }} />
                   {r.category}
                   {r.sub !== UNSORTED ? ` / ${r.sub}` : ''}
                 </td>
-                <td className={`num ${r.t.amount >= 0 ? 'pos' : 'neg'}`}>{money(r.t.amount)}</td>
-                <td className="tx-note">
+                <td className={`num ${r.t.amount >= 0 ? 'pos' : 'neg'}`} data-label="Amount">{money(r.t.amount)}</td>
+                <td className="tx-note" data-label="Note">
                   <TxNoteCell note={r.t.note} onSave={(note) => onSetTxNote(r.cardId, r.t.id, note)} />
                 </td>
                 <td className="tx-delete">

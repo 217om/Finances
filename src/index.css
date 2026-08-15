@@ -313,6 +313,13 @@ main.container {
   gap: 4px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 .tabs button {
   background: none;
@@ -327,6 +334,8 @@ main.container {
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .tabs button:hover {
   color: var(--text);
@@ -3241,5 +3250,179 @@ th.num {
   }
   .map-grid {
     grid-template-columns: 1fr;
+  }
+  .explorer-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .balance-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .header-inner {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .tabs-right {
+    margin-left: 0;
+  }
+  .card-selector-pop {
+    left: auto;
+    right: 0;
+  }
+  .rules-list {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ---------- Phone layout: tables become stacked cards ---------- */
+@media (max-width: 700px) {
+  .tx-table-wrap {
+    overflow-x: visible;
+  }
+  .tx-table {
+    min-width: 0;
+    width: 100%;
+  }
+  .tx-table,
+  .tx-table thead,
+  .tx-table tbody,
+  .tx-table tr,
+  .tx-table th,
+  .tx-table td {
+    display: block;
+    width: auto;
+  }
+  .tx-table thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    border-bottom: none;
+    padding: 0 0 12px;
+  }
+  .tx-table thead th {
+    position: static;
+    padding: 0;
+    border-bottom: none;
+  }
+  .tx-table thead th.tx-th-label,
+  .tx-table thead th.tx-note,
+  .tx-table thead th.tx-delete {
+    display: none;
+  }
+  .tx-table thead th.tx-th-menu {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .tx-table thead th.tx-th-menu .col-menu,
+  .tx-table thead th.tx-th-menu .col-menu-btn {
+    width: auto;
+  }
+  .tx-table thead th.tx-th-menu .col-menu-btn {
+    padding: 7px 12px;
+  }
+  .tx-table thead th.cattx-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tx-table thead th.cattx-check::after {
+    content: 'Select all shown';
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .tx-table tbody tr {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 12px;
+    margin-bottom: 10px;
+  }
+  .tx-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+  .tx-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--surface-2);
+    text-align: right;
+  }
+  .tx-table tbody tr td:last-child {
+    border-bottom: none;
+  }
+  .tx-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+  }
+  .tx-table tbody td.tx-cat,
+  .tx-table tbody td.desc {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .tx-table tbody td.tx-cat::before,
+  .tx-table tbody td.desc::before {
+    margin-bottom: 4px;
+  }
+  .tx-table tbody td.desc {
+    white-space: normal;
+    max-width: none;
+    overflow: visible;
+    text-overflow: unset;
+  }
+  .tx-table tbody td.cattx-check {
+    justify-content: flex-start;
+  }
+  .tx-table tbody td.tx-delete {
+    justify-content: flex-end;
+  }
+  .tx-table tbody td.tx-empty {
+    display: block;
+    text-align: center;
+  }
+  .tx-table tbody td.tx-empty::before {
+    content: none;
+  }
+  /* Bigger, better-spaced tap targets once rows aren't crammed into a
+     table row's fixed height. */
+  .tx-note-btn {
+    width: 34px;
+    height: 34px;
+  }
+  .tx-delete-btn {
+    width: 38px;
+    height: 38px;
+  }
+  .tx-reset {
+    width: 32px;
+    height: 32px;
+  }
+  .rules-reorder {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .rules-drag-handle {
+    width: 26px;
+    font-size: 18px;
+  }
+  .col-menu-list .filter-check,
+  .col-menu-selectall {
+    padding: 9px 6px;
   }
 }

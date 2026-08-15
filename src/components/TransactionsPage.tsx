@@ -282,11 +282,11 @@ export default function TransactionsPage({
           <tbody>
             {shown.map(({ t, cat }) => (
               <tr key={t.id}>
-                <td className="tx-date">{t.date}</td>
-                <td className="desc" title={t.description}>
+                <td className="tx-date" data-label="Date">{t.date}</td>
+                <td className="desc" data-label="Description" title={t.description}>
                   {t.description || '—'}
                 </td>
-                <td className="tx-cat">
+                <td className="tx-cat" data-label="Category">
                   <div className="tx-cat-cell">
                     <div className="tx-cat-edit">
                       <CategoryPicker
@@ -321,8 +321,8 @@ export default function TransactionsPage({
                     )}
                   </div>
                 </td>
-                <td className={`num ${t.amount >= 0 ? 'pos' : 'neg'}`}>{money(t.amount)}</td>
-                <td className="tx-note">
+                <td className={`num ${t.amount >= 0 ? 'pos' : 'neg'}`} data-label="Amount">{money(t.amount)}</td>
+                <td className="tx-note" data-label="Note">
                   <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
                 </td>
                 <td className="tx-delete">

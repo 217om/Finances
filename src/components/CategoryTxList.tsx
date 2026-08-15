@@ -168,33 +168,33 @@ export default function CategoryTxList({ parent, rows, sub, onAssign, onSetTxNot
               <th className="cattx-check">
                 <input type="checkbox" checked={allShownSelected} onChange={toggleAllShown} />
               </th>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Sub-category</th>
-              <th className="num">Amount</th>
+              <th className="tx-th-label">Date</th>
+              <th className="tx-th-label">Description</th>
+              <th className="tx-th-label">Sub-category</th>
+              <th className="num tx-th-label">Amount</th>
               <th className="tx-note">Note</th>
             </tr>
           </thead>
           <tbody>
             {shown.map(({ t, s }) => (
               <tr key={t.id} className={selected.has(t.id) ? 'row-selected' : ''}>
-                <td className="cattx-check">
+                <td className="cattx-check" data-label="Select">
                   <input
                     type="checkbox"
                     checked={selected.has(t.id)}
                     onChange={() => toggleOne(t.id)}
                   />
                 </td>
-                <td className="tx-date">{t.date}</td>
-                <td className="desc" title={t.description}>
+                <td className="tx-date" data-label="Date">{t.date}</td>
+                <td className="desc" data-label="Description" title={t.description}>
                   {t.description || '—'}
                 </td>
-                <td>
+                <td data-label="Sub-category">
                   <span className="catdot" style={{ background: s === UNSORTED ? '#cbd5e1' : categoryColor(`${parent}/${s}`) }} />
                   <span className={s === UNSORTED ? 'muted' : ''}>{s}</span>
                 </td>
-                <td className="num neg">{money(t.amount)}</td>
-                <td className="tx-note">
+                <td className="num neg" data-label="Amount">{money(t.amount)}</td>
+                <td className="tx-note" data-label="Note">
                   <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
                 </td>
               </tr>
