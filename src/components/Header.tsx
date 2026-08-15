@@ -1,6 +1,7 @@
 import type { Card } from '../lib/cards';
 import SettingsMenu from './SettingsMenu';
 import CardSelector from './CardSelector';
+import SyncStatusBadge from './SyncStatusBadge';
 
 interface Props {
   currency: string;
@@ -23,6 +24,7 @@ interface Props {
   onManageCards: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  onOpenCloudSync: () => void;
 }
 
 export default function Header({
@@ -46,6 +48,7 @@ export default function Header({
   onManageCards,
   theme,
   onToggleTheme,
+  onOpenCloudSync,
 }: Props) {
   return (
     <header className="header">
@@ -61,6 +64,7 @@ export default function Header({
         </div>
 
         <div className="header-actions">
+          <SyncStatusBadge />
           <CardSelector
             cards={cards}
             activeCardId={activeCardId}
@@ -86,6 +90,7 @@ export default function Header({
             onExportCSV={onExportCSV}
             onExportFullBackup={onExportFullBackup}
             onRestoreFullBackup={onRestoreFullBackup}
+            onOpenCloudSync={onOpenCloudSync}
           />
         </div>
       </div>

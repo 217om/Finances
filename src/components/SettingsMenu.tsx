@@ -17,6 +17,7 @@ interface Props {
   onExportCSV: () => void;
   onExportFullBackup: () => void;
   onRestoreFullBackup: (file: File) => void;
+  onOpenCloudSync: () => void;
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
@@ -46,6 +47,7 @@ export default function SettingsMenu({
   onExportCSV,
   onExportFullBackup,
   onRestoreFullBackup,
+  onOpenCloudSync,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -134,6 +136,9 @@ export default function SettingsMenu({
 
           <div className="menu-sep" />
           <div className="menu-section-label">Data</div>
+          <button type="button" role="menuitem" onClick={pick(onOpenCloudSync)}>
+            Cloud sync…
+          </button>
           <button type="button" role="menuitem" onClick={pick(onExportFullBackup)}>
             Download full backup (all cards)
           </button>

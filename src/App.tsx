@@ -100,7 +100,11 @@ import {
   downloadRulesBackup,
   parseRulesBackup,
   restoreRulesBackup,
+  type FullBackupFile,
 } from './lib/exportData';
+import CloudSyncSettings from './components/CloudSyncSettings';
+import { syncEngine } from './lib/cloudSync/syncEngine';
+import { useSyncState } from './lib/cloudSync/useSyncState';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
@@ -191,6 +195,9 @@ export default function App() {
   // this card's data even when the restore didn't change activeCardId.
   const [reloadToken, setReloadToken] = useState(0);
   const [cardManagerOpen, setCardManagerOpen] = useState(false);
+  const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
+  const cloudSyncState = useSyncState();
+  const cloudSyncActive = cloudSyncState.google.connected || cloudSyncState.onedrive.connected;
   const [cardBusy, setCardBusy] = useState(false);
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
@@ -1803,6 +1810,45 @@ export default function App() {
     }
   }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues]);
 
+  // Shared by both restore paths (a picked file, or a cloud sync download)
+  // once each has already confirmed with the user — applies a parsed backup
+  // to every piece of state it touches.
+  const applyRestoredBackup = useCallback(
+    async (backup: FullBackupFile) => {
+      const result = await restoreFullBackup(
+        backup,
+        cards,
+        combinedCategoryFilter,
+        filterPresets,
+        budgets,
+        budgetEntries,
+        assets,
+        assetValues,
+      );
+      setCards(result.cards);
+      setActiveCardId(result.activeCardId);
+      setTheme(result.theme);
+      setCombinedCategoryFilter(result.combinedCategoryFilter);
+      setFilterPresets(result.filterPresets);
+      setBudgets(result.budgets);
+      setBudgetEntries(result.budgetEntries);
+      setAssets(result.assets);
+      setAssetValues(result.assetValues);
+      // Restored cards may carry a card type / balance checkpoints that
+      // restoreFullBackup already wrote to localStorage above — reload
+      // this in-memory record from every current card so the Balances tab
+      // reflects them immediately instead of only after a refresh.
+      setCardTypes(Object.fromEntries(result.cards.map((c) => [c.id, loadCardType(c.id)])));
+      setCardCheckpoints(Object.fromEntries(result.cards.map((c) => [c.id, loadCardCheckpoints(c.id)])));
+      setGlobalRules(result.globalRules);
+      setGlobalKeywordRules(result.globalKeywordRules);
+      setGlobalSubRules(result.globalSubRules);
+      setReloadToken((n) => n + 1);
+      setToast('Full backup restored.');
+    },
+    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues],
+  );
+
   const handleRestoreFullBackup = useCallback(
     async (file: File) => {
       try {
@@ -1821,41 +1867,28 @@ export default function App() {
             'merged and new cards are added.',
         );
         if (!ok) return;
-        const result = await restoreFullBackup(
-          backup,
-          cards,
-          combinedCategoryFilter,
-          filterPresets,
-          budgets,
-          budgetEntries,
-          assets,
-          assetValues,
-        );
-        setCards(result.cards);
-        setActiveCardId(result.activeCardId);
-        setTheme(result.theme);
-        setCombinedCategoryFilter(result.combinedCategoryFilter);
-        setFilterPresets(result.filterPresets);
-        setBudgets(result.budgets);
-        setBudgetEntries(result.budgetEntries);
-        setAssets(result.assets);
-        setAssetValues(result.assetValues);
-        // Restored cards may carry a card type / balance checkpoints that
-        // restoreFullBackup already wrote to localStorage above — reload
-        // this in-memory record from every current card so the Balances tab
-        // reflects them immediately instead of only after a refresh.
-        setCardTypes(Object.fromEntries(result.cards.map((c) => [c.id, loadCardType(c.id)])));
-        setCardCheckpoints(Object.fromEntries(result.cards.map((c) => [c.id, loadCardCheckpoints(c.id)])));
-        setGlobalRules(result.globalRules);
-        setGlobalKeywordRules(result.globalKeywordRules);
-        setGlobalSubRules(result.globalSubRules);
-        setReloadToken((n) => n + 1);
-        setToast('Full backup restored.');
+        await applyRestoredBackup(backup);
       } catch (e) {
         setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues],
+    [applyRestoredBackup],
+  );
+
+  // The confirm dialog for a cloud restore lives in CloudSyncSettings
+  // itself (it already knows which provider and why), so this just parses
+  // and applies — no second confirmation here.
+  const handleRestoreFromCloudJSON = useCallback(
+    async (json: string) => {
+      try {
+        const backup = parseFullBackup(json);
+        await applyRestoredBackup(backup);
+      } catch (e) {
+        setError(`Could not restore the cloud backup. ${(e as Error).message ?? ''}`.trim());
+        throw e;
+      }
+    },
+    [applyRestoredBackup],
   );
 
   const handleExportRulesBackup = useCallback(async () => {
@@ -2164,6 +2197,85 @@ export default function App() {
     [cards, activeCardId, combineEnabled],
   );
 
+  // --- Cloud sync ------------------------------------------------------
+  // The sync engine builds its own upload payload on demand (reusing the
+  // exact same full-backup shape "Download full backup" produces) via a
+  // callback registered once here; the ref keeps that callback reading
+  // fresh values without re-registering it — and therefore without
+  // resetting any in-flight debounce — on every render.
+  const backupParamsRef = useRef({
+    cards,
+    activeCardId,
+    theme,
+    combinedCategoryFilter,
+    filterPresets,
+    budgets,
+    budgetEntries,
+    assets,
+    assetValues,
+  });
+  useEffect(() => {
+    backupParamsRef.current = {
+      cards,
+      activeCardId,
+      theme,
+      combinedCategoryFilter,
+      filterPresets,
+      budgets,
+      budgetEntries,
+      assets,
+      assetValues,
+    };
+  });
+
+  useEffect(() => {
+    syncEngine.configurePayloadSource(async () => {
+      const p = backupParamsRef.current;
+      const backup = await buildFullBackup(
+        p.cards,
+        p.activeCardId,
+        p.theme,
+        p.combinedCategoryFilter,
+        p.filterPresets,
+        p.budgets,
+        p.budgetEntries,
+        p.assets,
+        p.assetValues,
+      );
+      return JSON.stringify(backup);
+    });
+  }, []);
+
+  // Broad on purpose: any of these changing means the next full-backup
+  // payload would differ, which is the only signal a debounced "does
+  // anything need pushing" check actually needs.
+  useEffect(() => {
+    syncEngine.notifyChange();
+  }, [
+    transactions,
+    rules,
+    overrides,
+    keywordRules,
+    subRules,
+    subOverrides,
+    customCategories,
+    categoryFilter,
+    cards,
+    otherCardsData,
+    budgets,
+    budgetEntries,
+    assets,
+    assetValues,
+    cardTypes,
+    cardCheckpoints,
+    combinedCategoryFilter,
+    filterPresets,
+    globalRules,
+    globalKeywordRules,
+    globalSubRules,
+    theme,
+  ]);
+
   const hasData = transactions.length > 0;
   const canCategorize = grouping.groups.length > 0 || grouping.leftovers.length > 0;
 
@@ -2190,6 +2302,7 @@ export default function App() {
         onManageCards={() => setCardManagerOpen(true)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        onOpenCloudSync={() => setCloudSyncOpen(true)}
       />
 
       <main className="container">
@@ -2451,10 +2564,16 @@ export default function App() {
         />
       )}
 
+      {cloudSyncOpen && (
+        <CloudSyncSettings onClose={() => setCloudSyncOpen(false)} onRestoreFromCloud={handleRestoreFromCloudJSON} />
+      )}
+
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
       <footer className="footer">
-        Your statements never leave this browser. All parsing and storage happens on your device.
+        {cloudSyncActive
+          ? 'Cloud sync is on — your data also backs up to your connected storage. Manage it in Settings.'
+          : 'Your statements never leave this browser. All parsing and storage happens on your device.'}
       </footer>
 
       <NotesWidget />
