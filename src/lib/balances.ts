@@ -28,10 +28,17 @@ export interface BalanceCheckpoint {
   createdAt: number;
 }
 
+export type AssetKind = 'asset' | 'liability';
+
 export interface Asset {
   id: string;
   name: string;
   createdAt: number;
+  /** 'liability' (a loan, mortgage, or other debt not tied to a card) counts
+   *  negative toward net worth, the same way a credit card does — see
+   *  signedAssetValue. Absent on assets created before this existed, which
+   *  means 'asset'. */
+  kind?: AssetKind;
 }
 
 /** One historical value for an asset. Entries accumulate over time so the
@@ -70,8 +77,8 @@ export function makeCheckpoint(date: string, balance: number): BalanceCheckpoint
   return { id: `bal_${randomId()}`, date, balance, createdAt: Date.now() };
 }
 
-export function makeAsset(name: string): Asset {
-  return { id: `asset_${randomId()}`, name: name.trim() || 'New asset', createdAt: Date.now() };
+export function makeAsset(name: string, kind: AssetKind = 'asset'): Asset {
+  return { id: `asset_${randomId()}`, name: name.trim() || 'New asset', createdAt: Date.now(), kind };
 }
 
 export function makeAssetValueEntry(assetId: string, date: string, value: number): AssetValueEntry {
@@ -83,6 +90,13 @@ export function makeAssetValueEntry(assetId: string, date: string, value: number
  *  happened to carry; debit cards pass through unchanged. */
 export function signedBalance(type: CardType, rawMagnitude: number): number {
   return type === 'credit' ? -Math.abs(rawMagnitude) : rawMagnitude;
+}
+
+/** Same convention as signedBalance, for assets: a liability always counts
+ *  as debt (negative), regardless of the sign entered; a plain asset passes
+ *  through unchanged. */
+export function signedAssetValue(kind: AssetKind | undefined, rawMagnitude: number): number {
+  return kind === 'liability' ? -Math.abs(rawMagnitude) : rawMagnitude;
 }
 
 /**
@@ -193,10 +207,27 @@ export function netWorthHistory(
     );
     const assetTotal = assets.reduce((a, asset) => {
       const entry = latestAssetValue(valuesByAsset.get(asset.id) ?? [], asset.id, date);
-      return a + (entry?.value ?? 0);
+      return a + (entry ? signedAssetValue(asset.kind, entry.value) : 0);
     }, 0);
     return { date, amount: cardTotal + assetTotal };
   });
+}
+
+/** One card's own balance over time, same shape and step semantics as
+ *  netWorthHistory but scoped to a single card — feeds its sparkline. */
+export function cardBalanceHistory(
+  type: CardType,
+  transactions: Transaction[],
+  checkpoints: BalanceCheckpoint[],
+): NetWorthPoint[] {
+  const dates = new Set<string>();
+  for (const t of transactions) dates.add(t.date);
+  for (const cp of checkpoints) dates.add(cp.date);
+  if (dates.size === 0) return [];
+
+  return [...dates]
+    .sort()
+    .map((date) => ({ date, amount: cardBalanceAsOf(type, transactions, checkpoints, date).amount ?? 0 }));
 }
 
 // --- Validation & merge (for full-backup restore) ----------------------------
@@ -224,7 +255,11 @@ export function isValidAssets(v: unknown): v is Asset[] {
   return v.every((a) => {
     if (!a || typeof a !== 'object') return false;
     const asset = a as Record<string, unknown>;
-    return typeof asset.id === 'string' && typeof asset.name === 'string';
+    return (
+      typeof asset.id === 'string' &&
+      typeof asset.name === 'string' &&
+      (asset.kind === undefined || asset.kind === 'asset' || asset.kind === 'liability')
+    );
   });
 }
 

@@ -3097,6 +3097,9 @@ th.num {
 .balance-freshness {
   margin-top: -6px;
 }
+.sparkline {
+  margin: 2px -4px -2px;
+}
 .balance-entry-form {
   display: flex;
   flex-wrap: wrap;

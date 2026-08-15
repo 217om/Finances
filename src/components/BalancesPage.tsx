@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import {
+  cardBalanceHistory,
   computeCardBalance,
   latestAssetValue,
   netWorthHistory,
+  signedAssetValue,
   type Asset,
+  type AssetKind,
   type AssetValueEntry,
   type BalanceCheckpoint,
   type CardType,
@@ -13,6 +16,7 @@ import {
 import { todayISO } from '../lib/budget';
 import { dayLabel, money } from '../lib/format';
 import NetWorthChart from './NetWorthChart';
+import Sparkline from './Sparkline';
 
 export interface CardBalanceRow {
   cardId: string;
@@ -32,6 +36,7 @@ interface Props {
   onDeleteCheckpoint: (cardId: string, checkpointId: string) => void;
   onCreateAsset: (name: string) => void;
   onRenameAsset: (id: string, name: string) => void;
+  onSetAssetKind: (id: string, kind: AssetKind) => void;
   onDeleteAsset: (id: string) => void;
   onAddAssetValue: (assetId: string, date: string, value: number) => void;
   onDeleteAssetValue: (id: string) => void;
@@ -123,6 +128,10 @@ function CardBalanceCard({
     () => [...card.checkpoints].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
     [card.checkpoints],
   );
+  const history = useMemo(
+    () => cardBalanceHistory(card.type, card.transactions, card.checkpoints),
+    [card.type, card.transactions, card.checkpoints],
+  );
 
   return (
     <div className="balance-card">
@@ -150,6 +159,7 @@ function CardBalanceCard({
         {computed.amount === null ? '—' : money(computed.amount)}
       </div>
       <div className="muted balance-freshness">{freshnessLabel(computed)}</div>
+      {history.length >= 2 && <Sparkline points={history} positive={computed.amount === null || computed.amount >= 0} />}
 
       {entering ? (
         <AmountEntryForm
@@ -195,6 +205,7 @@ function AssetRow({
   asset,
   history,
   onRename,
+  onSetKind,
   onDelete,
   onAddValue,
   onDeleteValue,
@@ -202,6 +213,7 @@ function AssetRow({
   asset: Asset;
   history: AssetValueEntry[];
   onRename: (name: string) => void;
+  onSetKind: (kind: AssetKind) => void;
   onDelete: () => void;
   onAddValue: (date: string, value: number) => void;
   onDeleteValue: (id: string) => void;
@@ -209,12 +221,14 @@ function AssetRow({
   const [renaming, setRenaming] = useState(false);
   const [nameText, setNameText] = useState(asset.name);
   const [entering, setEntering] = useState(false);
+  const kind: AssetKind = asset.kind ?? 'asset';
 
   const sorted = useMemo(
     () => [...history].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
     [history],
   );
   const latest = sorted[0] ?? null;
+  const signedLatest = latest ? signedAssetValue(kind, latest.value) : null;
 
   const commitName = () => {
     setRenaming(false);
@@ -249,16 +263,24 @@ function AssetRow({
           ✕
         </button>
       </div>
+      <div className="seg seg-sm">
+        <button type="button" className={kind === 'asset' ? 'seg-on' : ''} onClick={() => onSetKind('asset')}>
+          Asset
+        </button>
+        <button type="button" className={kind === 'liability' ? 'seg-on' : ''} onClick={() => onSetKind('liability')}>
+          Liability
+        </button>
+      </div>
 
-      <div className={`balance-amount ${latest ? (latest.value >= 0 ? 'pos' : 'neg') : ''}`}>
-        {latest ? money(latest.value) : '—'}
+      <div className={`balance-amount ${signedLatest === null ? '' : signedLatest >= 0 ? 'pos' : 'neg'}`}>
+        {signedLatest === null ? '—' : money(signedLatest)}
       </div>
       <div className="muted balance-freshness">{latest ? `As of ${dayLabel(latest.date)}` : 'No value entered yet'}</div>
 
       {entering ? (
         <AmountEntryForm
-          amountLabel="Value"
-          allowNegative
+          amountLabel={kind === 'liability' ? 'How much do you owe on this?' : 'Value'}
+          allowNegative={kind === 'asset'}
           onSubmit={(date, value) => {
             onAddValue(date, value);
             setEntering(false);
@@ -307,6 +329,7 @@ export default function BalancesPage({
   onDeleteCheckpoint,
   onCreateAsset,
   onRenameAsset,
+  onSetAssetKind,
   onDeleteAsset,
   onAddAssetValue,
   onDeleteAssetValue,
@@ -327,7 +350,10 @@ export default function BalancesPage({
   const anyUnknown = computedByCard.some((c) => c.computed.amount === null);
 
   const totalCardBalances = computedByCard.reduce((a, c) => a + (c.computed.amount ?? 0), 0);
-  const totalAssetValues = assets.reduce((a, asset) => a + (latestAssetValue(assetValues, asset.id)?.value ?? 0), 0);
+  const totalAssetValues = assets.reduce((a, asset) => {
+    const latest = latestAssetValue(assetValues, asset.id);
+    return a + (latest ? signedAssetValue(asset.kind, latest.value) : 0);
+  }, 0);
   const netWorth = totalCardBalances + totalAssetValues;
 
   const history = useMemo(() => netWorthHistory(cards, assets, assetValues), [cards, assets, assetValues]);
@@ -408,6 +434,7 @@ export default function BalancesPage({
               asset={asset}
               history={assetValues.filter((v) => v.assetId === asset.id)}
               onRename={(name) => onRenameAsset(asset.id, name)}
+              onSetKind={(kind) => onSetAssetKind(asset.id, kind)}
               onDelete={() => onDeleteAsset(asset.id)}
               onAddValue={(date, value) => onAddAssetValue(asset.id, date, value)}
               onDeleteValue={(id) => onDeleteAssetValue(id)}

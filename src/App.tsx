@@ -138,6 +138,7 @@ import {
   makeAssetValueEntry,
   makeCheckpoint,
   type Asset,
+  type AssetKind,
   type AssetValueEntry,
   type BalanceCheckpoint,
   type CardType,
@@ -936,6 +937,18 @@ export default function App() {
     setAssets((prev) => {
       const trimmed = name.trim();
       const next = trimmed ? prev.map((a) => (a.id === id ? { ...a, name: trimmed } : a)) : prev;
+      try {
+        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSetAssetKind = useCallback((id: string, kind: AssetKind) => {
+    setAssets((prev) => {
+      const next = prev.map((a) => (a.id === id ? { ...a, kind } : a));
       try {
         localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
       } catch {
@@ -2334,6 +2347,7 @@ export default function App() {
                 onDeleteCheckpoint={handleDeleteCheckpoint}
                 onCreateAsset={handleCreateAsset}
                 onRenameAsset={handleRenameAsset}
+                onSetAssetKind={handleSetAssetKind}
                 onDeleteAsset={handleDeleteAsset}
                 onAddAssetValue={handleAddAssetValue}
                 onDeleteAssetValue={handleDeleteAssetValue}
