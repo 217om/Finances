@@ -3,6 +3,7 @@ import type { Transaction } from '../types';
 import {
   computeCardBalance,
   latestAssetValue,
+  netWorthHistory,
   type Asset,
   type AssetValueEntry,
   type BalanceCheckpoint,
@@ -11,6 +12,7 @@ import {
 } from '../lib/balances';
 import { todayISO } from '../lib/budget';
 import { dayLabel, money } from '../lib/format';
+import NetWorthChart from './NetWorthChart';
 
 export interface CardBalanceRow {
   cardId: string;
@@ -328,6 +330,8 @@ export default function BalancesPage({
   const totalAssetValues = assets.reduce((a, asset) => a + (latestAssetValue(assetValues, asset.id)?.value ?? 0), 0);
   const netWorth = totalCardBalances + totalAssetValues;
 
+  const history = useMemo(() => netWorthHistory(cards, assets, assetValues), [cards, assets, assetValues]);
+
   const commitNewAsset = () => {
     setCreatingAsset(false);
     const name = newAssetName.trim();
@@ -369,6 +373,9 @@ export default function BalancesPage({
             {anyUnknown && 'One or more balances are unknown and counted as zero until you enter one.'}
           </p>
         )}
+        <div className="balance-chart">
+          <NetWorthChart points={history} />
+        </div>
       </section>
 
       <section className="panel balance-cards-panel">

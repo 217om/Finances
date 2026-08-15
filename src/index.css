@@ -3056,10 +3056,16 @@ th.num {
 .balance-caveat {
   margin-top: 10px;
 }
+.balance-chart {
+  margin-top: 16px;
+}
 .balance-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
+}
+.balance-assets-panel .budget-add-row {
+  margin-top: 14px;
 }
 .balance-card {
   background: rgba(235, 220, 196, 0.04);
@@ -3102,8 +3108,16 @@ th.num {
   border-radius: 8px;
 }
 .balance-entry-form .picker {
-  flex: 1;
-  min-width: 120px;
+  flex: 1 1 140px;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.balance-entry-form .picker input {
+  width: 100%;
+  box-sizing: border-box;
 }
 .balance-entry-actions {
   display: flex;

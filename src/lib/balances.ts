@@ -139,6 +139,66 @@ export function computeCardBalance(
   };
 }
 
+/** Same reconciliation as computeCardBalance, but as of a given date rather
+ *  than "now" — everything dated after `asOf` is ignored, as if it hadn't
+ *  happened yet. Powers the net worth history chart. */
+function cardBalanceAsOf(
+  type: CardType,
+  transactions: Transaction[],
+  checkpoints: BalanceCheckpoint[],
+  asOf: string,
+): ComputedBalance {
+  return computeCardBalance(
+    type,
+    transactions.filter((t) => t.date <= asOf),
+    checkpoints.filter((c) => c.date <= asOf),
+  );
+}
+
+export interface NetWorthPoint {
+  date: string;
+  amount: number;
+}
+
+/**
+ * Net worth over time: one point per date anything actually changed (a
+ * transaction, a checkpoint, or an asset value update) across everything
+ * being tracked. Between two points the true value never moved, so a chart
+ * should draw this as a step, not a smoothed line. Each card's contribution
+ * on a given date is recomputed from scratch as of that date (see
+ * cardBalanceAsOf); each asset simply carries forward its latest value on or
+ * before that date, since nothing between manual updates could have changed
+ * it.
+ */
+export function netWorthHistory(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+): NetWorthPoint[] {
+  const dates = new Set<string>();
+  for (const c of cards) {
+    for (const t of c.transactions) dates.add(t.date);
+    for (const cp of c.checkpoints) dates.add(cp.date);
+  }
+  for (const v of assetValues) dates.add(v.date);
+  if (dates.size === 0) return [];
+
+  const sortedDates = [...dates].sort();
+  const valuesByAsset = new Map(assets.map((a) => [a.id, assetValues.filter((v) => v.assetId === a.id)]));
+
+  return sortedDates.map((date) => {
+    const cardTotal = cards.reduce(
+      (a, c) => a + (cardBalanceAsOf(c.type, c.transactions, c.checkpoints, date).amount ?? 0),
+      0,
+    );
+    const assetTotal = assets.reduce((a, asset) => {
+      const entry = latestAssetValue(valuesByAsset.get(asset.id) ?? [], asset.id, date);
+      return a + (entry?.value ?? 0);
+    }, 0);
+    return { date, amount: cardTotal + assetTotal };
+  });
+}
+
 // --- Validation & merge (for full-backup restore) ----------------------------
 
 export function isValidCardType(v: unknown): v is CardType {
@@ -204,11 +264,17 @@ export function mergeAssetValues(existing: AssetValueEntry[], incoming: AssetVal
   return [...byId.values()];
 }
 
-/** The latest value on or before today for one asset, or null if it has none. */
-export function latestAssetValue(entries: AssetValueEntry[], assetId: string): AssetValueEntry | null {
+/** The latest value on or before `asOf` (default: no cutoff, i.e. "now") for
+ *  one asset, or null if it has none yet as of that date. */
+export function latestAssetValue(
+  entries: AssetValueEntry[],
+  assetId: string,
+  asOf?: string,
+): AssetValueEntry | null {
   let best: AssetValueEntry | null = null;
   for (const e of entries) {
     if (e.assetId !== assetId) continue;
+    if (asOf !== undefined && e.date > asOf) continue;
     if (!best || e.date >= best.date) best = e;
   }
   return best;
