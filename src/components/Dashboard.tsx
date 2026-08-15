@@ -238,7 +238,6 @@ export default function Dashboard({
 
       <div className="section-label">
         <span>Overview</span>
-        <span className="muted">All time</span>
       </div>
       {hiddenCount > 0 && (
         <p className="muted hidden-note">

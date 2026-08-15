@@ -30,6 +30,16 @@ export interface Overview {
   savingsRate: number; // totalNet / totalIncome
   /** % change of the trailing 6-month avg net vs the prior 6 months. */
   netTrendPct: number | null;
+  /** The most recent calendar month with activity, and the one right before
+   *  it (possibly a quiet, zero-activity month) — for a simple "vs last
+   *  month" comparison, distinct from the longer 6-month trend above. */
+  latestMonth: MonthlySummary | null;
+  priorMonth: MonthlySummary | null;
+  monthChangePct: number | null;
+  /** Same idea, one week at a time. */
+  latestWeek: MonthlySummary | null;
+  priorWeek: MonthlySummary | null;
+  weekChangePct: number | null;
   sources: SourceSummary[];
   txCount: number;
 }
@@ -228,11 +238,20 @@ export function categoryTotals(months: MonthlySummary[]): { category: string; am
     .sort((a, b) => b.amount - a.amount);
 }
 
+/** The change from `prior` to `latest`, as a % of `prior`'s magnitude — null
+ *  when either side is missing or prior is exactly zero (nothing to compare
+ *  a percentage against). */
+function changePct(latest: MonthlySummary | null, prior: MonthlySummary | null): number | null {
+  if (!latest || !prior || prior.net === 0) return null;
+  return ((latest.net - prior.net) / Math.abs(prior.net)) * 100;
+}
+
 /** Compute the whole-history overview from a flat transaction list. */
 export function buildOverview(
   txs: Transaction[],
   startDay = 1,
   categoryOf: CategoryOf = defaultCategoryOf,
+  weekStartDay = 1,
 ): Overview {
   const months = summarizeByMonth(txs, startDay, categoryOf);
   const active = months.filter((m) => m.txCount > 0);
@@ -262,6 +281,15 @@ export function buildOverview(
     }
   }
 
+  // The gap-filled arrays' last entry is always a real (non-empty) period by
+  // construction (see summarizeByMonth/summarizeByWeek) — the one before it
+  // may be a genuine quiet stretch with no activity at all.
+  const latestMonth = months.length > 0 ? months[months.length - 1] : null;
+  const priorMonth = months.length > 1 ? months[months.length - 2] : null;
+  const weeks = summarizeByWeek(txs, weekStartDay, categoryOf);
+  const latestWeek = weeks.length > 0 ? weeks[weeks.length - 1] : null;
+  const priorWeek = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+
   return {
     months,
     totalIncome,
@@ -274,6 +302,12 @@ export function buildOverview(
     worstMonth,
     savingsRate: totalIncome > 0 ? (totalNet / totalIncome) * 100 : 0,
     netTrendPct,
+    latestMonth,
+    priorMonth,
+    monthChangePct: changePct(latestMonth, priorMonth),
+    latestWeek,
+    priorWeek,
+    weekChangePct: changePct(latestWeek, priorWeek),
     sources: summarizeSources(txs),
     txCount: txs.length,
   };

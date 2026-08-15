@@ -849,7 +849,7 @@ main.container {
 }
 .kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
 }
 .kpi {
@@ -887,6 +887,9 @@ main.container {
 .kpi-sub.neg,
 .kpi-value.neg {
   color: var(--neg);
+}
+.kpi-value.accent {
+  color: var(--accent);
 }
 .kpi-value.neutral {
   color: var(--text);

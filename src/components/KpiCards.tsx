@@ -1,5 +1,5 @@
 import type { Overview } from '../lib/aggregate';
-import { money, monthLabel, percent } from '../lib/format';
+import { money, percent } from '../lib/format';
 
 interface Props {
   overview: Overview;
@@ -7,54 +7,53 @@ interface Props {
 
 export default function KpiCards({ overview }: Props) {
   const {
+    totalIncome,
+    totalExpenses,
     totalNet,
-    avgMonthlyNet,
     avgMonthlyIncome,
     avgMonthlyExpenses,
     savingsRate,
-    netTrendPct,
-    bestMonth,
-    worstMonth,
+    latestWeek,
+    priorWeek,
+    weekChangePct,
+    latestMonth,
+    priorMonth,
+    monthChangePct,
   } = overview;
 
   return (
     <section className="kpis">
       <Kpi
-        label="Net saved"
+        label="Income"
+        value={money(totalIncome)}
+        tone="pos"
+        sub={`avg ${money(avgMonthlyIncome, { compact: true })} / mo`}
+      />
+      <Kpi
+        label="Expenses"
+        value={money(totalExpenses)}
+        tone="accent"
+        sub={`avg ${money(avgMonthlyExpenses, { compact: true })} / mo`}
+      />
+      <Kpi
+        label="Net"
         value={money(totalNet)}
         tone={totalNet >= 0 ? 'pos' : 'neg'}
-        sub="across all statements"
+        sub={`${savingsRate.toFixed(0)}% of income kept`}
       />
       <Kpi
-        label="Avg net / month"
-        value={money(avgMonthlyNet)}
-        tone={avgMonthlyNet >= 0 ? 'pos' : 'neg'}
-        sub={netTrendPct !== null ? `${percent(netTrendPct)} vs prior 6 mo` : 'typical month'}
-        subTone={netTrendPct === null ? undefined : netTrendPct >= 0 ? 'pos' : 'neg'}
+        label="Latest week"
+        value={latestWeek ? money(latestWeek.net) : '—'}
+        tone={!latestWeek ? 'neutral' : latestWeek.net >= 0 ? 'pos' : 'neg'}
+        sub={weekChangePct !== null ? `${percent(weekChangePct)} vs prior week` : priorWeek ? 'no change' : 'not enough history yet'}
+        subTone={weekChangePct === null ? undefined : weekChangePct >= 0 ? 'pos' : 'neg'}
       />
       <Kpi
-        label="Savings rate"
-        value={`${savingsRate.toFixed(0)}%`}
-        tone={savingsRate >= 0 ? 'pos' : 'neg'}
-        sub="of income kept"
-      />
-      <Kpi
-        label="Avg income / month"
-        value={money(avgMonthlyIncome)}
-        tone="neutral"
-        sub={`spend ${money(avgMonthlyExpenses)}`}
-      />
-      <Kpi
-        label="Best month"
-        value={bestMonth ? money(bestMonth.net) : '—'}
-        tone={bestMonth && bestMonth.net < 0 ? 'neg' : 'pos'}
-        sub={bestMonth ? monthLabel(bestMonth.month) : ''}
-      />
-      <Kpi
-        label="Toughest month"
-        value={worstMonth ? money(worstMonth.net) : '—'}
-        tone={worstMonth && worstMonth.net < 0 ? 'neg' : 'neutral'}
-        sub={worstMonth ? monthLabel(worstMonth.month) : ''}
+        label="Latest month"
+        value={latestMonth ? money(latestMonth.net) : '—'}
+        tone={!latestMonth ? 'neutral' : latestMonth.net >= 0 ? 'pos' : 'neg'}
+        sub={monthChangePct !== null ? `${percent(monthChangePct)} vs prior month` : priorMonth ? 'no change' : 'not enough history yet'}
+        subTone={monthChangePct === null ? undefined : monthChangePct >= 0 ? 'pos' : 'neg'}
       />
     </section>
   );
@@ -70,7 +69,7 @@ function Kpi({
   label: string;
   value: string;
   sub?: string;
-  tone: 'pos' | 'neg' | 'neutral';
+  tone: 'pos' | 'neg' | 'neutral' | 'accent';
   subTone?: 'pos' | 'neg';
 }) {
   return (

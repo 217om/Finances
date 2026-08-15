@@ -583,8 +583,8 @@ export default function App() {
   }, [transactions, categoryOf, subResolver, categoryFilter]);
 
   const overview = useMemo(
-    () => buildOverview(visibleTransactions, monthStartDay, categoryOf),
-    [visibleTransactions, monthStartDay, categoryOf],
+    () => buildOverview(visibleTransactions, monthStartDay, categoryOf, weekStartDay),
+    [visibleTransactions, monthStartDay, categoryOf, weekStartDay],
   );
 
   // Every card's own resolver, built from its own rules merged with the
@@ -680,9 +680,9 @@ export default function App() {
   const combinedOverview = useMemo(
     () =>
       combinedDashboardTransactions && combinedAllData
-        ? buildOverview(combinedDashboardTransactions, monthStartDay, combinedAllData.categoryOf)
+        ? buildOverview(combinedDashboardTransactions, monthStartDay, combinedAllData.categoryOf, weekStartDay)
         : null,
-    [combinedDashboardTransactions, combinedAllData, monthStartDay],
+    [combinedDashboardTransactions, combinedAllData, monthStartDay, weekStartDay],
   );
 
   // The read-only merged Transactions view — every card's transactions
