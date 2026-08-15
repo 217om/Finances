@@ -63,10 +63,16 @@ export default function ColumnHeaderMenu({
       setOpen(false);
     };
     document.addEventListener('mousedown', onClick);
-    // Scrolling (the table body, or the page) would leave a fixed-position
-    // popup stranded away from its trigger — closing is simpler and more
-    // predictable than continuously re-tracking its position.
-    const onScroll = () => setOpen(false);
+    // Scrolling the table body or the page would leave a fixed-position
+    // popup stranded away from its trigger, so close it then — but not when
+    // the scroll is the popup's own scrollable checklist (a capture-phase
+    // window listener sees that scroll too, since it's how you reach a
+    // category further down the list).
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      if (popupRef.current && target instanceof Node && popupRef.current.contains(target)) return;
+      setOpen(false);
+    };
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onScroll);
     return () => {
