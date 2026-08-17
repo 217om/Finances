@@ -126,7 +126,13 @@ async function fetchAccountLabel(token: string): Promise<string | null> {
 async function findFileId(token: string): Promise<string | null> {
   const q = encodeURIComponent(`name='${SYNC_FILE_NAME}' and trashed=false`);
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`,
+    // Drive allows multiple files with the same name — two devices could
+    // each end up creating one if they both connect and push for the very
+    // first time within moments of each other, before either has seen the
+    // other's file. orderBy + always taking the oldest means every device
+    // converges on the same file from then on (whichever was created
+    // first) instead of picking an arbitrary one each time.
+    `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)&orderBy=createdTime`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!res.ok) throw new Error(`Google Drive lookup failed (${res.status}).`);
