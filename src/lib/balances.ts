@@ -105,6 +105,20 @@ export function signedAssetValue(kind: AssetKind | undefined, rawMagnitude: numb
   return kind === 'liability' ? -Math.abs(rawMagnitude) : rawMagnitude;
 }
 
+/** True chronological order, not just date order — two transactions on the
+ *  same date still need a real answer for "which one actually happened
+ *  last" (e.g. to anchor a running balance to the right row), and storage
+ *  doesn't preserve that on its own: IndexedDB keys transactions by their
+ *  content-hash id, so getAll() hands them back in essentially arbitrary
+ *  order, not the order they posted in. Falls back through importedAt (which
+ *  import batch) and then seq (row position within that batch, direction-
+ *  corrected — see lib/parse.ts) to recover it. */
+export function chronologicalCompare(a: Transaction, b: Transaction): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  if (a.importedAt !== b.importedAt) return a.importedAt - b.importedAt;
+  return (a.seq ?? -1) - (b.seq ?? -1);
+}
+
 /**
  * Reconciles a card's statement running-balance column (if any) with its
  * manual checkpoints into one current balance. Picks whichever anchor — the
@@ -121,7 +135,7 @@ export function computeCardBalance(
   transactions: Transaction[],
   checkpoints: BalanceCheckpoint[],
 ): ComputedBalance {
-  const sorted = [...transactions].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const sorted = [...transactions].sort(chronologicalCompare);
 
   let anchorDate: string | null = null;
   let anchorRaw = 0;

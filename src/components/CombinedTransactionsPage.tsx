@@ -4,6 +4,7 @@ import type { TransactionsJump } from './TransactionsPage';
 import { categoryColor } from '../lib/categorize';
 import { UNSORTED } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
+import { chronologicalCompare } from '../lib/balances';
 import { money } from '../lib/format';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
@@ -32,7 +33,10 @@ const PAGE = 100;
 function compareBase(col: SortCol, a: CombinedRow, b: CombinedRow): number {
   switch (col) {
     case 'date':
-      return a.t.date.localeCompare(b.t.date);
+      // See TransactionsPage's compareBase — same-date rows aren't stored
+      // in true chronological order, so this recovers it instead of
+      // leaving ties arbitrary.
+      return chronologicalCompare(a.t, b.t);
     case 'description':
       return a.t.description.localeCompare(b.t.description);
     case 'amount':

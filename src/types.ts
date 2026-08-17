@@ -24,6 +24,13 @@ export interface Transaction {
    *  statement didn't include one. See lib/balances.ts for how this and any
    *  manual checkpoints combine into a card's current balance. */
   balance?: number;
+  /** Position within its import batch (direction-corrected: higher always
+   *  means chronologically later within that batch), combined with
+   *  importedAt to break same-date ties correctly — storage order isn't
+   *  chronological, so without this, picking "the last transaction of a
+   *  day" (e.g. for a running-balance anchor) is arbitrary. Optional only
+   *  for transactions imported before this field existed. */
+  seq?: number;
 }
 
 /** How a raw spreadsheet maps onto our normalized fields. */

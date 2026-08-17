@@ -461,5 +461,24 @@ export function normalize(
     });
   }
 
+  // Storage doesn't preserve row order (IndexedDB keys transactions by their
+  // content-hash id, so getAll() comes back in effectively arbitrary order) —
+  // so anything that needs to know which of several same-day transactions
+  // actually happened last (picking a running-balance anchor, sorting the
+  // Date column) has nothing reliable to go on without this. Capture the
+  // statement's own row order now, while we still have it, corrected for
+  // whichever direction this particular file happens to run in, so a higher
+  // `seq` always means "chronologically later" regardless of source order.
+  let direction: 1 | -1 = 1;
+  for (let i = 0; i < transactions.length - 1; i++) {
+    if (transactions[i].date !== transactions[i + 1].date) {
+      direction = transactions[i].date < transactions[i + 1].date ? 1 : -1;
+      break;
+    }
+  }
+  transactions.forEach((t, i) => {
+    t.seq = direction === 1 ? i : transactions.length - 1 - i;
+  });
+
   return { transactions, skipped };
 }

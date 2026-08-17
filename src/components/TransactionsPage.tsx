@@ -3,6 +3,7 @@ import type { Transaction } from '../types';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../lib/categorize';
 import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
+import { chronologicalCompare } from '../lib/balances';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
@@ -46,7 +47,11 @@ const PAGE = 100;
 function compareBase(col: SortCol, a: { t: Transaction; cat: string }, b: { t: Transaction; cat: string }): number {
   switch (col) {
     case 'date':
-      return a.t.date.localeCompare(b.t.date);
+      // Same-date rows aren't stored in the order they actually happened
+      // (IndexedDB keys transactions by content-hash id, not chronology) —
+      // chronologicalCompare recovers real intra-day order from the import
+      // batch/row position instead of leaving ties in arbitrary order.
+      return chronologicalCompare(a.t, b.t);
     case 'description':
       return a.t.description.localeCompare(b.t.description);
     case 'amount':
