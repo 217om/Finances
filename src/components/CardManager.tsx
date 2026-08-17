@@ -5,7 +5,6 @@ export interface CopyOptions {
   rules: boolean;
   keywords: boolean;
   subRules: boolean;
-  customCategories: boolean;
 }
 
 interface Props {
@@ -43,7 +42,6 @@ export default function CardManager({
     rules: true,
     keywords: true,
     subRules: true,
-    customCategories: true,
   });
 
   const startRename = (c: Card) => {
@@ -174,15 +172,10 @@ export default function CardManager({
                 />
                 Sub-category rules
               </label>
-              <label className="filter-check">
-                <input
-                  type="checkbox"
-                  checked={copyOpts.customCategories}
-                  onChange={(e) => setCopyOpts((o) => ({ ...o, customCategories: e.target.checked }))}
-                />
-                Custom categories
-              </label>
-              <p className="muted card-copy-note">Only the rules above are copied, not transactions.</p>
+              <p className="muted card-copy-note">
+                Only the rules above are copied, not transactions. Custom categories are shared by every
+                card already.
+              </p>
             </div>
           )}
 

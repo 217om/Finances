@@ -89,7 +89,11 @@ interface CardBackup {
   currency: string | null;
   monthStartDay: number | null;
   weekStartDay: number | null;
-  customCategories: string[];
+  /** Legacy — custom categories used to be scoped per card. Kept optional so
+   *  an older backup file still restores its categories (see
+   *  restoreFullBackup); no longer written by buildFullBackup, which puts
+   *  them in the top-level FullBackupFile.globalCustomCategories instead. */
+  customCategories?: string[];
   categoryFilter: CategoryFilterState;
   /** See lib/balances.ts — null cardType means "unset" (defaults to 'debit'). */
   cardType: CardType | null;
@@ -127,6 +131,10 @@ export interface FullBackupFile {
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
+  /** Custom categories are global too (see lib/cards' CUSTOM_CATEGORIES_KEY
+   *  doc comment) — a category name is meaningful on any card, so there's
+   *  one shared list rather than one per card. */
+  globalCustomCategories: string[];
 }
 
 function readLS(key: string): string | null {
@@ -306,7 +314,6 @@ export async function buildFullBackup(
       // valid Sunday (0), so presence has to be checked before parsing.
       const rawWeekStartDay = readLS(scopedKey(WEEK_START_KEY, card.id));
       const weekStartDay = rawWeekStartDay !== null ? Number(rawWeekStartDay) : NaN;
-      const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
       const categoryFilterRaw = readJSON(scopedKey(CATEGORY_FILTER_KEY, card.id));
       const cardTypeRaw = readLS(scopedKey(CARD_TYPE_KEY, card.id));
       const checkpointsRaw = readJSON(scopedKey(BALANCE_CHECKPOINTS_KEY, card.id));
@@ -318,9 +325,6 @@ export async function buildFullBackup(
         currency: readLS(scopedKey(CURRENCY_KEY, card.id)),
         monthStartDay: monthStartDay >= 1 && monthStartDay <= 28 ? monthStartDay : null,
         weekStartDay: weekStartDay >= 0 && weekStartDay <= 6 ? weekStartDay : null,
-        customCategories: Array.isArray(customCategoriesRaw)
-          ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
-          : [],
         categoryFilter: isValidCategoryFilter(categoryFilterRaw) ? categoryFilterRaw : defaultCategoryFilter(),
         cardType: isValidCardType(cardTypeRaw) ? cardTypeRaw : null,
         checkpoints: isValidCheckpoints(checkpointsRaw) ? checkpointsRaw : [],
@@ -339,6 +343,10 @@ export async function buildFullBackup(
     getKeywordRules(GLOBAL_RULES_DB),
     getSubRules(GLOBAL_RULES_DB),
   ]);
+  const globalCustomCategoriesRaw = readJSON(CUSTOM_CATEGORIES_KEY);
+  const globalCustomCategories = Array.isArray(globalCustomCategoriesRaw)
+    ? globalCustomCategoriesRaw.filter((c): c is string => typeof c === 'string')
+    : [];
 
   return {
     app: FULL_BACKUP_MAGIC,
@@ -357,6 +365,7 @@ export async function buildFullBackup(
     globalRules,
     globalKeywordRules,
     globalSubRules,
+    globalCustomCategories,
   };
 }
 
@@ -395,7 +404,11 @@ interface CardRulesBackup {
   rules: CategoryRule[];
   keywordRules: KeywordRule[];
   subRules: SubRule[];
-  customCategories: string[];
+  /** Legacy — custom categories used to be scoped per card. Kept optional so
+   *  an older rules export still restores its categories (see
+   *  restoreRulesBackup); no longer written by buildRulesBackup, which puts
+   *  them in the top-level RulesBackupFile.globalCustomCategories instead. */
+  customCategories?: string[];
 }
 
 export interface RulesBackupFile {
@@ -405,14 +418,16 @@ export interface RulesBackupFile {
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
+  /** See lib/cards' CUSTOM_CATEGORIES_KEY doc comment — global, not per card. */
+  globalCustomCategories: string[];
   cards: CardRulesBackup[];
 }
 
 /**
- * Gathers every categorization rule — global and every card's own — plus
- * each card's custom categories, without any transaction data. Meant for
- * moving just the "how do I categorize things" logic between browsers/
- * profiles, separately from the (much larger, more sensitive) full backup.
+ * Gathers every categorization rule — global and every card's own — plus the
+ * shared custom categories, without any transaction data. Meant for moving
+ * just the "how do I categorize things" logic between browsers/profiles,
+ * separately from the (much larger, more sensitive) full backup.
  */
 export async function buildRulesBackup(cards: Card[]): Promise<RulesBackupFile> {
   const cardBackups = await Promise.all(
@@ -422,17 +437,7 @@ export async function buildRulesBackup(cards: Card[]): Promise<RulesBackupFile> 
         getKeywordRules(card.dbName),
         getSubRules(card.dbName),
       ]);
-      const customCategoriesRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, card.id));
-      return {
-        id: card.id,
-        name: card.name,
-        rules,
-        keywordRules,
-        subRules,
-        customCategories: Array.isArray(customCategoriesRaw)
-          ? customCategoriesRaw.filter((c): c is string => typeof c === 'string')
-          : [],
-      };
+      return { id: card.id, name: card.name, rules, keywordRules, subRules };
     }),
   );
 
@@ -441,6 +446,10 @@ export async function buildRulesBackup(cards: Card[]): Promise<RulesBackupFile> 
     getKeywordRules(GLOBAL_RULES_DB),
     getSubRules(GLOBAL_RULES_DB),
   ]);
+  const globalCustomCategoriesRaw = readJSON(CUSTOM_CATEGORIES_KEY);
+  const globalCustomCategories = Array.isArray(globalCustomCategoriesRaw)
+    ? globalCustomCategoriesRaw.filter((c): c is string => typeof c === 'string')
+    : [];
 
   return {
     app: RULES_BACKUP_MAGIC,
@@ -449,6 +458,7 @@ export async function buildRulesBackup(cards: Card[]): Promise<RulesBackupFile> 
     globalRules,
     globalKeywordRules,
     globalSubRules,
+    globalCustomCategories,
     cards: cardBackups,
   };
 }
@@ -496,6 +506,7 @@ export async function restoreRulesBackup(
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
+  customCategories: string[];
   matchedCards: string[];
   skippedCards: string[];
 }> {
@@ -505,6 +516,12 @@ export async function restoreRulesBackup(
 
   const matchedCards: string[] = [];
   const skippedCards: string[] = [];
+  // Custom categories are global (see lib/cards' CUSTOM_CATEGORIES_KEY doc
+  // comment) — union the current top-level field plus any legacy per-card
+  // ones (an older export, from before categories were global) into one set.
+  const incomingCategories = new Set<string>(asArray<unknown>(backup.globalCustomCategories).filter(
+    (c): c is string => typeof c === 'string',
+  ));
 
   for (const cb of asArray<CardRulesBackup>(backup.cards)) {
     if (!cb || typeof cb.name !== 'string') continue;
@@ -519,18 +536,25 @@ export async function restoreRulesBackup(
     await saveKeywordRules(target.dbName, asArray<KeywordRule>(cb.keywordRules));
     await saveSubRules(target.dbName, asArray<SubRule>(cb.subRules));
 
-    const importedCategories = asArray<unknown>(cb.customCategories).filter(
-      (c): c is string => typeof c === 'string',
-    );
-    if (importedCategories.length > 0) {
-      const existingRaw = readJSON(scopedKey(CUSTOM_CATEGORIES_KEY, target.id));
-      const existingCategories = Array.isArray(existingRaw)
-        ? existingRaw.filter((c): c is string => typeof c === 'string')
-        : [];
-      const merged = [...new Set([...existingCategories, ...importedCategories])];
-      writeLS(scopedKey(CUSTOM_CATEGORIES_KEY, target.id), JSON.stringify(merged));
+    for (const c of asArray<unknown>(cb.customCategories)) {
+      if (typeof c === 'string') incomingCategories.add(c);
     }
   }
+
+  const existingCategoriesRaw = readJSON(CUSTOM_CATEGORIES_KEY);
+  const existingCategories = Array.isArray(existingCategoriesRaw)
+    ? existingCategoriesRaw.filter((c): c is string => typeof c === 'string')
+    : [];
+  const seen = new Set<string>();
+  const customCategories: string[] = [];
+  for (const c of [...existingCategories, ...incomingCategories]) {
+    const key = c.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      customCategories.push(c);
+    }
+  }
+  writeLS(CUSTOM_CATEGORIES_KEY, JSON.stringify(customCategories));
 
   const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
     getRules(GLOBAL_RULES_DB),
@@ -538,7 +562,7 @@ export async function restoreRulesBackup(
     getSubRules(GLOBAL_RULES_DB),
   ]);
 
-  return { globalRules, globalKeywordRules, globalSubRules, matchedCards, skippedCards };
+  return { globalRules, globalKeywordRules, globalSubRules, customCategories, matchedCards, skippedCards };
 }
 
 function isValidNote(v: unknown): v is Note {
@@ -589,10 +613,17 @@ export async function restoreFullBackup(
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
+  customCategories: string[];
 }> {
   let cards = existingCards;
   // Backup card id -> id of the local card its data actually landed in.
   const resolvedIdByBackupId = new Map<string, string>();
+  // Custom categories are global (see lib/cards' CUSTOM_CATEGORIES_KEY doc
+  // comment) — union the current top-level field plus any legacy per-card
+  // ones (an older backup, from before categories were global) into one set.
+  const incomingCategories = new Set<string>(
+    asArray<unknown>(backup.globalCustomCategories).filter((c): c is string => typeof c === 'string'),
+  );
 
   for (const cb of backup.cards) {
     if (!cb || typeof cb.id !== 'string' || typeof cb.dbName !== 'string') continue;
@@ -664,11 +695,8 @@ export async function restoreFullBackup(
     if (typeof cb.weekStartDay === 'number' && cb.weekStartDay >= 0 && cb.weekStartDay <= 6) {
       writeLS(scopedKey(WEEK_START_KEY, target.id), String(cb.weekStartDay));
     }
-    const customCategories = asArray<unknown>(cb.customCategories).filter(
-      (c): c is string => typeof c === 'string',
-    );
-    if (customCategories.length > 0) {
-      writeLS(scopedKey(CUSTOM_CATEGORIES_KEY, target.id), JSON.stringify(customCategories));
+    for (const c of asArray<unknown>(cb.customCategories)) {
+      if (typeof c === 'string') incomingCategories.add(c);
     }
     if (isValidCategoryFilter(cb.categoryFilter)) {
       writeLS(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(cb.categoryFilter));
@@ -752,6 +780,21 @@ export async function restoreFullBackup(
     getSubRules(GLOBAL_RULES_DB),
   ]);
 
+  const existingCategoriesRaw = readJSON(CUSTOM_CATEGORIES_KEY);
+  const existingCategories = Array.isArray(existingCategoriesRaw)
+    ? existingCategoriesRaw.filter((c): c is string => typeof c === 'string')
+    : [];
+  const seenCategories = new Set<string>();
+  const customCategories: string[] = [];
+  for (const c of [...existingCategories, ...incomingCategories]) {
+    const key = c.toLowerCase();
+    if (!seenCategories.has(key)) {
+      seenCategories.add(key);
+      customCategories.push(c);
+    }
+  }
+  writeLS(CUSTOM_CATEGORIES_KEY, JSON.stringify(customCategories));
+
   return {
     cards,
     activeCardId,
@@ -765,5 +808,6 @@ export async function restoreFullBackup(
     globalRules,
     globalKeywordRules,
     globalSubRules,
+    customCategories,
   };
 }

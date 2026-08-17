@@ -1,8 +1,10 @@
 // A "card" is one bank account/statement the user analyzes. Each card has its
 // own IndexedDB database (transactions, categorization rules, overrides) and
-// its own scoped preferences (currency, month start, custom categories,
-// category filter) — nothing mixes between cards except what's explicitly
-// copied when a card is created.
+// its own scoped preferences (currency, month start, category filter) —
+// nothing mixes between cards except what's explicitly copied when a card is
+// created. Custom categories are the one exception: they're global, like
+// categorization rules (see GLOBAL_RULES_DB below) — a category name is
+// meaningful on any card, so there's one shared list, not one per card.
 
 export interface Card {
   id: string;
@@ -22,6 +24,11 @@ export const MONTH_START_KEY = 'cashflow.monthStartDay';
 /** 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay. Defaults to Monday
  *  (1) — the app's original hardcoded week-start behavior. */
 export const WEEK_START_KEY = 'cashflow.weekStartDay';
+/** Global (not per-card) — a category name is meaningful on any card, so
+ *  there's one shared list rather than each card keeping its own. Kept
+ *  unscoped (the same literal key the very first card always used) so
+ *  existing single-card users need no migration; multi-card users get a
+ *  one-time union migration, see CUSTOM_CATEGORIES_GLOBAL_MIGRATION_KEY. */
 export const CUSTOM_CATEGORIES_KEY = 'cashflow.customCategories';
 export const CATEGORY_FILTER_KEY = 'cashflow.categoryFilter';
 /** Remembers the last-used import column mapping (date/description/amount
@@ -66,6 +73,10 @@ export const GLOBAL_RULES_DB = 'cashflow-global-rules';
 /** Set once the one-time migration of every card's pre-existing rules into
  *  the global store has run, so it never repeats. */
 export const RULES_GLOBAL_MIGRATION_KEY = 'cashflow.rulesGlobalMigration.v1';
+
+/** Set once the one-time migration of every card's pre-existing custom
+ *  categories into the single shared list has run, so it never repeats. */
+export const CUSTOM_CATEGORIES_GLOBAL_MIGRATION_KEY = 'cashflow.customCategoriesGlobalMigration.v1';
 
 /** Sentinel value for the "Combine all cards" entry in the card selector —
  *  never a real card id, so it can share the same <select> as real cards. */

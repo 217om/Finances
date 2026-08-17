@@ -52,6 +52,7 @@ import {
   MONTH_START_KEY,
   WEEK_START_KEY,
   CUSTOM_CATEGORIES_KEY,
+  CUSTOM_CATEGORIES_GLOBAL_MIGRATION_KEY,
   CATEGORY_FILTER_KEY,
   COLUMN_MAPPING_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
@@ -68,6 +69,7 @@ import {
   GLOBAL_RULES_DB,
   RULES_GLOBAL_MIGRATION_KEY,
   ALL_CARDS_ID,
+  DEFAULT_CARD_ID,
 } from './lib/cards';
 import type { CopyOptions } from './components/CardManager';
 import { combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
@@ -83,6 +85,7 @@ import {
   isValidCategoryFilter,
   toggleCategory,
   toggleSub,
+  unionCategoryFilter,
   type CategoryFilterState,
 } from './lib/categoryFilter';
 import { getCurrency, setCurrency } from './lib/format';
@@ -140,6 +143,7 @@ import {
   makeAsset,
   makeAssetValueEntry,
   makeCheckpoint,
+  mergeCheckpoints,
   type Asset,
   type AssetKind,
   type AssetValueEntry,
@@ -225,10 +229,6 @@ export default function App() {
   // rule — defaults to an aggregate across every card, since rules are
   // global by default. Independent of the app's actual active card.
   const [countCardId, setCountCardId] = useState<string>(ALL_CARDS_ID);
-  // Bumped whenever a custom category is added for a non-active card, so the
-  // localStorage-backed memo below knows to recompute (otherCardsData itself
-  // doesn't carry custom categories).
-  const [otherCustomCategoriesTick, setOtherCustomCategoriesTick] = useState(0);
 
   // Categorization rules shared by every card by default (see lib/cards'
   // GLOBAL_RULES_DB doc comment). A one-time migration on first load under
@@ -277,6 +277,47 @@ export default function App() {
           /* ignore — retried next load */
         }
       }
+
+      // One-time migration: custom categories used to be scoped per card;
+      // a category name is meaningful on any card though, so they're
+      // genuinely global now — union every card's list into the one shared,
+      // unscoped key and drop the old per-card ones.
+      let categoriesMigrated = false;
+      try {
+        categoriesMigrated = localStorage.getItem(CUSTOM_CATEGORIES_GLOBAL_MIGRATION_KEY) === '1';
+      } catch {
+        /* ignore */
+      }
+      if (!categoriesMigrated) {
+        try {
+          const seen = new Set<string>();
+          const merged: string[] = [];
+          for (const card of cardsAtMountRef.current) {
+            const scoped = scopedKey(CUSTOM_CATEGORIES_KEY, card.id);
+            try {
+              const raw = JSON.parse(localStorage.getItem(scoped) ?? '[]');
+              if (Array.isArray(raw)) {
+                for (const c of raw) {
+                  if (typeof c !== 'string') continue;
+                  const key = c.toLowerCase();
+                  if (!seen.has(key)) {
+                    seen.add(key);
+                    merged.push(c);
+                  }
+                }
+              }
+            } catch {
+              /* ignore this card's malformed list */
+            }
+            if (card.id !== DEFAULT_CARD_ID) localStorage.removeItem(scoped);
+          }
+          localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(merged));
+          localStorage.setItem(CUSTOM_CATEGORIES_GLOBAL_MIGRATION_KEY, '1');
+        } catch {
+          /* ignore — retried next load */
+        }
+      }
+
       if (cancelled) return;
       setRulesMigrationDone(true);
       try {
@@ -291,6 +332,14 @@ export default function App() {
         setGlobalSubRules(gsr);
       } catch {
         /* leave global rule state empty; not fatal */
+      }
+      try {
+        const rawCats = JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) ?? '[]');
+        if (!cancelled) {
+          setCustomCategories(Array.isArray(rawCats) ? rawCats.filter((c): c is string => typeof c === 'string') : []);
+        }
+      } catch {
+        /* leave custom categories empty; not fatal */
       }
     })();
     return () => {
@@ -477,8 +526,6 @@ export default function App() {
       const rawWeekDay = localStorage.getItem(scopedKey(WEEK_START_KEY, cardId));
       const savedWeekDay = rawWeekDay !== null ? Number(rawWeekDay) : NaN;
       setWeekStartDay(savedWeekDay >= 0 && savedWeekDay <= 6 ? savedWeekDay : 1);
-      const savedCats = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, cardId)) ?? '[]');
-      setCustomCategories(Array.isArray(savedCats) ? savedCats.filter((c) => typeof c === 'string') : []);
       const savedFilter = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, cardId)) ?? 'null');
       setCategoryFilter(isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter());
     } catch {
@@ -486,7 +533,6 @@ export default function App() {
       setCurrencyState('OMR');
       setMonthStartDay(1);
       setWeekStartDay(1);
-      setCustomCategories([]);
       setCategoryFilter(defaultCategoryFilter());
     }
 
@@ -713,43 +759,13 @@ export default function App() {
       }),
     [cards, activeCardId, rules, keywordRules, subRules, otherCardsData],
   );
-  // Union of every card's custom categories, so a global rule's category
-  // picker isn't limited to whichever one card happens to be active.
-  const allCustomCategories = useMemo(() => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const c of customCategories) {
-      if (!seen.has(c)) {
-        seen.add(c);
-        out.push(c);
-      }
-    }
-    for (const card of cards) {
-      if (card.id === activeCardId) continue;
-      try {
-        const raw = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, card.id)) ?? '[]');
-        if (Array.isArray(raw)) {
-          for (const c of raw) {
-            if (typeof c === 'string' && !seen.has(c)) {
-              seen.add(c);
-              out.push(c);
-            }
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customCategories, cards, activeCardId, otherCustomCategoriesTick]);
-
   // Every expense category any card could budget for — built-ins plus every
-  // card's custom ones, since Budgets applies at the total (combined) level.
-  // Expense-only: there's nothing to "budget" about income.
+  // custom one (global, see lib/cards' CUSTOM_CATEGORIES_KEY doc comment),
+  // since Budgets applies at the total (combined) level. Expense-only:
+  // there's nothing to "budget" about income.
   const budgetCategoryOptions = useMemo(
-    () => [...EXPENSE_CATEGORIES, ...allCustomCategories],
-    [allCustomCategories],
+    () => [...EXPENSE_CATEGORIES, ...customCategories],
+    [customCategories],
   );
 
   // Classification (the wizard's pending groups) is independent of the display
@@ -1212,7 +1228,7 @@ export default function App() {
         if (exists) return prev;
         const next = [...prev, rawName];
         try {
-          localStorage.setItem(scopedKey(CUSTOM_CATEGORIES_KEY, activeCardId), JSON.stringify(next));
+          localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -1681,49 +1697,48 @@ export default function App() {
     [getScopeSubRules, getScopeDbName, updateScopeSubRules],
   );
 
-  // Custom categories have no global store of their own — a category is just
-  // a string, valid anywhere regardless of which card's list "offers" it —
-  // so a category created for a global rule (or the active card) is simply
-  // added to the active card's list; created for another card, its own.
+  // Custom categories are global (see lib/cards' CUSTOM_CATEGORIES_KEY doc
+  // comment) — creating one for any scope adds it to the one shared list.
+  // Only "keep it hidden until explicitly shown" still depends on scope,
+  // since each card (and the combined view) keeps its own category filter.
   const handleCreateCategoryFor = useCallback(
     (scope: string, rawName: string) => {
       if (scope === 'global' || scope === activeCardId) {
         handleCreateCategory(rawName);
         return;
       }
-      try {
-        const raw = JSON.parse(localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, scope)) ?? '[]');
-        const prev: string[] = Array.isArray(raw) ? raw.filter((c: unknown): c is string => typeof c === 'string') : [];
+      setCustomCategories((prev) => {
         const exists =
           prev.some((c) => c.toLowerCase() === rawName.toLowerCase()) ||
           EXPENSE_CATEGORIES.some((c) => c.toLowerCase() === rawName.toLowerCase());
-        if (exists) return;
-        localStorage.setItem(scopedKey(CUSTOM_CATEGORIES_KEY, scope), JSON.stringify([...prev, rawName]));
-        // Keep the new category hidden in that card's own filter if it's
-        // already a curated subset — same reasoning as handleCreateCategory.
+        if (exists) return prev;
+        const next = [...prev, rawName];
         try {
-          const filterKey = scopedKey(CATEGORY_FILTER_KEY, scope);
-          const savedFilter = JSON.parse(localStorage.getItem(filterKey) ?? 'null');
-          const scopeFilter = isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter();
-          const nextFilter = excludeNewCategory(scopeFilter, rawName);
-          if (nextFilter !== scopeFilter) localStorage.setItem(filterKey, JSON.stringify(nextFilter));
+          localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(next));
         } catch {
           /* ignore */
         }
-        setCombinedCategoryFilter((prevFilter) => {
-          const next = excludeNewCategory(prevFilter, rawName);
-          if (next === prevFilter) return prevFilter;
-          try {
-            localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
-          } catch {
-            /* ignore */
-          }
-          return next;
-        });
-        setOtherCustomCategoriesTick((n) => n + 1);
+        return next;
+      });
+      try {
+        const filterKey = scopedKey(CATEGORY_FILTER_KEY, scope);
+        const savedFilter = JSON.parse(localStorage.getItem(filterKey) ?? 'null');
+        const scopeFilter = isValidCategoryFilter(savedFilter) ? savedFilter : defaultCategoryFilter();
+        const nextFilter = excludeNewCategory(scopeFilter, rawName);
+        if (nextFilter !== scopeFilter) localStorage.setItem(filterKey, JSON.stringify(nextFilter));
       } catch {
         /* ignore */
       }
+      setCombinedCategoryFilter((prevFilter) => {
+        const next = excludeNewCategory(prevFilter, rawName);
+        if (next === prevFilter) return prevFilter;
+        try {
+          localStorage.setItem(COMBINED_CATEGORY_FILTER_KEY, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
     },
     [activeCardId, handleCreateCategory],
   );
@@ -1843,6 +1858,7 @@ export default function App() {
       setGlobalRules(result.globalRules);
       setGlobalKeywordRules(result.globalKeywordRules);
       setGlobalSubRules(result.globalSubRules);
+      setCustomCategories(result.customCategories);
       setReloadToken((n) => n + 1);
       setToast('Full backup restored.');
     },
@@ -1920,6 +1936,7 @@ export default function App() {
         setGlobalRules(result.globalRules);
         setGlobalKeywordRules(result.globalKeywordRules);
         setGlobalSubRules(result.globalSubRules);
+        setCustomCategories(result.customCategories);
         setReloadToken((n) => n + 1);
         setToast(
           result.skippedCards.length > 0
@@ -2022,7 +2039,6 @@ export default function App() {
     }
     await clearAll(dbName);
     try {
-      localStorage.removeItem(scopedKey(CUSTOM_CATEGORIES_KEY, activeCardId));
       localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, activeCardId));
     } catch {
       /* ignore */
@@ -2033,7 +2049,6 @@ export default function App() {
     setKeywordRules([]);
     setSubRules([]);
     setSubOverrides([]);
-    setCustomCategories([]);
     setCategoryFilter(defaultCategoryFilter());
     setToast('All data cleared for this card.');
   }, [dbName, activeCardId]);
@@ -2107,17 +2122,9 @@ export default function App() {
             const srcSubRules = await getSubRules(source.dbName);
             if (srcSubRules.length > 0) await saveSubRules(card.dbName, srcSubRules);
           }
-          if (opts.customCategories) {
-            try {
-              const raw = localStorage.getItem(scopedKey(CUSTOM_CATEGORIES_KEY, source.id));
-              const list = JSON.parse(raw ?? '[]');
-              if (Array.isArray(list) && list.length > 0) {
-                localStorage.setItem(scopedKey(CUSTOM_CATEGORIES_KEY, card.id), JSON.stringify(list));
-              }
-            } catch {
-              /* ignore */
-            }
-          }
+          // Custom categories are global (see lib/cards' CUSTOM_CATEGORIES_KEY
+          // doc comment) — a new card already sees every one of them, nothing
+          // to copy.
         }
         const next = [...cards, card];
         setCards(next);
@@ -2138,13 +2145,137 @@ export default function App() {
     [cards],
   );
 
-  const handleRenameCard = useCallback((id: string, name: string) => {
-    setCards((prev) => {
-      const next = prev.map((c) => (c.id === id ? { ...c, name } : c));
-      saveCards(next);
-      return next;
-    });
-  }, []);
+  // Absorbs `source` into `target`: transactions move over (the same
+  // dedup-by-content logic a normal import uses, so a statement present on
+  // both cards isn't duplicated), each card's own rule overrides and
+  // category filter are merged (target's own entries win a same-key
+  // conflict, since it's the card that survives), and `source` is deleted
+  // entirely once its data has landed. Triggered by renaming a card to
+  // (near-)match another one's name — see handleRenameCard below.
+  const handleMergeCards = useCallback(
+    async (source: Card, target: Card) => {
+      setCardBusy(true);
+      try {
+        const srcTxs = await getAllTransactions(source.dbName);
+        if (srcTxs.length > 0) await addTransactions(target.dbName, srcTxs, `merge-${source.name}`);
+
+        const [srcRules, srcOverrides, srcKeywords, srcSubRules, srcSubOverrides, tgtRules, tgtKeywords, tgtSubRules] =
+          await Promise.all([
+            getRules(source.dbName),
+            getOverrides(source.dbName),
+            getKeywordRules(source.dbName),
+            getSubRules(source.dbName),
+            getSubOverrides(source.dbName),
+            getRules(target.dbName),
+            getKeywordRules(target.dbName),
+            getSubRules(target.dbName),
+          ]);
+        const mergedRules = mergeByKey(srcRules, tgtRules, (r) => r.signature);
+        const mergedKeywords = mergeByKey(srcKeywords, tgtKeywords, (r) => r.keyword);
+        const mergedSubRules = mergeByKey(srcSubRules, tgtSubRules, (r) => r.id);
+        await saveCategorization(target.dbName, mergedRules, srcOverrides);
+        if (mergedKeywords.length > 0) await saveKeywordRules(target.dbName, mergedKeywords);
+        if (mergedSubRules.length > 0) await saveSubRules(target.dbName, mergedSubRules);
+        if (srcSubOverrides.length > 0) await saveSubOverrides(target.dbName, srcSubOverrides);
+
+        try {
+          const srcFilterRaw = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, source.id)) ?? 'null');
+          const tgtFilterRaw = JSON.parse(localStorage.getItem(scopedKey(CATEGORY_FILTER_KEY, target.id)) ?? 'null');
+          const srcFilter = isValidCategoryFilter(srcFilterRaw) ? srcFilterRaw : defaultCategoryFilter();
+          const tgtFilter = isValidCategoryFilter(tgtFilterRaw) ? tgtFilterRaw : defaultCategoryFilter();
+          const mergedFilter = unionCategoryFilter(srcFilter, tgtFilter);
+          localStorage.setItem(scopedKey(CATEGORY_FILTER_KEY, target.id), JSON.stringify(mergedFilter));
+          if (target.id === activeCardId) setCategoryFilter(mergedFilter);
+        } catch {
+          /* ignore */
+        }
+
+        const mergedCheckpoints = mergeCheckpoints(cardCheckpoints[source.id] ?? [], cardCheckpoints[target.id] ?? []);
+        try {
+          localStorage.setItem(scopedKey(BALANCE_CHECKPOINTS_KEY, target.id), JSON.stringify(mergedCheckpoints));
+        } catch {
+          /* ignore */
+        }
+
+        await deleteCardDatabase(source.dbName);
+        try {
+          localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, source.id));
+          localStorage.removeItem(scopedKey(CURRENCY_KEY, source.id));
+          localStorage.removeItem(scopedKey(MONTH_START_KEY, source.id));
+          localStorage.removeItem(scopedKey(WEEK_START_KEY, source.id));
+          localStorage.removeItem(scopedKey(CARD_TYPE_KEY, source.id));
+          localStorage.removeItem(scopedKey(BALANCE_CHECKPOINTS_KEY, source.id));
+        } catch {
+          /* ignore */
+        }
+
+        const next = cards.filter((c) => c.id !== source.id);
+        setCards(next);
+        saveCards(next);
+        setCardTypes((prev) => {
+          const rest = { ...prev };
+          delete rest[source.id];
+          return rest;
+        });
+        setCardCheckpoints((prev) => {
+          const rest = { ...prev };
+          delete rest[source.id];
+          rest[target.id] = mergedCheckpoints;
+          return rest;
+        });
+
+        if (source.id === activeCardId) {
+          setActiveCardId(target.id);
+          saveActiveCardId(target.id);
+        } else if (target.id === activeCardId) {
+          setReloadToken((n) => n + 1);
+        }
+
+        if (next.length <= 1 && combineEnabled) {
+          setCombineEnabled(false);
+          try {
+            localStorage.setItem(COMBINE_KEY, '0');
+          } catch {
+            /* ignore */
+          }
+        }
+
+        setToast(`Merged "${source.name}" into "${target.name}"`);
+      } catch (e) {
+        setToast(`Could not merge cards. ${(e as Error).message ?? ''}`.trim());
+      } finally {
+        setCardBusy(false);
+      }
+    },
+    [cards, activeCardId, combineEnabled, cardCheckpoints],
+  );
+
+  const handleRenameCard = useCallback(
+    (id: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const source = cards.find((c) => c.id === id);
+      if (!source) return;
+      const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+      const target = cards.find((c) => c.id !== id && normalize(c.name) === normalize(trimmed));
+      if (target) {
+        const proceed = confirm(
+          `A card named "${target.name}" already exists. Merge "${source.name}" into it? All of ` +
+            `"${source.name}"'s transactions will move into "${target.name}", and "${source.name}" will ` +
+            'be removed. This cannot be undone.',
+        );
+        if (!proceed) return;
+        void handleMergeCards(source, target);
+        return;
+      }
+      setCards((prev) => {
+        const next = prev.map((c) => (c.id === id ? { ...c, name: trimmed } : c));
+        saveCards(next);
+        return next;
+      });
+    },
+    [cards, handleMergeCards],
+  );
 
   const handleDeleteCard = useCallback(
     async (id: string) => {
@@ -2155,7 +2286,6 @@ export default function App() {
 
       await deleteCardDatabase(card.dbName);
       try {
-        localStorage.removeItem(scopedKey(CUSTOM_CATEGORIES_KEY, id));
         localStorage.removeItem(scopedKey(CATEGORY_FILTER_KEY, id));
         localStorage.removeItem(scopedKey(CURRENCY_KEY, id));
         localStorage.removeItem(scopedKey(MONTH_START_KEY, id));
@@ -2464,7 +2594,7 @@ export default function App() {
                 globalKeywordRules={globalKeywordRules}
                 globalSubRules={globalSubRules}
                 cardRuleSets={cardRuleSets}
-                customCategories={allCustomCategories}
+                customCategories={customCategories}
                 onCreateCategory={handleCreateCategoryFor}
                 onCreateKeywordRule={handleCreateKeywordRuleFor}
                 onUpdateKeywordRuleCategory={handleUpdateKeywordRuleCategory}
