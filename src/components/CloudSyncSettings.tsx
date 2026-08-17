@@ -34,15 +34,29 @@ function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFrom
     setBusy(true);
     try {
       const { hadExistingData } = await syncEngine.connect(id);
-      if (
-        hadExistingData &&
-        confirm(
-          `${PROVIDER_LABEL[id]} already has a CashFlow backup, probably from another device. Restore it into this browser now? Existing data here is kept either way — matching cards are merged, nothing is deleted.`,
-        )
-      ) {
-        const json = await syncEngine.pull(id);
-        if (json) await onRestoreFromCloud(json);
+      if (!hadExistingData) {
+        // Genuinely nothing there yet — safe to create the first backup.
+        await syncEngine.pushNow();
+        return;
       }
+      // There's already a backup out there (or we couldn't confirm either
+      // way) — never push blind, since that could silently overwrite real
+      // data with whatever's sitting in this browser (e.g. a fresh
+      // profile). Only push after the user has actually pulled it down;
+      // decline, and this stays connected without uploading anything until
+      // a manual "Sync now".
+      const wantsRestore = confirm(
+        `${PROVIDER_LABEL[id]} already has a CashFlow backup, probably from another device. Restore it into this browser now? Existing data here is kept either way — matching cards are merged, nothing is deleted.`,
+      );
+      if (!wantsRestore) return;
+      const json = await syncEngine.pull(id);
+      if (!json) {
+        alert(
+          `Connected, but couldn't download the existing backup from ${PROVIDER_LABEL[id]} right now. Nothing has been uploaded — use "Sync now" once you've confirmed what's here is what you want to keep.`,
+        );
+        return;
+      }
+      await onRestoreFromCloud(json);
       await syncEngine.pushNow();
     } catch (e) {
       alert(`Could not connect to ${PROVIDER_LABEL[id]}. ${(e as Error).message ?? ''}`.trim());

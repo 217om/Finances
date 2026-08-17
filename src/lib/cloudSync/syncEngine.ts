@@ -93,16 +93,20 @@ class SyncEngine {
 
   /** Connects a provider, then reports whether it already had a backup file
    *  from a previous device — the caller (Settings UI) can offer to restore
-   *  it, since silently pushing local data would otherwise overwrite it. */
+   *  it, since silently pushing local data would otherwise overwrite it.
+   *  If the existence check itself fails (e.g. a network blip), that's
+   *  reported as "had existing data" too — the safe assumption when we
+   *  genuinely don't know, since the alternative (assuming there's nothing
+   *  to lose) is exactly the failure mode that can wipe out a real backup. */
   async connect(id: ProviderId): Promise<{ hadExistingData: boolean }> {
     const provider = providers[id];
     await provider.connect();
     this.patch(id, { connected: true, accountLabel: provider.getAccountLabel(), lastError: null });
-    let hadExistingData = false;
+    let hadExistingData: boolean;
     try {
       hadExistingData = (await provider.download()) !== null;
     } catch {
-      /* not fatal to connecting — the next push will surface any real problem */
+      hadExistingData = true;
     }
     return { hadExistingData };
   }
