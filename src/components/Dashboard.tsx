@@ -137,7 +137,11 @@ const COMPARE_SHIFTS: Record<PresetKey, { key: string; label: string; monthsBack
 };
 
 function compareOptionsFor(preset: PresetKey | null, from: string, to: string): CompareOption[] {
-  if (preset === null) return [];
+  // `from`/`to` are empty strings whenever there's no data yet to range over
+  // (e.g. right after a fresh cloud sync, before any transactions have
+  // landed) — there's nothing to compare in that case, and feeding an empty
+  // string into the date math below would produce an Invalid Date and throw.
+  if (preset === null || !from || !to) return [];
   const span = daysInclusive(from, to);
   return COMPARE_SHIFTS[preset].map(({ key, label, monthsBack, daysBack }) => {
     const compTo = daysBack !== undefined ? addDaysISO(to, -daysBack) : addCalendarMonths(to, -(monthsBack ?? 0));
