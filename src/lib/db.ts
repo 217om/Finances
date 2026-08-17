@@ -155,6 +155,16 @@ export async function addTransactions(
   for (const t of txs) {
     if (existing.has(t.id)) {
       duplicates++;
+      // The row's own content (date/amount/description/note/etc.) is left
+      // untouched on a duplicate — but if it predates the `seq` field
+      // (imported before same-day chronological ordering existed), and
+      // this fresh parse of the same file computed one, backfill just that
+      // so a routine re-import can self-heal same-day balance/sort
+      // ordering instead of it staying wrong forever.
+      if (t.seq !== undefined) {
+        const row = await store.get(t.id);
+        if (row && row.seq === undefined) void store.put({ ...row, seq: t.seq });
+      }
       continue;
     }
     existing.add(t.id); // also de-dupes identical rows within this file
