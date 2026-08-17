@@ -1925,6 +1925,9 @@ th.num {
   font-weight: 400;
   color: var(--muted);
 }
+.filter-name-unsorted {
+  font-style: italic;
+}
 .filter-income-head {
   font-size: 12px;
   text-transform: uppercase;

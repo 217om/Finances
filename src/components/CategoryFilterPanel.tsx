@@ -61,15 +61,21 @@ export default function CategoryFilterPanel({
     return [...totals.entries()].sort((a, b) => b[1] - a[1]);
   }, [incomeTagged]);
 
+  // Includes Unsorted (transactions in a split category with no sub-category
+  // assigned) as its own toggleable row, sorted last — otherwise there'd be
+  // no way to hide just the leftover bucket while keeping a named
+  // sub-category (or the rest of the category) visible.
   const subTotalsFor = (category: string) => {
     const totals = new Map<string, number>();
     for (const x of expenses) {
       if (x.cat !== category) continue;
       const s = sub.subOf(x.t, category);
-      if (s === UNSORTED) continue;
       totals.set(s, (totals.get(s) ?? 0) + -x.t.amount);
     }
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    const entries = [...totals.entries()];
+    const unsorted = entries.filter(([s]) => s === UNSORTED);
+    const named = entries.filter(([s]) => s !== UNSORTED).sort((a, b) => b[1] - a[1]);
+    return [...named, ...unsorted];
   };
 
   const hiddenChips = useMemo(() => {
@@ -257,6 +263,7 @@ export default function CategoryFilterPanel({
                 <div className="filter-subs">
                   {subTotalsFor(cat).map(([s, subTotal]) => {
                     const subExcluded = isSubExcluded(categoryFilter, cat, s);
+                    const isUnsorted = s === UNSORTED;
                     return (
                       <div
                         key={s}
@@ -272,9 +279,9 @@ export default function CategoryFilterPanel({
                         </label>
                         <span
                           className="catdot"
-                          style={{ background: categoryColor(`${cat}/${s}`) }}
+                          style={{ background: isUnsorted ? '#7A6F63' : categoryColor(`${cat}/${s}`) }}
                         />
-                        <span className="filter-name">{s}</span>
+                        <span className={`filter-name ${isUnsorted ? 'filter-name-unsorted' : ''}`}>{s}</span>
                         <span className="muted filter-total">{money(subTotal)}</span>
                       </div>
                     );
