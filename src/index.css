@@ -1471,6 +1471,35 @@ th.num {
   color: var(--muted);
   padding: 6px 10px 2px;
 }
+
+/* ---------- Compare menu ---------- */
+.compare-menu-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+.compare-menu-pop {
+  right: auto;
+  left: 0;
+  min-width: 260px;
+}
+.compare-menu-pop button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.compare-menu-item-label {
+  font-weight: 500;
+}
+.compare-menu-item-range {
+  font-size: 11px;
+}
+.compare-menu-active {
+  background: var(--surface-2);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .settings-pop {
   min-width: 260px;
 }

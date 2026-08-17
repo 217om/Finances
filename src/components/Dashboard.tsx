@@ -6,6 +6,7 @@ import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
 import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
+import CompareMenu, { type CompareOption } from './CompareMenu';
 
 interface Props {
   transactions: Transaction[];
@@ -87,6 +88,64 @@ function addDaysISO(iso: string, delta: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Shifts a date by whole calendar months, clamping the day when the target
+ *  month is shorter (May 31 minus 1 month is April 30, not "May 1" — which
+ *  is what naive Date arithmetic would silently roll over to). */
+function addCalendarMonths(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const targetIdx = m - 1 + delta;
+  const ny = y + Math.floor(targetIdx / 12);
+  const nm0 = ((targetIdx % 12) + 12) % 12;
+  const daysInTarget = new Date(Date.UTC(ny, nm0 + 1, 0)).getUTCDate();
+  const day = Math.min(d, daysInTarget);
+  return `${ny}-${String(nm0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function daysInclusive(fromISO: string, toISO: string): number {
+  const [y1, m1, d1] = fromISO.split('-').map(Number);
+  const [y2, m2, d2] = toISO.split('-').map(Number);
+  const a = Date.UTC(y1, m1 - 1, d1);
+  const b = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((b - a) / 86400000) + 1;
+}
+
+/** One comparison target per preset, each shifting the *end* of the current
+ *  range back by a calendar amount and then taking the same number of days
+ *  the current range spans — so a still-partial period (week/month to date)
+ *  compares against an equally partial one instead of a full prior period,
+ *  and a complete one (last month, last 3 months) compares against an
+ *  equally complete one. No well-defined comparison exists for a hand-typed
+ *  custom range, so this returns none then. */
+const COMPARE_SHIFTS: Record<PresetKey, { key: string; label: string; monthsBack?: number; daysBack?: number }[]> = {
+  wtd: [
+    { key: 'lastWeek', label: 'Last week', daysBack: 7 },
+    { key: 'lastMonthWeek', label: 'Same week last month', monthsBack: 1 },
+    { key: 'lastYearWeek', label: 'Same week last year', monthsBack: 12 },
+  ],
+  mtd: [
+    { key: 'lastMonthPeriod', label: 'Same period last month', monthsBack: 1 },
+    { key: 'lastYearPeriod', label: 'Same period last year', monthsBack: 12 },
+  ],
+  lastMonth: [
+    { key: 'monthBefore', label: 'The month before that', monthsBack: 1 },
+    { key: 'lastYearSameMonth', label: 'Same month last year', monthsBack: 12 },
+  ],
+  last3: [
+    { key: 'prev3Months', label: 'The previous 3 months', monthsBack: 3 },
+    { key: 'lastYearSame3', label: 'Same 3 months last year', monthsBack: 12 },
+  ],
+};
+
+function compareOptionsFor(preset: PresetKey | null, from: string, to: string): CompareOption[] {
+  if (preset === null) return [];
+  const span = daysInclusive(from, to);
+  return COMPARE_SHIFTS[preset].map(({ key, label, monthsBack, daysBack }) => {
+    const compTo = daysBack !== undefined ? addDaysISO(to, -daysBack) : addCalendarMonths(to, -(monthsBack ?? 0));
+    const compFrom = addDaysISO(compTo, -(span - 1));
+    return { key, label, range: { from: compFrom, to: compTo } };
+  });
+}
+
 /** The inclusive [from, to] calendar span a clicked bucket key represents,
  *  given the active granularity (and pay-cycle start day for months). */
 function periodBounds(key: string, granularity: Granularity, monthStartDay: number): { from: string; to: string } {
@@ -143,12 +202,21 @@ export default function Dashboard({
   const [from, setFrom] = useState(() => presetRange('mtd', monthStartDay, weekStartDay, dateBounds).from);
   const [to, setTo] = useState(() => presetRange('mtd', monthStartDay, weekStartDay, dateBounds).to);
 
+  // Which comparison option (if any) is active — keyed off `preset` so a
+  // stale option from a different preset's set (or from a hand-typed custom
+  // range) never lingers when the user switches away.
+  const [compareKey, setCompareKey] = useState<string | null>(null);
+
   useEffect(() => {
     if (preset === null || !dateBounds.max) return;
     const range = presetRange(preset, monthStartDay, weekStartDay, dateBounds);
     setFrom(range.from);
     setTo(range.to);
   }, [preset, monthStartDay, weekStartDay, dateBounds.min, dateBounds.max]);
+
+  useEffect(() => {
+    setCompareKey(null);
+  }, [preset]);
 
   const lo = from <= to ? from : to;
   const hi = from <= to ? to : from;
@@ -168,6 +236,16 @@ export default function Dashboard({
     () => buildOverview(rangedTransactions, monthStartDay, categoryOf, weekStartDay),
     [rangedTransactions, monthStartDay, categoryOf, weekStartDay],
   );
+
+  const compareOptions = useMemo(() => compareOptionsFor(preset, from, to), [preset, from, to]);
+  const activeCompare = compareOptions.find((o) => o.key === compareKey) ?? null;
+
+  const compareOverview = useMemo(() => {
+    if (!activeCompare) return null;
+    const { from: cFrom, to: cTo } = activeCompare.range;
+    const txs = transactions.filter((t) => t.date >= cFrom && t.date <= cTo);
+    return buildOverview(txs, monthStartDay, categoryOf, weekStartDay);
+  }, [activeCompare, transactions, monthStartDay, categoryOf, weekStartDay]);
 
   const monthBuckets = useMemo(
     () => summarizeByMonth(rangedTransactions, monthStartDay, categoryOf),
@@ -230,6 +308,7 @@ export default function Dashboard({
               </button>
             ))}
           </div>
+          <CompareMenu options={compareOptions} activeKey={compareKey} onSelect={setCompareKey} />
           <div className="range-pickers">
             <label className="picker">
               <span className="picker-label">From</span>
@@ -283,7 +362,7 @@ export default function Dashboard({
           )}
         </p>
       )}
-      <KpiCards overview={overview} />
+      <KpiCards overview={overview} compareOverview={compareOverview} compareLabel={activeCompare?.label} />
 
       <section className="panel">
         <div className="panel-head">

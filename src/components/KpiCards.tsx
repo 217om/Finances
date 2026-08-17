@@ -3,9 +3,21 @@ import { money, percent } from '../lib/format';
 
 interface Props {
   overview: Overview;
+  /** The same shape of overview, but built over a comparison period — when
+   *  present, Income/Expenses/Net show a delta against it instead of their
+   *  usual averages. */
+  compareOverview?: Overview | null;
+  compareLabel?: string;
 }
 
-export default function KpiCards({ overview }: Props) {
+/** Percent change of `current` vs `base`, or null when `base` is zero (no
+ *  meaningful percentage to show). */
+function deltaPct(current: number, base: number): number | null {
+  if (base === 0) return null;
+  return ((current - base) / Math.abs(base)) * 100;
+}
+
+export default function KpiCards({ overview, compareOverview, compareLabel }: Props) {
   const {
     totalIncome,
     totalExpenses,
@@ -21,25 +33,32 @@ export default function KpiCards({ overview }: Props) {
     monthChangePct,
   } = overview;
 
+  const incomePct = compareOverview ? deltaPct(totalIncome, compareOverview.totalIncome) : null;
+  const expensesPct = compareOverview ? deltaPct(totalExpenses, compareOverview.totalExpenses) : null;
+  const netPct = compareOverview ? deltaPct(totalNet, compareOverview.totalNet) : null;
+
   return (
     <section className="kpis">
       <Kpi
         label="Income"
         value={money(totalIncome)}
         tone="pos"
-        sub={`avg ${money(avgMonthlyIncome, { compact: true })} / mo`}
+        sub={compareOverview ? `${percent(incomePct)} vs ${compareLabel}` : `avg ${money(avgMonthlyIncome, { compact: true })} / mo`}
+        subTone={compareOverview ? (incomePct === null ? undefined : incomePct >= 0 ? 'pos' : 'neg') : undefined}
       />
       <Kpi
         label="Expenses"
         value={money(totalExpenses)}
         tone="accent"
-        sub={`avg ${money(avgMonthlyExpenses, { compact: true })} / mo`}
+        sub={compareOverview ? `${percent(expensesPct)} vs ${compareLabel}` : `avg ${money(avgMonthlyExpenses, { compact: true })} / mo`}
+        subTone={compareOverview ? (expensesPct === null ? undefined : expensesPct <= 0 ? 'pos' : 'neg') : undefined}
       />
       <Kpi
         label="Net"
         value={money(totalNet)}
         tone={totalNet >= 0 ? 'pos' : 'neg'}
-        sub={`${savingsRate.toFixed(0)}% of income kept`}
+        sub={compareOverview ? `${percent(netPct)} vs ${compareLabel}` : `${savingsRate.toFixed(0)}% of income kept`}
+        subTone={compareOverview ? (netPct === null ? undefined : netPct >= 0 ? 'pos' : 'neg') : undefined}
       />
       <Kpi
         label="Latest week"
