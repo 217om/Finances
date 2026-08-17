@@ -39,6 +39,11 @@ export interface Asset {
    *  signedAssetValue. Absent on assets created before this existed, which
    *  means 'asset'. */
   kind?: AssetKind;
+  /** When the name/kind was last changed (rename, switching asset<->liability)
+   *  — lets sync-restore keep whichever of two conflicting copies is newer
+   *  instead of letting the restored one blindly win. Optional only for
+   *  records written before this field existed. */
+  updatedAt?: number;
 }
 
 /** One historical value for an asset. Entries accumulate over time so the
@@ -78,7 +83,8 @@ export function makeCheckpoint(date: string, balance: number): BalanceCheckpoint
 }
 
 export function makeAsset(name: string, kind: AssetKind = 'asset'): Asset {
-  return { id: `asset_${randomId()}`, name: name.trim() || 'New asset', createdAt: Date.now(), kind };
+  const now = Date.now();
+  return { id: `asset_${randomId()}`, name: name.trim() || 'New asset', createdAt: now, kind, updatedAt: now };
 }
 
 export function makeAssetValueEntry(assetId: string, date: string, value: number): AssetValueEntry {
@@ -287,9 +293,17 @@ export function mergeCheckpoints(
   return [...byId.values()];
 }
 
+/** An id present on both sides keeps whichever copy has the later updatedAt
+ *  (missing treated as oldest) — a rename/kind-change survives restoring an
+ *  older backup instead of being silently reverted. Checkpoints don't need
+ *  the same treatment above: they're create/delete-only, never edited in
+ *  place, so a shared id can only mean the same record either way. */
 export function mergeAssets(existing: Asset[], incoming: Asset[]): Asset[] {
   const byId = new Map(existing.map((a) => [a.id, a]));
-  for (const a of incoming) byId.set(a.id, a);
+  for (const a of incoming) {
+    const cur = byId.get(a.id);
+    if (!cur || (a.updatedAt ?? 0) >= (cur.updatedAt ?? 0)) byId.set(a.id, a);
+  }
   return [...byId.values()];
 }
 

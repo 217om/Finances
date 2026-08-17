@@ -19,6 +19,11 @@ export interface Budget {
   /** One or more categories this budget tracks together — their actual
    *  spend is summed for each week. */
   categories: string[];
+  /** When the name/categories last changed — lets sync-restore keep
+   *  whichever of two conflicting copies is actually newer instead of
+   *  blindly letting the restored one win. Optional only for records
+   *  written before this field existed. */
+  updatedAt?: number;
 }
 
 export interface BudgetEntry {
@@ -27,6 +32,8 @@ export interface BudgetEntry {
    *  even when the week itself is a partial one at the edge of a cycle. */
   weekStart: string;
   amount: number;
+  /** See Budget.updatedAt — same purpose. */
+  updatedAt?: number;
 }
 
 export interface WeekWindow {
@@ -72,20 +79,24 @@ function randomId(): string {
 }
 
 export function makeBudget(name: string): Budget {
-  return { id: `budget_${randomId()}`, name: name.trim() || 'New budget', categories: [] };
+  return { id: `budget_${randomId()}`, name: name.trim() || 'New budget', categories: [], updatedAt: Date.now() };
 }
 
 export function renameBudget(budgets: Budget[], id: string, name: string): Budget[] {
   const trimmed = name.trim();
   if (!trimmed) return budgets;
-  return budgets.map((b) => (b.id === id ? { ...b, name: trimmed } : b));
+  return budgets.map((b) => (b.id === id ? { ...b, name: trimmed, updatedAt: Date.now() } : b));
 }
 
 export function toggleBudgetCategory(budgets: Budget[], id: string, category: string): Budget[] {
   return budgets.map((b) => {
     if (b.id !== id) return b;
     const has = b.categories.includes(category);
-    return { ...b, categories: has ? b.categories.filter((c) => c !== category) : [...b.categories, category] };
+    return {
+      ...b,
+      categories: has ? b.categories.filter((c) => c !== category) : [...b.categories, category],
+      updatedAt: Date.now(),
+    };
   });
 }
 
@@ -178,7 +189,7 @@ export function setBudgetAmount(
   amount: number,
 ): BudgetEntry[] {
   const rest = entries.filter((e) => !(e.budgetId === budgetId && e.weekStart === weekStart));
-  return amount > 0 ? [...rest, { budgetId, weekStart, amount }] : rest;
+  return amount > 0 ? [...rest, { budgetId, weekStart, amount, updatedAt: Date.now() }] : rest;
 }
 
 /** Applies the same amount to every given week for one budget — the
@@ -198,20 +209,28 @@ export function removeBudgetEntries(entries: BudgetEntry[], budgetId: string): B
   return entries.filter((e) => e.budgetId !== budgetId);
 }
 
-/** Merges two budget lists by id — an existing budget with the same id as an
- *  incoming one is replaced by the incoming version; anything else on either
- *  side is kept. Used when restoring a backup, matching how filter presets
- *  merge, so restore is additive rather than replacing local budgets. */
+/** Merges two budget lists by id — anything only on one side is kept as-is;
+ *  for an id present on both sides, whichever copy has the later updatedAt
+ *  wins (missing treated as oldest), so restoring an older backup can't
+ *  silently undo a newer local rename/category change. */
 export function mergeBudgets(existing: Budget[], incoming: Budget[]): Budget[] {
   const byId = new Map(existing.map((b) => [b.id, b]));
-  for (const b of incoming) byId.set(b.id, b);
+  for (const b of incoming) {
+    const cur = byId.get(b.id);
+    if (!cur || (b.updatedAt ?? 0) >= (cur.updatedAt ?? 0)) byId.set(b.id, b);
+  }
   return [...byId.values()];
 }
 
-/** Merges two budget-entry lists by (budgetId, weekStart) the same way. */
+/** Merges two budget-entry lists by (budgetId, weekStart) the same way —
+ *  later updatedAt wins on a shared key instead of incoming always winning. */
 export function mergeBudgetEntries(existing: BudgetEntry[], incoming: BudgetEntry[]): BudgetEntry[] {
   const byKey = new Map(existing.map((e) => [`${e.budgetId}|${e.weekStart}`, e]));
-  for (const e of incoming) byKey.set(`${e.budgetId}|${e.weekStart}`, e);
+  for (const e of incoming) {
+    const key = `${e.budgetId}|${e.weekStart}`;
+    const cur = byKey.get(key);
+    if (!cur || (e.updatedAt ?? 0) >= (cur.updatedAt ?? 0)) byKey.set(key, e);
+  }
   return [...byKey.values()];
 }
 

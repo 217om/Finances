@@ -81,13 +81,23 @@ export interface CategoryRule {
   category: string;
   excludedIds: string[];
   sample: string;
+  /** Doubles as the rule's priority (drag-to-reorder rewrites it) — NOT a
+   *  reliable "last edited" signal, see updatedAt below. */
   createdAt: number;
+  /** When this rule's category was last changed. Separate from createdAt
+   *  specifically so sync-restore can tell which of two conflicting copies
+   *  (e.g. from two devices) is actually more recent, without disturbing
+   *  createdAt's priority-ordering role. Optional only for records written
+   *  before this field existed — missing means "unknown, treat as oldest." */
+  updatedAt?: number;
 }
 
 /** A manual, per-transaction category assignment (highest precedence). */
 export interface CategoryOverride {
   id: string; // transaction id
   category: string;
+  /** See CategoryRule.updatedAt — same purpose. */
+  updatedAt?: number;
 }
 
 /**
@@ -98,7 +108,12 @@ export interface CategoryOverride {
 export interface KeywordRule {
   keyword: string; // lowercased substring to match
   category: string;
+  /** Doubles as priority (newer wins at resolution time; drag-to-reorder
+   *  rewrites it) — not a reliable "last edited" signal, see updatedAt. */
   createdAt: number;
+  /** See CategoryRule.updatedAt — same purpose, kept separate from
+   *  createdAt's priority role. */
+  updatedAt?: number;
 }
 
 /**
@@ -112,7 +127,12 @@ export interface SubRule {
   parent: string; // top-level category this applies within
   keyword: string; // lowercased substring
   sub: string; // sub-category name
+  /** Doubles as priority (drag-to-reorder rewrites it) — not a reliable
+   *  "last edited" signal, see updatedAt. */
   createdAt: number;
+  /** See CategoryRule.updatedAt — same purpose, kept separate from
+   *  createdAt's priority role. */
+  updatedAt?: number;
 }
 
 /** A manual per-transaction sub-category assignment (highest sub precedence). */
@@ -120,4 +140,6 @@ export interface SubOverride {
   id: string; // transaction id
   parent: string; // the category it was tagged under
   sub: string;
+  /** See CategoryRule.updatedAt — same purpose. */
+  updatedAt?: number;
 }

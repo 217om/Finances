@@ -157,6 +157,28 @@ function stamp(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** For sync-restore: given the records already stored locally and the ones
+ *  coming in from a backup, returns only the incoming records that should
+ *  actually be written — new ones (no local match by key) and ones whose
+ *  updatedAt is at least as recent as the local copy's. An incoming record
+ *  that's older than what's already stored is dropped, so restoring a stale
+ *  backup can't silently revert a newer local edit to the same rule/
+ *  override/etc. Records written before updatedAt existed sort as oldest. */
+function reconcileForRestore<T>(
+  existing: T[],
+  incoming: T[],
+  keyOf: (t: T) => string,
+  updatedAtOf: (t: T) => number | undefined,
+): T[] {
+  const existingByKey = new Map(existing.map((t) => [keyOf(t), t]));
+  const toWrite: T[] = [];
+  for (const inc of incoming) {
+    const cur = existingByKey.get(keyOf(inc));
+    if (!cur || (updatedAtOf(inc) ?? 0) >= (updatedAtOf(cur) ?? 0)) toWrite.push(inc);
+  }
+  return toWrite;
+}
+
 function triggerDownload(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -588,10 +610,52 @@ export async function restoreFullBackup(
     const dbName = target.dbName;
 
     await addTransactions(dbName, asArray<Transaction>(cb.transactions), `restore-${cb.name}`);
-    await saveCategorization(dbName, asArray<CategoryRule>(cb.rules), asArray<CategoryOverride>(cb.overrides));
-    await saveKeywordRules(dbName, asArray<KeywordRule>(cb.keywordRules));
-    await saveSubRules(dbName, asArray<SubRule>(cb.subRules));
-    await saveSubOverrides(dbName, asArray<SubOverride>(cb.subOverrides));
+
+    // Rules/overrides are keyed upserts — write only the incoming ones that
+    // are new or at least as recent as what's already here, so an older
+    // backup can't quietly revert a newer local recategorization.
+    const [existingRules, existingOverrides, existingKeywordRules, existingSubRules, existingSubOverrides] =
+      await Promise.all([
+        getRules(dbName),
+        getOverrides(dbName),
+        getKeywordRules(dbName),
+        getSubRules(dbName),
+        getSubOverrides(dbName),
+      ]);
+    const rulesToWrite = reconcileForRestore(
+      existingRules,
+      asArray<CategoryRule>(cb.rules),
+      (r) => r.signature,
+      (r) => r.updatedAt,
+    );
+    const overridesToWrite = reconcileForRestore(
+      existingOverrides,
+      asArray<CategoryOverride>(cb.overrides),
+      (o) => o.id,
+      (o) => o.updatedAt,
+    );
+    const keywordRulesToWrite = reconcileForRestore(
+      existingKeywordRules,
+      asArray<KeywordRule>(cb.keywordRules),
+      (r) => r.keyword,
+      (r) => r.updatedAt,
+    );
+    const subRulesToWrite = reconcileForRestore(
+      existingSubRules,
+      asArray<SubRule>(cb.subRules),
+      (r) => r.id,
+      (r) => r.updatedAt,
+    );
+    const subOverridesToWrite = reconcileForRestore(
+      existingSubOverrides,
+      asArray<SubOverride>(cb.subOverrides),
+      (o) => o.id,
+      (o) => o.updatedAt,
+    );
+    await saveCategorization(dbName, rulesToWrite, overridesToWrite);
+    await saveKeywordRules(dbName, keywordRulesToWrite);
+    await saveSubRules(dbName, subRulesToWrite);
+    await saveSubOverrides(dbName, subOverridesToWrite);
 
     if (cb.currency) writeLS(scopedKey(CURRENCY_KEY, target.id), cb.currency);
     if (typeof cb.monthStartDay === 'number' && cb.monthStartDay >= 1 && cb.monthStartDay <= 28) {
@@ -656,12 +720,32 @@ export async function restoreFullBackup(
   const assetValues = mergeAssetValues(existingAssetValues, incomingAssetValues);
   writeLS(ASSET_VALUES_KEY, JSON.stringify(assetValues));
 
-  // Global rules (shared by every card by default) upsert into the shared
-  // store the same additive way each card's own rules do above — nothing
-  // existing is replaced, only added to or overwritten key-for-key.
-  await saveCategorization(GLOBAL_RULES_DB, asArray<CategoryRule>(backup.globalRules), []);
-  await saveKeywordRules(GLOBAL_RULES_DB, asArray<KeywordRule>(backup.globalKeywordRules));
-  await saveSubRules(GLOBAL_RULES_DB, asArray<SubRule>(backup.globalSubRules));
+  // Global rules (shared by every card by default) reconcile into the
+  // shared store the same key-aware, newer-wins way each card's own rules
+  // do above, rather than letting an older backup revert a newer edit.
+  const [existingGlobalRules, existingGlobalKeywordRules, existingGlobalSubRules] = await Promise.all([
+    getRules(GLOBAL_RULES_DB),
+    getKeywordRules(GLOBAL_RULES_DB),
+    getSubRules(GLOBAL_RULES_DB),
+  ]);
+  await saveCategorization(
+    GLOBAL_RULES_DB,
+    reconcileForRestore(existingGlobalRules, asArray<CategoryRule>(backup.globalRules), (r) => r.signature, (r) => r.updatedAt),
+    [],
+  );
+  await saveKeywordRules(
+    GLOBAL_RULES_DB,
+    reconcileForRestore(
+      existingGlobalKeywordRules,
+      asArray<KeywordRule>(backup.globalKeywordRules),
+      (r) => r.keyword,
+      (r) => r.updatedAt,
+    ),
+  );
+  await saveSubRules(
+    GLOBAL_RULES_DB,
+    reconcileForRestore(existingGlobalSubRules, asArray<SubRule>(backup.globalSubRules), (r) => r.id, (r) => r.updatedAt),
+  );
   const [globalRules, globalKeywordRules, globalSubRules] = await Promise.all([
     getRules(GLOBAL_RULES_DB),
     getKeywordRules(GLOBAL_RULES_DB),

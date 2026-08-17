@@ -928,7 +928,7 @@ export default function App() {
   const handleRenameAsset = useCallback((id: string, name: string) => {
     setAssets((prev) => {
       const trimmed = name.trim();
-      const next = trimmed ? prev.map((a) => (a.id === id ? { ...a, name: trimmed } : a)) : prev;
+      const next = trimmed ? prev.map((a) => (a.id === id ? { ...a, name: trimmed, updatedAt: Date.now() } : a)) : prev;
       try {
         localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
       } catch {
@@ -940,7 +940,7 @@ export default function App() {
 
   const handleSetAssetKind = useCallback((id: string, kind: AssetKind) => {
     setAssets((prev) => {
-      const next = prev.map((a) => (a.id === id ? { ...a, kind } : a));
+      const next = prev.map((a) => (a.id === id ? { ...a, kind, updatedAt: Date.now() } : a));
       try {
         localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
       } catch {
@@ -1048,7 +1048,7 @@ export default function App() {
 
   const handleRenameFilterPreset = useCallback(
     (id: string, name: string) => {
-      persistPresets(filterPresets.map((p) => (p.id === id ? { ...p, name } : p)));
+      persistPresets(filterPresets.map((p) => (p.id === id ? { ...p, name, updatedAt: Date.now() } : p)));
     },
     [filterPresets],
   );
@@ -1090,7 +1090,7 @@ export default function App() {
         setSubOverrides((prev) => prev.filter((o) => o.id !== id));
         return;
       }
-      const o: SubOverride = { id, parent, sub: subName };
+      const o: SubOverride = { id, parent, sub: subName, updatedAt: Date.now() };
       saveSubOverride(dbName, o);
       setSubOverrides((prev) => [...prev.filter((x) => x.id !== id), o]);
     },
@@ -1105,7 +1105,7 @@ export default function App() {
         setSubOverrides((prev) => prev.filter((o) => !idSet.has(o.id)));
         return;
       }
-      const newOverrides = ids.map((id) => ({ id, parent, sub: subName }));
+      const newOverrides = ids.map((id) => ({ id, parent, sub: subName, updatedAt: Date.now() }));
       saveSubOverrides(dbName, newOverrides);
       setSubOverrides((prev) => {
         const idSet = new Set(ids);
@@ -1188,7 +1188,7 @@ export default function App() {
 
   const handleSetCategory = useCallback(
     (id: string, category: string) => {
-      const o: CategoryOverride = { id, category };
+      const o: CategoryOverride = { id, category, updatedAt: Date.now() };
       saveOverride(dbName, o);
       setOverrides((prev) => [...prev.filter((x) => x.id !== id), o]);
     },
@@ -1326,7 +1326,7 @@ export default function App() {
         const newOverrides: CategoryOverride[] = [];
         for (const t of txs) {
           if (overriddenIds.has(t.id) || !matches(t) || snap.categoryOf(t) !== category) continue;
-          newOverrides.push({ id: t.id, category });
+          newOverrides.push({ id: t.id, category, updatedAt: Date.now() });
         }
         if (newOverrides.length === 0) continue;
         await saveCategorization(card.dbName, [], newOverrides);
@@ -1364,7 +1364,7 @@ export default function App() {
         for (const t of txs) {
           if (overriddenIds.has(t.id) || !matches(t)) continue;
           if (snap.categoryOf(t) !== parent || snap.subOf(t, parent) !== sub) continue;
-          newSubOverrides.push({ id: t.id, parent, sub });
+          newSubOverrides.push({ id: t.id, parent, sub, updatedAt: Date.now() });
         }
         if (newSubOverrides.length === 0) continue;
         await saveSubOverrides(card.dbName, newSubOverrides);
@@ -1391,7 +1391,7 @@ export default function App() {
 
   const handleCreateKeywordRuleFor = useCallback(
     (scope: string, keyword: string, category: string) => {
-      const rule: KeywordRule = { keyword, category, createdAt: Date.now() };
+      const rule: KeywordRule = { keyword, category, createdAt: Date.now(), updatedAt: Date.now() };
       saveKeywordRule(getScopeDbName(scope), rule);
       updateScopeKeywordRules(scope, (prev) => [...prev.filter((r) => r.keyword !== keyword), rule]);
       setToast(`Rule saved · “${keyword}” → ${category}`);
@@ -1465,7 +1465,7 @@ export default function App() {
       updateScopeKeywordRules(scope, (prev) => {
         const existing = prev.find((r) => r.keyword === keyword);
         if (!existing) return prev;
-        const updated: KeywordRule = { ...existing, category };
+        const updated: KeywordRule = { ...existing, category, updatedAt: Date.now() };
         saveKeywordRule(getScopeDbName(scope), updated);
         return prev.map((r) => (r.keyword === keyword ? updated : r));
       });
@@ -1478,7 +1478,7 @@ export default function App() {
       updateScopeRules(scope, (prev) => {
         const existing = prev.find((r) => r.signature === signature);
         if (!existing) return prev;
-        const updated: CategoryRule = { ...existing, category };
+        const updated: CategoryRule = { ...existing, category, updatedAt: Date.now() };
         saveCategorization(getScopeDbName(scope), [updated], []);
         return prev.map((r) => (r.signature === signature ? updated : r));
       });
@@ -1499,7 +1499,7 @@ export default function App() {
     (scope: string, parent: string, keyword: string, subName: string) => {
       const kw = keyword.trim().toLowerCase();
       if (!parent || !kw || !subName) return;
-      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now() };
+      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now(), updatedAt: Date.now() };
       saveSubRules(getScopeDbName(scope), [rule]);
       updateScopeSubRules(scope, (prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
       setToast(`Sub-category rule saved · "${kw}" → ${parent} / ${subName}`);
@@ -1524,7 +1524,7 @@ export default function App() {
       updateScopeSubRules(scope, (prev) => {
         const existing = prev.find((r) => r.id === id);
         if (!existing || existing.parent === newParent) return prev;
-        const updated: SubRule = { ...existing, parent: newParent, id: `${newParent}${existing.keyword}` };
+        const updated: SubRule = { ...existing, parent: newParent, id: `${newParent}${existing.keyword}`, updatedAt: Date.now() };
         const targetDbName = getScopeDbName(scope);
         deleteSubRule(targetDbName, id);
         saveSubRules(targetDbName, [updated]);

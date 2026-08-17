@@ -94,11 +94,12 @@ export default function CategorizeWizard({
         excludedIds: [...excluded, ...splitIds],
         sample: group.label,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
       setRules((r) => [...r, newRule]);
     }
     if (splits.length) {
-      const newKw: KeywordRule[] = splits.map((s) => ({ keyword: s.keyword, category: s.category, createdAt: Date.now() }));
+      const newKw: KeywordRule[] = splits.map((s) => ({ keyword: s.keyword, category: s.category, createdAt: Date.now(), updatedAt: Date.now() }));
       setKeywordRules((k) => [...k, ...newKw]);
     }
     // Manually-unchecked transactions (not covered by a split) fall through
@@ -143,9 +144,9 @@ export default function CategorizeWizard({
   const finishLeftovers = () => {
     const picked: CategoryOverride[] = Object.entries(leftoverPick)
       .filter(([id, cat]) => cat && cat !== KEEP && !leftoverSplitIds.has(id))
-      .map(([id, cat]) => ({ id, category: cat }));
+      .map(([id, cat]) => ({ id, category: cat, updatedAt: Date.now() }));
     setOverrides((o) => [...o, ...picked]);
-    const newKw: KeywordRule[] = leftoverSplits.map((s) => ({ keyword: s.keyword, category: s.category, createdAt: Date.now() }));
+    const newKw: KeywordRule[] = leftoverSplits.map((s) => ({ keyword: s.keyword, category: s.category, createdAt: Date.now(), updatedAt: Date.now() }));
     if (newKw.length) setKeywordRules((k) => [...k, ...newKw]);
     finish(picked, newKw);
   };

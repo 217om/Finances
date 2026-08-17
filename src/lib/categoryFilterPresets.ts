@@ -28,6 +28,10 @@ export interface IncludedCategoryPreset {
   /** Per-parent list of included sub-category names — same allow-list
    *  model, only meaningful for a parent that's itself included. */
   includedSubs: Record<string, string[]>;
+  /** When the name/contents last changed — lets sync-restore keep whichever
+   *  of two conflicting copies is newer instead of letting the restored one
+   *  blindly win. Optional only for records written before this existed. */
+  updatedAt?: number;
 }
 
 /** Pre-fix preset shape: a raw snapshot of what was excluded. Still read
@@ -39,6 +43,8 @@ interface LegacyCategoryFilterPreset {
   id: string;
   name: string;
   filter: CategoryFilterState;
+  /** See IncludedCategoryPreset.updatedAt — same purpose. */
+  updatedAt?: number;
 }
 
 export type CategoryFilterPreset = IncludedCategoryPreset | LegacyCategoryFilterPreset;
@@ -53,7 +59,7 @@ export function makePreset(
   includedSubs: Record<string, string[]>,
 ): CategoryFilterPreset {
   const id = `preset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  return { id, name, includedCategories, includedSubs };
+  return { id, name, includedCategories, includedSubs, updatedAt: Date.now() };
 }
 
 /** Captures which categories/subs `filter` currently leaves visible, out of
@@ -108,16 +114,20 @@ export function isValidPresetList(v: unknown): v is CategoryFilterPreset[] {
   return Array.isArray(v) && v.every(isValidPreset);
 }
 
-/** Merges two preset lists by id — an existing preset with the same id as
- *  an incoming one is replaced by the incoming version; anything else on
- *  either side is kept. Used when restoring a backup, so it's additive here
- *  too rather than wiping out presets created since the backup was made. */
+/** Merges two preset lists by id — anything only on one side is kept as-is;
+ *  for an id on both sides, whichever copy has the later updatedAt wins
+ *  (missing treated as oldest), so restoring an older backup can't silently
+ *  undo a newer local rename. Used when restoring a backup, so it's
+ *  additive here too rather than wiping out presets created since. */
 export function mergePresets(
   existing: CategoryFilterPreset[],
   incoming: CategoryFilterPreset[],
 ): CategoryFilterPreset[] {
   const byId = new Map(existing.map((p) => [p.id, p]));
-  for (const p of incoming) byId.set(p.id, p);
+  for (const p of incoming) {
+    const cur = byId.get(p.id);
+    if (!cur || (p.updatedAt ?? 0) >= (cur.updatedAt ?? 0)) byId.set(p.id, p);
+  }
   return [...byId.values()];
 }
 
