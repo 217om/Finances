@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildOverview, summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
-import { type PresetKey, PRESETS, presetRange, addDaysISO } from '../lib/rangePresets';
+import { type PresetKey, PRESETS, presetRange, addDaysISO, compareOptionsFor } from '../lib/rangePresets';
 import type { Transaction } from '../types';
 import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
 import MonthlyCashflowChart, { type Granularity } from './MonthlyCashflowChart';
 import CategoryBreakdown from './CategoryBreakdown';
-import CompareMenu, { type CompareOption } from './CompareMenu';
+import CompareMenu from './CompareMenu';
 
 interface Props {
   transactions: Transaction[];
@@ -39,68 +39,6 @@ function ordinal(d: number): string {
   if (d % 10 === 2 && d !== 12) return `${d}nd`;
   if (d % 10 === 3 && d !== 13) return `${d}rd`;
   return `${d}th`;
-}
-
-/** Shifts a date by whole calendar months, clamping the day when the target
- *  month is shorter (May 31 minus 1 month is April 30, not "May 1" — which
- *  is what naive Date arithmetic would silently roll over to). */
-function addCalendarMonths(iso: string, delta: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const targetIdx = m - 1 + delta;
-  const ny = y + Math.floor(targetIdx / 12);
-  const nm0 = ((targetIdx % 12) + 12) % 12;
-  const daysInTarget = new Date(Date.UTC(ny, nm0 + 1, 0)).getUTCDate();
-  const day = Math.min(d, daysInTarget);
-  return `${ny}-${String(nm0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-function daysInclusive(fromISO: string, toISO: string): number {
-  const [y1, m1, d1] = fromISO.split('-').map(Number);
-  const [y2, m2, d2] = toISO.split('-').map(Number);
-  const a = Date.UTC(y1, m1 - 1, d1);
-  const b = Date.UTC(y2, m2 - 1, d2);
-  return Math.round((b - a) / 86400000) + 1;
-}
-
-/** One comparison target per preset, each shifting the *end* of the current
- *  range back by a calendar amount and then taking the same number of days
- *  the current range spans — so a still-partial period (week/month to date)
- *  compares against an equally partial one instead of a full prior period,
- *  and a complete one (last month, last 3 months) compares against an
- *  equally complete one. No well-defined comparison exists for a hand-typed
- *  custom range, so this returns none then. */
-const COMPARE_SHIFTS: Record<PresetKey, { key: string; label: string; monthsBack?: number; daysBack?: number }[]> = {
-  wtd: [
-    { key: 'lastWeek', label: 'Last week', daysBack: 7 },
-    { key: 'lastMonthWeek', label: 'Same week last month', monthsBack: 1 },
-    { key: 'lastYearWeek', label: 'Same week last year', monthsBack: 12 },
-  ],
-  mtd: [
-    { key: 'lastMonthPeriod', label: 'Same period last month', monthsBack: 1 },
-    { key: 'lastYearPeriod', label: 'Same period last year', monthsBack: 12 },
-  ],
-  lastMonth: [
-    { key: 'monthBefore', label: 'The month before that', monthsBack: 1 },
-    { key: 'lastYearSameMonth', label: 'Same month last year', monthsBack: 12 },
-  ],
-  last3: [
-    { key: 'prev3Months', label: 'The previous 3 months', monthsBack: 3 },
-    { key: 'lastYearSame3', label: 'Same 3 months last year', monthsBack: 12 },
-  ],
-};
-
-function compareOptionsFor(preset: PresetKey | null, from: string, to: string): CompareOption[] {
-  // `from`/`to` are empty strings whenever there's no data yet to range over
-  // (e.g. right after a fresh cloud sync, before any transactions have
-  // landed) — there's nothing to compare in that case, and feeding an empty
-  // string into the date math below would produce an Invalid Date and throw.
-  if (preset === null || !from || !to) return [];
-  const span = daysInclusive(from, to);
-  return COMPARE_SHIFTS[preset].map(({ key, label, monthsBack, daysBack }) => {
-    const compTo = daysBack !== undefined ? addDaysISO(to, -daysBack) : addCalendarMonths(to, -(monthsBack ?? 0));
-    const compFrom = addDaysISO(compTo, -(span - 1));
-    return { key, label, range: { from: compFrom, to: compTo } };
-  });
 }
 
 /** The inclusive [from, to] calendar span a clicked bucket key represents,

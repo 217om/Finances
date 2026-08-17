@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { dayLabel } from '../lib/format';
-
-export interface CompareOption {
-  key: string;
-  label: string;
-  range: { from: string; to: string };
-}
+import type { CompareOption } from '../lib/rangePresets';
 
 interface Props {
   options: CompareOption[];
