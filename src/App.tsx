@@ -2383,6 +2383,8 @@ export default function App() {
                 <CombinedCategoriesPage
                   transactions={combinedAllData.transactions}
                   categoryOf={combinedAllData.categoryOf}
+                  monthStartDay={monthStartDay}
+                  weekStartDay={weekStartDay}
                   subOf={combinedAllData.subOf}
                   cardNameOf={combinedAllData.cardNameOf}
                   cardIdOf={combinedAllData.cardIdOf}
@@ -2400,6 +2402,8 @@ export default function App() {
                 <CategoriesPage
                   transactions={transactions}
                   categoryOf={categoryOf}
+                  monthStartDay={monthStartDay}
+                  weekStartDay={weekStartDay}
                   sub={subResolver}
                   onBulkSetSubCategory={handleBulkSetSubCategory}
                   onSetTxNote={(id, note) => handleSetTxNote(activeCardId, id, note)}

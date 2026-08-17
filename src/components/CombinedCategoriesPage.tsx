@@ -5,9 +5,15 @@ import { UNSORTED } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import type { CategoryFilterPreset } from '../lib/categoryFilterPresets';
 import { money } from '../lib/format';
+import { type PresetKey, PRESETS, presetRange } from '../lib/rangePresets';
 import CategoryTreemap, { type TreemapCell } from './CategoryTreemap';
 import CategoryFilterPanel, { type MiniSubResolver, type Tagged } from './CategoryFilterPanel';
+import RangeMenu from './RangeMenu';
 import TxNoteCell from './TxNoteCell';
+
+type RangeKey = PresetKey | 'all';
+
+const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [...PRESETS, { key: 'all', label: 'All time' }];
 
 interface Props {
   /** Unfiltered by any card's own hidden-category filter (see combineAllData)
@@ -15,6 +21,8 @@ interface Props {
    *  full picture available regardless of what any individual card hides. */
   transactions: Transaction[];
   categoryOf: (tx: Transaction) => string;
+  monthStartDay: number;
+  weekStartDay: number;
   subOf: (tx: Transaction, cat: string) => string;
   cardNameOf: (tx: Transaction) => string;
   cardIdOf: (tx: Transaction) => string;
@@ -45,6 +53,8 @@ const MERCHANT_LIMIT = 12;
 export default function CombinedCategoriesPage({
   transactions,
   categoryOf,
+  monthStartDay,
+  weekStartDay,
   subOf,
   cardNameOf,
   cardIdOf,
@@ -58,13 +68,40 @@ export default function CombinedCategoriesPage({
   onDeletePreset,
   onApplyPreset,
 }: Props) {
+  // Defaults to month-to-date so the map reflects recent spending rather
+  // than the combined history — the user can widen it via the low-key range
+  // word in the subtitle below.
+  const [rangeKey, setRangeKey] = useState<RangeKey>('mtd');
+
+  const dateBounds = useMemo(() => {
+    if (transactions.length === 0) return { min: '', max: '' };
+    let min = transactions[0].date;
+    let max = transactions[0].date;
+    for (const t of transactions) {
+      if (t.date < min) min = t.date;
+      if (t.date > max) max = t.date;
+    }
+    return { min, max };
+  }, [transactions]);
+
+  const range = useMemo(() => {
+    if (!dateBounds.max) return { from: '', to: '' };
+    if (rangeKey === 'all') return { from: dateBounds.min, to: dateBounds.max };
+    return presetRange(rangeKey, monthStartDay, weekStartDay, dateBounds);
+  }, [rangeKey, monthStartDay, weekStartDay, dateBounds]);
+
+  const ranged = useMemo(() => {
+    if (!range.from || !range.to) return transactions;
+    return transactions.filter((t) => t.date >= range.from && t.date <= range.to);
+  }, [transactions, range]);
+
   const expenses = useMemo<Tagged[]>(
-    () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
-    [transactions, categoryOf],
+    () => ranged.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [ranged, categoryOf],
   );
   const incomeTagged = useMemo<Tagged[]>(
-    () => transactions.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
-    [transactions, categoryOf],
+    () => ranged.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [ranged, categoryOf],
   );
 
   const [category, setCategory] = useState<string | null>(null);
@@ -189,7 +226,10 @@ export default function CombinedCategoriesPage({
         <div className="panel-head">
           <div>
             <h2>Category map</h2>
-            <p className="muted">Sized by spending, all time. Click to break down, click again for transactions.</p>
+            <p className="muted">
+              Sized by spending, <RangeMenu options={RANGE_OPTIONS} activeKey={rangeKey} onSelect={(k) => setRangeKey(k as RangeKey)} />.
+              Click to break down, click again for transactions.
+            </p>
           </div>
         </div>
 

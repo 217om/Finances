@@ -1500,6 +1500,21 @@ th.num {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
+
+/* ---------- Range menu (low-key, inline-text range picker) ---------- */
+.range-menu {
+  display: inline-block;
+}
+.range-menu-trigger {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  padding: 0 1px;
+}
+.range-menu-pop {
+  right: auto;
+  left: 0;
+  min-width: 180px;
+}
 .settings-pop {
   min-width: 260px;
 }

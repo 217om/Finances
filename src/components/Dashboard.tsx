@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { buildOverview, startOfWeek, summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
-import { adjacentPeriod, cycleBounds, currentCyclePeriod, todayISO } from '../lib/budget';
+import { buildOverview, summarizeByDay, summarizeByMonth, summarizeByWeek } from '../lib/aggregate';
+import { type PresetKey, PRESETS, presetRange, addDaysISO } from '../lib/rangePresets';
 import type { Transaction } from '../types';
 import { dayLabel } from '../lib/format';
 import KpiCards from './KpiCards';
@@ -34,58 +34,11 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 // Above this many bars the chart gets hard to read — just a nudge, not a limit.
 const DENSE_POINT_WARNING = 120;
 
-type PresetKey = 'wtd' | 'mtd' | 'lastMonth' | 'last3';
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: 'wtd', label: 'Week to date' },
-  { key: 'mtd', label: 'Month to date' },
-  { key: 'lastMonth', label: 'Last month' },
-  { key: 'last3', label: 'Last 3 months' },
-];
-
-/** A preset's [from, to] span, in terms of the user's own pay-cycle and week
- *  start days rather than calendar months/weeks — "last month" is the cycle
- *  right before the one containing today, not the 1st-to-last-day calendar
- *  month, and "week to date" starts on the same weekday the Budgets tab's
- *  own weekly columns do. */
-function presetRange(
-  key: PresetKey,
-  monthStartDay: number,
-  weekStartDay: number,
-  bounds: { min: string; max: string },
-): { from: string; to: string } {
-  const clamp = (d: string) => (d < bounds.min ? bounds.min : d > bounds.max ? bounds.max : d);
-
-  if (key === 'wtd') {
-    return { from: clamp(startOfWeek(todayISO(), weekStartDay)), to: bounds.max };
-  }
-
-  const current = currentCyclePeriod(monthStartDay);
-  if (key === 'lastMonth') {
-    const { from, to } = cycleBounds(adjacentPeriod(current, -1), monthStartDay);
-    return { from: clamp(from), to: clamp(to) };
-  }
-  // 'mtd' starts at the current cycle; 'last3' starts two cycles earlier, so
-  // it spans this partial cycle plus the two full ones before it. Both run
-  // through the latest data available, not all the way to today, so a card
-  // whose last import is old doesn't show a mostly-empty trailing gap.
-  const startPeriod = key === 'last3' ? adjacentPeriod(current, -2) : current;
-  const { from } = cycleBounds(startPeriod, monthStartDay);
-  return { from: clamp(from), to: bounds.max };
-}
-
 function ordinal(d: number): string {
   if (d % 10 === 1 && d !== 11) return `${d}st`;
   if (d % 10 === 2 && d !== 12) return `${d}nd`;
   if (d % 10 === 3 && d !== 13) return `${d}rd`;
   return `${d}th`;
-}
-
-function addDaysISO(iso: string, delta: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + delta);
-  return date.toISOString().slice(0, 10);
 }
 
 /** Shifts a date by whole calendar months, clamping the day when the target
