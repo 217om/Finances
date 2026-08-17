@@ -615,10 +615,22 @@ export default function App() {
     () => makeResolver(rulesMap, overridesMap, effectiveKeywordRules),
     [rulesMap, overridesMap, effectiveKeywordRules],
   );
-  const subResolver = useMemo(
-    () => makeSubResolver(effectiveSubRules, subOverrides),
-    [effectiveSubRules, subOverrides],
-  );
+  const subResolver = useMemo(() => {
+    const perCard = makeSubResolver(effectiveSubRules, subOverrides);
+    // "Is this category split, and what sub-category names exist under it"
+    // should reflect every card's manual sub-category assignments, not just
+    // this card's own — otherwise a sub-category that only exists via an
+    // override on another card never shows up as an option here (or the
+    // picker doesn't even appear, if this card has no split evidence of its
+    // own). Resolving a specific transaction's own sub-category stays scoped
+    // to this card's own overrides (perCard.subOf below) though — mixing in
+    // another card's overrides there risks a rare same-id collision between
+    // two unrelated transactions leaking one card's assignment onto the
+    // other's transaction.
+    const allSubOverrides = subOverrides.concat(Object.values(otherCardsData).flatMap((d) => d.subOverrides));
+    const vocabulary = makeSubResolver(effectiveSubRules, allSubOverrides);
+    return { subOf: perCard.subOf, splitParents: vocabulary.splitParents, subsForParent: vocabulary.subsForParent };
+  }, [effectiveSubRules, subOverrides, otherCardsData]);
 
   // Transactions in an excluded category/sub-category are treated as if they
   // don't exist for every calculation (KPIs, charts, category breakdown,
