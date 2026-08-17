@@ -57,12 +57,8 @@ import {
   COLUMN_MAPPING_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
-  BUDGETS_KEY,
-  BUDGET_ENTRIES_KEY,
   CARD_TYPE_KEY,
   BALANCE_CHECKPOINTS_KEY,
-  ASSETS_KEY,
-  ASSET_VALUES_KEY,
   THEME_KEY,
   COMBINE_KEY,
   COMBINE_CARD_ID,
@@ -123,33 +119,16 @@ import CombinedCategoriesPage from './components/CombinedCategoriesPage';
 import AdvancedSettingsPage from './components/AdvancedSettingsPage';
 import CardManager from './components/CardManager';
 import BudgetsPage from './components/BudgetsPage';
-import {
-  isValidBudgetEntries,
-  isValidBudgets,
-  makeBudget,
-  removeBudgetEntries,
-  renameBudget,
-  setBudgetAmount,
-  setBudgetAmountForWeeks,
-  toggleBudgetCategory,
-  type Budget,
-  type BudgetEntry,
-} from './lib/budget';
 import BalancesPage from './components/BalancesPage';
 import {
-  isValidAssetValues,
-  isValidAssets,
   isValidCheckpoints,
-  makeAsset,
-  makeAssetValueEntry,
   makeCheckpoint,
   mergeCheckpoints,
-  type Asset,
-  type AssetKind,
-  type AssetValueEntry,
   type BalanceCheckpoint,
   type CardType,
 } from './lib/balances';
+import { useBudgets } from './hooks/useBudgets';
+import { useAssets } from './hooks/useAssets';
 
 type Theme = 'light' | 'dark';
 
@@ -430,50 +409,42 @@ export default function App() {
     }
   });
   // Budgets apply at the total (combined-across-cards) level, not per card —
-  // global, like the combined filter above. See lib/budget.ts.
-  const [budgets, setBudgets] = useState<Budget[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(BUDGETS_KEY) ?? '[]');
-      return isValidBudgets(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
-  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(BUDGET_ENTRIES_KEY) ?? '[]');
-      return isValidBudgetEntries(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
+  // global, like the combined filter above. See lib/budget.ts and hooks/useBudgets.ts.
+  const {
+    budgets,
+    setBudgets,
+    budgetEntries,
+    setBudgetEntries,
+    handleCreateBudget,
+    handleRenameBudget,
+    handleToggleBudgetCategory,
+    handleDeleteBudget,
+    handleSetBudgetAmount,
+    handleSetBudgetAmountForWeeks,
+  } = useBudgets();
   // Balances: per-card type (debit/credit) and manual checkpoints, keyed by
   // card id — plain localStorage reads, not IndexedDB, so (unlike rules or
   // transactions) they don't need an async load effect; handleCreateCard and
   // handleDeleteCard below keep these records in sync with the card list.
-  // Assets are global, like budgets. See lib/balances.ts.
+  // Assets are global, like budgets — see hooks/useAssets.ts.
   const [cardTypes, setCardTypes] = useState<Record<string, CardType>>(() =>
     Object.fromEntries(loadCards().map((c) => [c.id, loadCardType(c.id)])),
   );
   const [cardCheckpoints, setCardCheckpoints] = useState<Record<string, BalanceCheckpoint[]>>(() =>
     Object.fromEntries(loadCards().map((c) => [c.id, loadCardCheckpoints(c.id)])),
   );
-  const [assets, setAssets] = useState<Asset[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(ASSETS_KEY) ?? '[]');
-      return isValidAssets(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
-  const [assetValues, setAssetValues] = useState<AssetValueEntry[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(ASSET_VALUES_KEY) ?? '[]');
-      return isValidAssetValues(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
+  const {
+    assets,
+    setAssets,
+    assetValues,
+    setAssetValues,
+    handleCreateAsset,
+    handleRenameAsset,
+    handleSetAssetKind,
+    handleDeleteAsset,
+    handleAddAssetValue,
+    handleDeleteAssetValue,
+  } = useAssets();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced'>(
     'dashboard',
@@ -820,90 +791,6 @@ export default function App() {
     [activeCardId],
   );
 
-  // Budgets apply at the total (combined-across-cards) level — every handler
-  // below writes to the global BUDGETS_KEY/BUDGET_ENTRIES_KEY, not a
-  // per-card one, and none of them depend on activeCardId.
-  const handleCreateBudget = useCallback((name: string) => {
-    setBudgets((prev) => {
-      const next = [...prev, makeBudget(name)];
-      try {
-        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleRenameBudget = useCallback((id: string, name: string) => {
-    setBudgets((prev) => {
-      const next = renameBudget(prev, id, name);
-      try {
-        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleToggleBudgetCategory = useCallback((id: string, category: string) => {
-    setBudgets((prev) => {
-      const next = toggleBudgetCategory(prev, id, category);
-      try {
-        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleDeleteBudget = useCallback((id: string) => {
-    setBudgets((prev) => {
-      const next = prev.filter((b) => b.id !== id);
-      try {
-        localStorage.setItem(BUDGETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-    setBudgetEntries((prev) => {
-      const next = removeBudgetEntries(prev, id);
-      try {
-        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSetBudgetAmount = useCallback((budgetId: string, weekStart: string, amount: number) => {
-    setBudgetEntries((prev) => {
-      const next = setBudgetAmount(prev, budgetId, weekStart, amount);
-      try {
-        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSetBudgetAmountForWeeks = useCallback((budgetId: string, weekStarts: string[], amount: number) => {
-    setBudgetEntries((prev) => {
-      const next = setBudgetAmountForWeeks(prev, budgetId, weekStarts, amount);
-      try {
-        localStorage.setItem(BUDGET_ENTRIES_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
   // --- Balances ------------------------------------------------------------
 
   const handleSetCardType = useCallback((cardId: string, type: CardType) => {
@@ -932,90 +819,6 @@ export default function App() {
       const next = { ...prev, [cardId]: (prev[cardId] ?? []).filter((c) => c.id !== checkpointId) };
       try {
         localStorage.setItem(scopedKey(BALANCE_CHECKPOINTS_KEY, cardId), JSON.stringify(next[cardId]));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  // Assets apply at the total (all-cards) level, not per card — global, like
-  // budgets above.
-  const handleCreateAsset = useCallback((name: string) => {
-    setAssets((prev) => {
-      const next = [...prev, makeAsset(name)];
-      try {
-        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleRenameAsset = useCallback((id: string, name: string) => {
-    setAssets((prev) => {
-      const trimmed = name.trim();
-      const next = trimmed ? prev.map((a) => (a.id === id ? { ...a, name: trimmed, updatedAt: Date.now() } : a)) : prev;
-      try {
-        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSetAssetKind = useCallback((id: string, kind: AssetKind) => {
-    setAssets((prev) => {
-      const next = prev.map((a) => (a.id === id ? { ...a, kind, updatedAt: Date.now() } : a));
-      try {
-        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleDeleteAsset = useCallback((id: string) => {
-    setAssets((prev) => {
-      const next = prev.filter((a) => a.id !== id);
-      try {
-        localStorage.setItem(ASSETS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-    setAssetValues((prev) => {
-      const next = prev.filter((v) => v.assetId !== id);
-      try {
-        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleAddAssetValue = useCallback((assetId: string, date: string, value: number) => {
-    setAssetValues((prev) => {
-      const next = [...prev, makeAssetValueEntry(assetId, date, value)];
-      try {
-        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const handleDeleteAssetValue = useCallback((id: string) => {
-    setAssetValues((prev) => {
-      const next = prev.filter((v) => v.id !== id);
-      try {
-        localStorage.setItem(ASSET_VALUES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
