@@ -17,6 +17,14 @@ function deltaPct(current: number, base: number): number | null {
   return ((current - base) / Math.abs(base)) * 100;
 }
 
+/** "+OMR 4.905 (+71%) vs Last week" — the actual amount moved, not just the
+ *  percentage, since a bare "+71%" on its own says nothing about size. */
+function deltaSub(current: number, base: number, label: string | undefined): string {
+  const amount = money(current - base, { sign: true, compact: true });
+  const pct = deltaPct(current, base);
+  return `${amount}${pct === null ? '' : ` (${percent(pct)})`} vs ${label}`;
+}
+
 export default function KpiCards({ overview, compareOverview, compareLabel }: Props) {
   const {
     totalIncome,
@@ -33,9 +41,9 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
     monthChangePct,
   } = overview;
 
-  const incomePct = compareOverview ? deltaPct(totalIncome, compareOverview.totalIncome) : null;
-  const expensesPct = compareOverview ? deltaPct(totalExpenses, compareOverview.totalExpenses) : null;
-  const netPct = compareOverview ? deltaPct(totalNet, compareOverview.totalNet) : null;
+  const incomeDelta = compareOverview ? totalIncome - compareOverview.totalIncome : null;
+  const expensesDelta = compareOverview ? totalExpenses - compareOverview.totalExpenses : null;
+  const netDelta = compareOverview ? totalNet - compareOverview.totalNet : null;
 
   return (
     <section className="kpis">
@@ -43,22 +51,34 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
         label="Income"
         value={money(totalIncome)}
         tone="pos"
-        sub={compareOverview ? `${percent(incomePct)} vs ${compareLabel}` : `avg ${money(avgMonthlyIncome, { compact: true })} / mo`}
-        subTone={compareOverview ? (incomePct === null ? undefined : incomePct >= 0 ? 'pos' : 'neg') : undefined}
+        sub={
+          compareOverview
+            ? deltaSub(totalIncome, compareOverview.totalIncome, compareLabel)
+            : `avg ${money(avgMonthlyIncome, { compact: true })} / mo`
+        }
+        subTone={incomeDelta === null ? undefined : incomeDelta >= 0 ? 'pos' : 'neg'}
       />
       <Kpi
         label="Expenses"
         value={money(totalExpenses)}
         tone="accent"
-        sub={compareOverview ? `${percent(expensesPct)} vs ${compareLabel}` : `avg ${money(avgMonthlyExpenses, { compact: true })} / mo`}
-        subTone={compareOverview ? (expensesPct === null ? undefined : expensesPct <= 0 ? 'pos' : 'neg') : undefined}
+        sub={
+          compareOverview
+            ? deltaSub(totalExpenses, compareOverview.totalExpenses, compareLabel)
+            : `avg ${money(avgMonthlyExpenses, { compact: true })} / mo`
+        }
+        subTone={expensesDelta === null ? undefined : expensesDelta <= 0 ? 'pos' : 'neg'}
       />
       <Kpi
         label="Net"
         value={money(totalNet)}
         tone={totalNet >= 0 ? 'pos' : 'neg'}
-        sub={compareOverview ? `${percent(netPct)} vs ${compareLabel}` : `${savingsRate.toFixed(0)}% of income kept`}
-        subTone={compareOverview ? (netPct === null ? undefined : netPct >= 0 ? 'pos' : 'neg') : undefined}
+        sub={
+          compareOverview
+            ? deltaSub(totalNet, compareOverview.totalNet, compareLabel)
+            : `${savingsRate.toFixed(0)}% of income kept`
+        }
+        subTone={netDelta === null ? undefined : netDelta >= 0 ? 'pos' : 'neg'}
       />
       <Kpi
         label="Latest week"

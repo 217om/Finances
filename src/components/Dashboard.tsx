@@ -253,19 +253,21 @@ export default function Dashboard({
     <div className="dashboard">
       <section className="panel controls">
         <div className="controls-row">
-          <div className="seg seg-sm">
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                className={preset === p.key ? 'seg-on' : ''}
-                onClick={() => applyPreset(p.key)}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="controls-left">
+            <div className="seg seg-sm">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  className={preset === p.key ? 'seg-on' : ''}
+                  onClick={() => applyPreset(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <CompareMenu options={compareOptions} activeKey={compareKey} onSelect={setCompareKey} />
           </div>
-          <CompareMenu options={compareOptions} activeKey={compareKey} onSelect={setCompareKey} />
           <div className="range-pickers">
             <label className="picker">
               <span className="picker-label">From</span>

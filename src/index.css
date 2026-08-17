@@ -970,6 +970,12 @@ main.container {
   gap: 16px;
   flex-wrap: wrap;
 }
+.controls-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .range-pickers {
   display: flex;
   align-items: center;
