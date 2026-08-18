@@ -10,40 +10,45 @@ interface Props {
   compareLabel?: string;
 }
 
-/** Percent change of `current` vs `base`, or null when `base` is zero (no
- *  meaningful percentage to show). */
+/**
+ * Percent change of `current` vs `base`, or null when a percentage wouldn't
+ * actually be informative:
+ *  - no base to divide by,
+ *  - either side sitting at exactly zero (any move away from/to zero is
+ *    always "-100%" or undefined, which says nothing beyond "it was/is
+ *    zero" — e.g. income not having landed yet this period isn't a
+ *    meaningful "-100%"),
+ *  - or the two periods landing on opposite sides of zero (a swing from
+ *    spending more than earning to earning more than spending isn't a
+ *    "percent" of anything — the sign flip itself is the whole story).
+ */
 function deltaPct(current: number, base: number): number | null {
-  if (base === 0) return null;
+  if (base === 0 || current === 0) return null;
+  if (current < 0 !== base < 0) return null;
   return ((current - base) / Math.abs(base)) * 100;
 }
 
 /** "+OMR 4.905 (+71%) vs Last week" — the actual amount moved, not just the
- *  percentage, since a bare "+71%" on its own says nothing about size. */
-function deltaSub(current: number, base: number, label: string | undefined): string {
+ *  percentage, since a bare "+71%" on its own says nothing about size. The
+ *  percentage itself is dropped (see deltaPct) when it wouldn't be
+ *  meaningful, leaving just the plain amount moved. */
+function deltaSub(current: number, base: number, label: string): string {
   const amount = money(current - base, { sign: true, compact: true });
   const pct = deltaPct(current, base);
   return `${amount}${pct === null ? '' : ` (${percent(pct)})`} vs ${label}`;
 }
 
 export default function KpiCards({ overview, compareOverview, compareLabel }: Props) {
-  const {
-    totalIncome,
-    totalExpenses,
-    totalNet,
-    avgMonthlyIncome,
-    avgMonthlyExpenses,
-    savingsRate,
-    latestWeek,
-    priorWeek,
-    weekChangePct,
-    latestMonth,
-    priorMonth,
-    monthChangePct,
-  } = overview;
+  const { totalIncome, totalExpenses, totalNet, avgMonthlyIncome, avgMonthlyExpenses, savingsRate, latestWeek, priorWeek, latestMonth, priorMonth } =
+    overview;
 
   const incomeDelta = compareOverview ? totalIncome - compareOverview.totalIncome : null;
   const expensesDelta = compareOverview ? totalExpenses - compareOverview.totalExpenses : null;
   const netDelta = compareOverview ? totalNet - compareOverview.totalNet : null;
+  const label = compareLabel ?? 'compare period';
+
+  const weekDelta = latestWeek && priorWeek ? latestWeek.net - priorWeek.net : null;
+  const monthDelta = latestMonth && priorMonth ? latestMonth.net - priorMonth.net : null;
 
   return (
     <section className="kpis">
@@ -53,7 +58,7 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
         tone="pos"
         sub={
           compareOverview
-            ? deltaSub(totalIncome, compareOverview.totalIncome, compareLabel)
+            ? deltaSub(totalIncome, compareOverview.totalIncome, label)
             : `avg ${money(avgMonthlyIncome, { compact: true })} / mo`
         }
         subTone={incomeDelta === null ? undefined : incomeDelta >= 0 ? 'pos' : 'neg'}
@@ -64,7 +69,7 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
         tone="accent"
         sub={
           compareOverview
-            ? deltaSub(totalExpenses, compareOverview.totalExpenses, compareLabel)
+            ? deltaSub(totalExpenses, compareOverview.totalExpenses, label)
             : `avg ${money(avgMonthlyExpenses, { compact: true })} / mo`
         }
         subTone={expensesDelta === null ? undefined : expensesDelta <= 0 ? 'pos' : 'neg'}
@@ -75,7 +80,7 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
         tone={totalNet >= 0 ? 'pos' : 'neg'}
         sub={
           compareOverview
-            ? deltaSub(totalNet, compareOverview.totalNet, compareLabel)
+            ? deltaSub(totalNet, compareOverview.totalNet, label)
             : `${savingsRate.toFixed(0)}% of income kept`
         }
         subTone={netDelta === null ? undefined : netDelta >= 0 ? 'pos' : 'neg'}
@@ -84,15 +89,27 @@ export default function KpiCards({ overview, compareOverview, compareLabel }: Pr
         label="Latest week"
         value={latestWeek ? money(latestWeek.net) : '—'}
         tone={!latestWeek ? 'neutral' : latestWeek.net >= 0 ? 'pos' : 'neg'}
-        sub={weekChangePct !== null ? `${percent(weekChangePct)} vs prior week` : priorWeek ? 'no change' : 'not enough history yet'}
-        subTone={weekChangePct === null ? undefined : weekChangePct >= 0 ? 'pos' : 'neg'}
+        sub={
+          !latestWeek || !priorWeek
+            ? 'not enough history yet'
+            : weekDelta === 0
+              ? 'no change vs prior week'
+              : deltaSub(latestWeek.net, priorWeek.net, 'prior week')
+        }
+        subTone={weekDelta === null ? undefined : weekDelta >= 0 ? 'pos' : 'neg'}
       />
       <Kpi
         label="Latest month"
         value={latestMonth ? money(latestMonth.net) : '—'}
         tone={!latestMonth ? 'neutral' : latestMonth.net >= 0 ? 'pos' : 'neg'}
-        sub={monthChangePct !== null ? `${percent(monthChangePct)} vs prior month` : priorMonth ? 'no change' : 'not enough history yet'}
-        subTone={monthChangePct === null ? undefined : monthChangePct >= 0 ? 'pos' : 'neg'}
+        sub={
+          !latestMonth || !priorMonth
+            ? 'not enough history yet'
+            : monthDelta === 0
+              ? 'no change vs prior month'
+              : deltaSub(latestMonth.net, priorMonth.net, 'prior month')
+        }
+        subTone={monthDelta === null ? undefined : monthDelta >= 0 ? 'pos' : 'neg'}
       />
     </section>
   );

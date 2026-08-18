@@ -32,14 +32,16 @@ export interface Overview {
   netTrendPct: number | null;
   /** The most recent calendar month with activity, and the one right before
    *  it (possibly a quiet, zero-activity month) — for a simple "vs last
-   *  month" comparison, distinct from the longer 6-month trend above. */
+   *  month" comparison, distinct from the longer 6-month trend above. Null
+   *  when there's no prior month, or when the caller's date filter clipped
+   *  it (see isClippedByRange) — either way, not a fair comparison. Percent
+   *  change itself is left to the caller (KpiCards), which knows when a
+   *  percent between these two .net values would actually be meaningful. */
   latestMonth: MonthlySummary | null;
   priorMonth: MonthlySummary | null;
-  monthChangePct: number | null;
   /** Same idea, one week at a time. */
   latestWeek: MonthlySummary | null;
   priorWeek: MonthlySummary | null;
-  weekChangePct: number | null;
   sources: SourceSummary[];
   txCount: number;
 }
@@ -238,14 +240,6 @@ export function categoryTotals(months: MonthlySummary[]): { category: string; am
     .sort((a, b) => b.amount - a.amount);
 }
 
-/** The change from `prior` to `latest`, as a % of `prior`'s magnitude — null
- *  when either side is missing or prior is exactly zero (nothing to compare
- *  a percentage against). */
-function changePct(latest: MonthlySummary | null, prior: MonthlySummary | null): number | null {
-  if (!latest || !prior || prior.net === 0) return null;
-  return ((latest.net - prior.net) / Math.abs(prior.net)) * 100;
-}
-
 /** The true calendar start date of a pay-cycle month bucket (month buckets
  *  are keyed "YYYY-MM", labelled by the month they start in — see periodKey). */
 function monthBucketStartISO(monthKey: string, startDay: number): string {
@@ -341,10 +335,8 @@ export function buildOverview(
     netTrendPct,
     latestMonth,
     priorMonth,
-    monthChangePct: changePct(latestMonth, priorMonth),
     latestWeek,
     priorWeek,
-    weekChangePct: changePct(latestWeek, priorWeek),
     sources: summarizeSources(txs),
     txCount: txs.length,
   };

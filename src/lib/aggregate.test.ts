@@ -78,7 +78,6 @@ describe('buildOverview', () => {
     const txs = [tx('2026-08-01', -50), tx('2026-08-02', -10), tx('2026-08-05', -1000)];
     const overview = buildOverview(txs, 1, undefined, 1, rangeStart, fullHistoryStart);
     expect(overview.priorWeek).toBeNull();
-    expect(overview.weekChangePct).toBeNull();
   });
 
   it('keeps the prior week/month comparison when nothing was clipped', () => {
@@ -88,6 +87,5 @@ describe('buildOverview', () => {
     const txs = [tx('2026-07-27', -100), tx('2026-08-03', -50)];
     const overview = buildOverview(txs, 1, undefined, 1, start, start);
     expect(overview.priorWeek).not.toBeNull();
-    expect(overview.weekChangePct).not.toBeNull();
   });
 });
