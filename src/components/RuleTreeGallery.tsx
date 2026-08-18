@@ -54,11 +54,12 @@ function emptyAgg(): BranchAgg {
  * keyword/merchant rules that resolves into it, leaves = sub-category splits
  * within that branch's own matched transactions. Counts reflect real
  * transaction resolution — keyword rules always outrank merchant rules,
- * among keyword rules the newest matching one wins, and a sub-category is
- * whichever sub-rule for that category matches first (newest first), exactly
- * mirroring `makeResolver`/`makeSubResolver` — so a rule fully shadowed by a
- * higher-priority one, or a sub-rule that never actually matches any of a
- * branch's transactions, correctly stays at 0 or absent rather than guessing.
+ * among keyword rules the highest-priority matching one wins (ties newest
+ * first), and a sub-category is whichever sub-rule for that category matches
+ * first the same way, exactly mirroring `makeResolver`/`makeSubResolver` —
+ * so a rule fully shadowed by a higher-priority one, or a sub-rule that
+ * never actually matches any of a branch's transactions, correctly stays at
+ * 0 or absent rather than guessing.
  */
 function buildRuleTrees(
   ownScope: string,
@@ -72,11 +73,13 @@ function buildRuleTrees(
 ): RuleTree[] {
   if (rules.length === 0 && keywordRules.length === 0) return [];
 
-  const sortedKeyword = [...effectiveKeywordRules].sort((a, b) => b.createdAt - a.createdAt);
+  const sortedKeyword = [...effectiveKeywordRules].sort(
+    (a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt,
+  );
 
   // This scope's own sub-rule shadows a global one with the exact same
-  // (parent, keyword) pair; grouped by category and sorted newest-first so
-  // the first match wins, same as makeSubResolver.
+  // (parent, keyword) pair; grouped by category and sorted by priority (ties
+  // newest-first) so the first match wins, same as makeSubResolver.
   const subByKey = new Map<string, { rule: SubRule; scope: string }>();
   if (ownScope !== 'global') {
     for (const r of globalSubRules) subByKey.set(`${r.parent}|${r.keyword}`, { rule: r, scope: 'global' });
@@ -91,7 +94,9 @@ function buildRuleTrees(
     subsByCategory.set(entry.rule.parent, list);
     subById.set(entry.rule.id, entry);
   }
-  for (const list of subsByCategory.values()) list.sort((a, b) => b.rule.createdAt - a.rule.createdAt);
+  for (const list of subsByCategory.values()) {
+    list.sort((a, b) => (b.rule.priority ?? 1) - (a.rule.priority ?? 1) || b.rule.createdAt - a.rule.createdAt);
+  }
 
   const sigRuleMap = new Map(rules.map((r) => [r.signature, r]));
   const branchAgg = new Map<string, BranchAgg>();

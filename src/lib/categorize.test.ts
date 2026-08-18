@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { categorize, mergeByKey, signatureOf, INCOME_CATEGORY } from './categorize';
+import { categorize, findShadowingRule, makeResolver, mergeByKey, signatureOf, INCOME_CATEGORY } from './categorize';
+import type { KeywordRule } from '../types';
 
 describe('categorize', () => {
   it('treats any non-negative amount as income, regardless of description', () => {
@@ -37,6 +38,50 @@ describe('signatureOf', () => {
   it('falls back to something stable even with no significant tokens', () => {
     expect(signatureOf('123 456')).toBeTruthy();
     expect(signatureOf('')).toBe('misc');
+  });
+});
+
+describe('makeResolver keyword rule priority', () => {
+  const kr = (over: Partial<KeywordRule>): KeywordRule => ({
+    keyword: 'x',
+    category: 'Other',
+    createdAt: 0,
+    ...over,
+  });
+
+  it('the higher-priority rule wins regardless of creation order', () => {
+    const older = kr({ keyword: 'amazon', category: 'Shopping', priority: 5, createdAt: 1 });
+    const newer = kr({ keyword: 'amazon', category: 'Entertainment', priority: 1, createdAt: 2 });
+    const resolve = makeResolver(new Map(), new Map(), [older, newer]);
+    expect(resolve({ id: '1', description: 'AMAZON PRIME VIDEO', amount: -10 })).toBe('Shopping');
+  });
+
+  it('falls back to newest-first when priorities are tied', () => {
+    const older = kr({ keyword: 'amazon', category: 'Shopping', priority: 3, createdAt: 1 });
+    const newer = kr({ keyword: 'amazon', category: 'Entertainment', priority: 3, createdAt: 2 });
+    const resolve = makeResolver(new Map(), new Map(), [older, newer]);
+    expect(resolve({ id: '1', description: 'AMAZON PRIME VIDEO', amount: -10 })).toBe('Entertainment');
+  });
+
+  it('treats a missing priority as 1 (lowest)', () => {
+    const noPriority = kr({ keyword: 'amazon', category: 'Shopping', createdAt: 5 });
+    const explicit = kr({ keyword: 'amazon', category: 'Entertainment', priority: 2, createdAt: 1 });
+    const resolve = makeResolver(new Map(), new Map(), [noPriority, explicit]);
+    expect(resolve({ id: '1', description: 'AMAZON PRIME VIDEO', amount: -10 })).toBe('Entertainment');
+  });
+});
+
+describe('findShadowingRule', () => {
+  it('finds a broader, equal-or-higher-priority rule that always matches first', () => {
+    const broad = { keyword: 'amazon', createdAt: 1 };
+    const narrow = { keyword: 'amazon prime', createdAt: 2 };
+    expect(findShadowingRule(narrow, [broad, narrow])).toBe(broad);
+  });
+
+  it('returns null once a rule reaches its own keyword first', () => {
+    const a = { keyword: 'zzz-unrelated', createdAt: 1 };
+    const target = { keyword: 'amazon prime', createdAt: 2 };
+    expect(findShadowingRule(target, [target, a])).toBeNull();
   });
 });
 

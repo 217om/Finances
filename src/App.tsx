@@ -299,7 +299,7 @@ export default function App() {
     overriddenIds,
     handleCreateKeywordRuleFor,
     handleDeleteKeywordRuleFor,
-    handleReorderKeywordRule,
+    handleSetKeywordRulePriority,
     handlePromoteKeywordRuleAbove,
     handleUpdateKeywordRuleCategory,
     handleUpdateSignatureRuleCategory,
@@ -309,7 +309,7 @@ export default function App() {
     handleCreateSubRule,
     handleDeleteSubRule,
     handleReparentSubRule,
-    handleReorderSubRule,
+    handleSetSubRulePriority,
     handlePromoteSubRuleAbove,
     handleMoveKeywordRuleToGlobal,
     handleMoveSignatureRuleToGlobal,
@@ -1326,7 +1326,7 @@ export default function App() {
                 onCreateKeywordRule={handleCreateKeywordRuleFor}
                 onUpdateKeywordRuleCategory={handleUpdateKeywordRuleCategory}
                 onDeleteKeywordRule={handleDeleteKeywordRuleFor}
-                onReorderKeywordRule={handleReorderKeywordRule}
+                onSetKeywordRulePriority={handleSetKeywordRulePriority}
                 onPromoteKeywordRuleAbove={handlePromoteKeywordRuleAbove}
                 onMoveKeywordRuleToGlobal={handleMoveKeywordRuleToGlobal}
                 onUpdateSignatureRuleCategory={handleUpdateSignatureRuleCategory}
@@ -1336,7 +1336,7 @@ export default function App() {
                 onMoveSignatureRuleToGlobal={handleMoveSignatureRuleToGlobal}
                 onCreateSubRule={handleCreateSubRule}
                 onDeleteSubRule={handleDeleteSubRule}
-                onReorderSubRule={handleReorderSubRule}
+                onSetSubRulePriority={handleSetSubRulePriority}
                 onPromoteSubRuleAbove={handlePromoteSubRuleAbove}
                 onMoveSubRuleToGlobal={handleMoveSubRuleToGlobal}
                 onReparentSubRule={handleReparentSubRule}

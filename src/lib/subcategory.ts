@@ -2,7 +2,8 @@
 // transaction's top-level category — they split a "junk drawer" bucket (like
 // Transfers) into finer parts. A transaction's sub-category resolves as:
 //   1. a manual per-transaction sub-override
-//   2. a sub-rule for its parent whose keyword matches (newest wins)
+//   2. a sub-rule for its parent whose keyword matches (highest priority wins,
+//      ties broken by whichever was created more recently)
 //   3. "Unsorted"
 
 import type { SubOverride, SubRule, Transaction } from '../types';
@@ -26,8 +27,11 @@ export function makeSubResolver(subRules: SubRule[], subOverrides: SubOverride[]
     if (list) list.push(r);
     else rulesByParent.set(r.parent, [r]);
   }
-  // Newest first so the first keyword match is the highest priority.
-  for (const list of rulesByParent.values()) list.sort((a, b) => b.createdAt - a.createdAt);
+  // Highest priority first (ties broken newest-first) so the first keyword
+  // match is the rule that should actually win.
+  for (const list of rulesByParent.values()) {
+    list.sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt);
+  }
 
   const splitParents = new Set<string>();
   for (const r of subRules) splitParents.add(r.parent);

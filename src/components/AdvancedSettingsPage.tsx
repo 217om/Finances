@@ -44,11 +44,13 @@ interface Props {
   onCreateKeywordRule: (scope: string, keyword: string, category: string) => void;
   onUpdateKeywordRuleCategory: (scope: string, keyword: string, category: string) => void;
   onDeleteKeywordRule: (scope: string, keyword: string, category: string) => void;
-  onReorderKeywordRule: (scope: string, keyword: string, direction: 'up' | 'down') => void;
-  /** One-click fix for a shadowed keyword rule — bump it to just above the
-   *  rule currently shadowing it (which may live in a different scope). Also
-   *  used to implement drag-and-drop reordering. */
-  onPromoteKeywordRuleAbove: (scope: string, keyword: string, aboveCreatedAt: number) => void;
+  /** Direct priority set (1-10, higher wins a conflict between two matching
+   *  rules) — the user-facing control for resolving which rule wins. */
+  onSetKeywordRulePriority: (scope: string, keyword: string, priority: number) => void;
+  /** One-click fix for a shadowed keyword rule — bump it to the same
+   *  priority tier as the rule currently shadowing it (which may live in a
+   *  different scope), created just after so it wins the tie. */
+  onPromoteKeywordRuleAbove: (scope: string, keyword: string, abovePriority: number, aboveCreatedAt: number) => void;
   /** Moves a card-specific rule into the global set, keeping its category
    *  and priority — only relevant for card sections, never the global one. */
   onMoveKeywordRuleToGlobal: (scope: string, keyword: string) => void;
@@ -59,8 +61,10 @@ interface Props {
   onMoveSignatureRuleToGlobal: (scope: string, signature: string) => void;
   onCreateSubRule: (scope: string, parent: string, keyword: string, sub: string) => void;
   onDeleteSubRule: (scope: string, id: string, info: { parent: string; sub: string; keyword: string }) => void;
-  onReorderSubRule: (scope: string, id: string, direction: 'up' | 'down') => void;
-  onPromoteSubRuleAbove: (scope: string, id: string, aboveCreatedAt: number) => void;
+  /** Direct priority set (1-10) for sub-rules — same replacement as keyword
+   *  rules above, scoped to siblings under the same parent category. */
+  onSetSubRulePriority: (scope: string, id: string, priority: number) => void;
+  onPromoteSubRuleAbove: (scope: string, id: string, abovePriority: number, aboveCreatedAt: number) => void;
   onMoveSubRuleToGlobal: (scope: string, id: string) => void;
   onReparentSubRule: (scope: string, id: string, newParent: string) => void;
   /** Downloads every rule (global + every card's own) as one JSON file. */
@@ -81,6 +85,8 @@ interface RuleWarning {
   onFix?: () => void;
 }
 
+const PRIORITY_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 interface RuleRowProps {
   priority?: number;
   priorityTitle?: string;
@@ -93,6 +99,10 @@ interface RuleRowProps {
   subValue: string;
   onSubCommit: (value: string) => void;
   count: number;
+  /** Editable 1-10 priority control — present for keyword/sub rules, which
+   *  can genuinely conflict. Merchant rules can't (unique key per signature),
+   *  so they keep the read-only position + reorder buttons/drag instead. */
+  onSetPriority?: (priority: number) => void;
   onReorderUp?: () => void;
   onReorderDown?: () => void;
   reorderUpDisabled?: boolean;
@@ -122,6 +132,7 @@ function RuleRow({
   subValue,
   onSubCommit,
   count,
+  onSetPriority,
   onReorderUp,
   onReorderDown,
   reorderUpDisabled,
@@ -167,10 +178,25 @@ function RuleRow({
             ⠿
           </span>
         )}
-        {priority != null && (
-          <span className="rules-pri" title={priorityTitle}>
-            {priority}
-          </span>
+        {onSetPriority ? (
+          <select
+            className="rules-pri-select"
+            value={priority ?? 1}
+            title="Priority — when rules conflict, the higher number wins"
+            onChange={(e) => onSetPriority(Number(e.target.value))}
+          >
+            {PRIORITY_LEVELS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        ) : (
+          priority != null && (
+            <span className="rules-pri" title={priorityTitle}>
+              {priority}
+            </span>
+          )
         )}
         <span className="rules-kw" title={titleAttr}>
           {keyLabel}
@@ -263,8 +289,8 @@ interface ScopedCategoryRulesProps {
   query: string;
   onUpdateKeywordRuleCategory: (keyword: string, category: string) => void;
   onDeleteKeywordRule: (keyword: string, category: string) => void;
-  onReorderKeywordRule: (keyword: string, direction: 'up' | 'down') => void;
-  onPromoteKeywordRule: (keyword: string, aboveCreatedAt: number) => void;
+  onSetKeywordPriority: (keyword: string, priority: number) => void;
+  onPromoteKeywordRule: (keyword: string, abovePriority: number, aboveCreatedAt: number) => void;
   /** Present only for a card's own section — moves the rule to global. */
   onMoveKeywordToGlobal?: (keyword: string) => void;
   onUpdateSignatureRuleCategory: (signature: string, category: string) => void;
@@ -274,8 +300,8 @@ interface ScopedCategoryRulesProps {
   onMoveSignatureToGlobal?: (signature: string) => void;
   onSetSub: (parent: string, keyword: string, sub: string) => void;
   onDeleteSub: (id: string, info: { parent: string; sub: string; keyword: string }) => void;
-  onReorderSub: (id: string, direction: 'up' | 'down') => void;
-  onPromoteSub: (id: string, aboveCreatedAt: number) => void;
+  onSetSubPriority: (id: string, priority: number) => void;
+  onPromoteSub: (id: string, abovePriority: number, aboveCreatedAt: number) => void;
   onMoveSubToGlobal?: (id: string) => void;
   onReparentSub: (id: string, newParent: string) => void;
   /** Fires when a category's row is clicked — lets the paired tree gallery
@@ -299,7 +325,7 @@ function ScopedCategoryRules({
   query,
   onUpdateKeywordRuleCategory,
   onDeleteKeywordRule,
-  onReorderKeywordRule,
+  onSetKeywordPriority,
   onPromoteKeywordRule,
   onMoveKeywordToGlobal,
   onUpdateSignatureRuleCategory,
@@ -309,25 +335,26 @@ function ScopedCategoryRules({
   onMoveSignatureToGlobal,
   onSetSub,
   onDeleteSub,
-  onReorderSub,
+  onSetSubPriority,
   onPromoteSub,
   onMoveSubToGlobal,
   onReparentSub,
   onSelectCategory,
 }: ScopedCategoryRulesProps) {
   // True evaluation order — resolveCategory sorts ALL of a scope's keyword
-  // rules by createdAt regardless of category, so that's the order priority
-  // numbers, up/down bounds, and shadow detection all have to use. The
-  // category-grouped `g.keyword` list below is just a display grouping.
+  // rules by priority (ties newest-first) regardless of category, so that's
+  // the order shadow detection has to use. The category-grouped `g.keyword`
+  // list below is just a display grouping.
   const sortedOwnKeyword = useMemo(
-    () => [...keywordRules].sort((a, b) => b.createdAt - a.createdAt),
+    () => [...keywordRules].sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt),
     [keywordRules],
   );
   const sortedEffectiveKeyword = useMemo(
-    () => [...effectiveKeywordRules].sort((a, b) => b.createdAt - a.createdAt),
+    () =>
+      [...effectiveKeywordRules].sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt),
     [effectiveKeywordRules],
   );
-  const priorityOf = (keyword: string) => sortedOwnKeyword.findIndex((r) => r.keyword === keyword) + 1;
+  const priorityOf = (keyword: string) => sortedOwnKeyword.find((r) => r.keyword === keyword)?.priority ?? 1;
 
   // Merchant rules are keyed by signature, so at most one can ever match a
   // transaction — there's no real conflict to order, but the same manual
@@ -339,11 +366,11 @@ function ScopedCategoryRules({
   );
   const prioritySignatureOf = (signature: string) => sortedOwnSignature.findIndex((r) => r.signature === signature) + 1;
 
-  // Sub-rules resolve per-parent (same "newest, first substring match wins"
-  // pattern as keyword rules), and that pool includes BOTH the standalone
-  // rows below and any sub-rule inline-attached to a keyword/merchant row —
-  // so priority/bounds have to come from the full per-parent set, not just
-  // the standalone subset actually rendered as its own row.
+  // Sub-rules resolve per-parent (same priority-then-newest, first substring
+  // match wins pattern as keyword rules), and that pool includes BOTH the
+  // standalone rows below and any sub-rule inline-attached to a keyword/
+  // merchant row — so shadow detection has to use the full per-parent set,
+  // not just the standalone subset actually rendered as its own row.
   const subRulesByParent = useMemo(() => {
     const m = new Map<string, SubRule[]>();
     for (const r of subRules) {
@@ -351,13 +378,14 @@ function ScopedCategoryRules({
       if (list) list.push(r);
       else m.set(r.parent, [r]);
     }
-    for (const list of m.values()) list.sort((a, b) => b.createdAt - a.createdAt);
+    for (const list of m.values()) {
+      list.sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt);
+    }
     return m;
   }, [subRules]);
   const prioritySubOf = (id: string, parent: string) => {
     const list = subRulesByParent.get(parent) ?? [];
-    const idx = list.findIndex((r) => r.id === id);
-    return idx < 0 ? undefined : idx + 1;
+    return list.find((r) => r.id === id)?.priority ?? 1;
   };
 
   const countCategoryFor = (needle: string, category: string) => {
@@ -430,9 +458,9 @@ function ScopedCategoryRules({
     for (const r of standaloneSubRules) if (hit(r.keyword, r.sub)) ensure(r.parent).standalone.push(r);
 
     for (const g of groups.values()) {
-      g.keyword.sort((a, b) => b.createdAt - a.createdAt);
+      g.keyword.sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt);
       g.merchant.sort((a, b) => b.createdAt - a.createdAt);
-      g.standalone.sort((a, b) => b.createdAt - a.createdAt);
+      g.standalone.sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt);
     }
     return [...groups.entries()].sort(
       (a, b) => b[1].keyword.length + b[1].merchant.length + b[1].standalone.length - (a[1].keyword.length + a[1].merchant.length + a[1].standalone.length),
@@ -473,6 +501,7 @@ function ScopedCategoryRules({
                 <RuleRow
                   key={`kw-${r.keyword}`}
                   priority={priority}
+                  priorityTitle="Priority — when rules conflict, the higher number wins"
                   keyLabel={`contains “${r.keyword}”`}
                   category={r.category}
                   categoryOptions={categoryOptions}
@@ -486,24 +515,16 @@ function ScopedCategoryRules({
                         onDeleteSub(`${cat}${r.keyword}`, { parent: cat, sub: subValue, keyword: r.keyword })
                   }
                   count={countCategoryFor(r.keyword, cat)}
-                  onReorderUp={() => onReorderKeywordRule(r.keyword, 'up')}
-                  onReorderDown={() => onReorderKeywordRule(r.keyword, 'down')}
-                  reorderUpDisabled={priority <= 1}
-                  reorderDownDisabled={priority >= sortedOwnKeyword.length}
+                  onSetPriority={(p) => onSetKeywordPriority(r.keyword, p)}
                   onRemove={() => onDeleteKeywordRule(r.keyword, r.category)}
                   onMakeGlobal={onMoveKeywordToGlobal ? () => onMoveKeywordToGlobal(r.keyword) : undefined}
                   warning={
                     shadow && {
                       text: `“${shadow.keyword}” (${shadow.category}) always matches first, so this rule can never apply.`,
                       fixLabel: `Move above “${shadow.keyword}”`,
-                      onFix: () => onPromoteKeywordRule(r.keyword, shadow.createdAt),
+                      onFix: () => onPromoteKeywordRule(r.keyword, shadow.priority ?? 1, shadow.createdAt),
                     }
                   }
-                  dragKey={r.keyword}
-                  onDragReorder={(draggedKeyword, targetKeyword) => {
-                    const target = sortedOwnKeyword.find((x) => x.keyword === targetKeyword);
-                    if (target) onPromoteKeywordRule(draggedKeyword, target.createdAt);
-                  }}
                 />
               );
             })}
@@ -543,36 +564,38 @@ function ScopedCategoryRules({
                 />
               );
             })}
-            {g.standalone.map((r) => (
-              <RuleRow
-                key={`sr-${r.id}`}
-                priority={prioritySubOf(r.id, r.parent)}
-                keyLabel={`contains “${r.keyword}”`}
-                category={r.parent}
-                categoryOptions={categoryOptions}
-                onCreateCategory={onCreateCategory}
-                onCategoryChange={(newCat) => onReparentSub(r.id, newCat)}
-                subValue={r.sub}
-                onSubCommit={(v) =>
-                  v
-                    ? onSetSub(r.parent, r.keyword, v)
-                    : onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })
-                }
-                count={countSub(r.keyword, r.parent, r.sub)}
-                onReorderUp={() => onReorderSub(r.id, 'up')}
-                onReorderDown={() => onReorderSub(r.id, 'down')}
-                reorderUpDisabled={(prioritySubOf(r.id, r.parent) ?? 1) <= 1}
-                reorderDownDisabled={(prioritySubOf(r.id, r.parent) ?? 0) >= (subRulesByParent.get(r.parent)?.length ?? 0)}
-                onRemove={() => onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })}
-                onMakeGlobal={onMoveSubToGlobal ? () => onMoveSubToGlobal(r.id) : undefined}
-                dragKey={r.id}
-                onDragReorder={(draggedId, targetId) => {
-                  const list = subRulesByParent.get(r.parent) ?? [];
-                  const target = list.find((x) => x.id === targetId);
-                  if (target) onPromoteSub(draggedId, target.createdAt);
-                }}
-              />
-            ))}
+            {g.standalone.map((r) => {
+              const shadow = findShadowingRule(r, subRulesByParent.get(r.parent) ?? []);
+              return (
+                <RuleRow
+                  key={`sr-${r.id}`}
+                  priority={prioritySubOf(r.id, r.parent)}
+                  priorityTitle="Priority — when rules conflict, the higher number wins"
+                  keyLabel={`contains “${r.keyword}”`}
+                  category={r.parent}
+                  categoryOptions={categoryOptions}
+                  onCreateCategory={onCreateCategory}
+                  onCategoryChange={(newCat) => onReparentSub(r.id, newCat)}
+                  subValue={r.sub}
+                  onSubCommit={(v) =>
+                    v
+                      ? onSetSub(r.parent, r.keyword, v)
+                      : onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })
+                  }
+                  count={countSub(r.keyword, r.parent, r.sub)}
+                  onSetPriority={(p) => onSetSubPriority(r.id, p)}
+                  onRemove={() => onDeleteSub(r.id, { parent: r.parent, sub: r.sub, keyword: r.keyword })}
+                  onMakeGlobal={onMoveSubToGlobal ? () => onMoveSubToGlobal(r.id) : undefined}
+                  warning={
+                    shadow && {
+                      text: `“${shadow.keyword}” (→ ${shadow.sub}) always matches first, so this rule can never apply.`,
+                      fixLabel: `Move above “${shadow.keyword}”`,
+                      onFix: () => onPromoteSub(r.id, shadow.priority ?? 1, shadow.createdAt),
+                    }
+                  }
+                />
+              );
+            })}
           </div>
         </details>
       ))}
@@ -602,7 +625,7 @@ export default function AdvancedSettingsPage({
   onCreateKeywordRule,
   onUpdateKeywordRuleCategory,
   onDeleteKeywordRule,
-  onReorderKeywordRule,
+  onSetKeywordRulePriority,
   onPromoteKeywordRuleAbove,
   onMoveKeywordRuleToGlobal,
   onUpdateSignatureRuleCategory,
@@ -612,7 +635,7 @@ export default function AdvancedSettingsPage({
   onMoveSignatureRuleToGlobal,
   onCreateSubRule,
   onDeleteSubRule,
-  onReorderSubRule,
+  onSetSubRulePriority,
   onPromoteSubRuleAbove,
   onMoveSubRuleToGlobal,
   onReparentSubRule,
@@ -730,7 +753,8 @@ export default function AdvancedSettingsPage({
     <div className="rules-page">
       <p className="muted rules-intro">
         Rules are global by default. A card's own rule takes precedence for that card. When two
-        rules could match, the lowest number wins, use ▲▼ to reorder.
+        keyword or sub-category rules could both match, set their priority (1-10) — the higher
+        number wins.
       </p>
 
       <label className="picker rules-card-picker">
@@ -905,16 +929,20 @@ export default function AdvancedSettingsPage({
           query={query}
           onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory('global', kw, cat)}
           onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule('global', kw, cat)}
-          onReorderKeywordRule={(kw, dir) => onReorderKeywordRule('global', kw, dir)}
-          onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove('global', kw, above)}
+          onSetKeywordPriority={(kw, p) => onSetKeywordRulePriority('global', kw, p)}
+          onPromoteKeywordRule={(kw, abovePriority, aboveCreatedAt) =>
+            onPromoteKeywordRuleAbove('global', kw, abovePriority, aboveCreatedAt)
+          }
           onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory('global', sig, cat)}
           onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule('global', sig, cat)}
           onReorderSignature={(sig, dir) => onReorderSignatureRule('global', sig, dir)}
           onPromoteSignature={(sig, above) => onPromoteSignatureRuleAbove('global', sig, above)}
           onSetSub={(parent, kw, sub) => onCreateSubRule('global', parent, kw, sub)}
           onDeleteSub={(id, info) => onDeleteSubRule('global', id, info)}
-          onReorderSub={(id, dir) => onReorderSubRule('global', id, dir)}
-          onPromoteSub={(id, above) => onPromoteSubRuleAbove('global', id, above)}
+          onSetSubPriority={(id, p) => onSetSubRulePriority('global', id, p)}
+          onPromoteSub={(id, abovePriority, aboveCreatedAt) =>
+            onPromoteSubRuleAbove('global', id, abovePriority, aboveCreatedAt)
+          }
           onReparentSub={(id, newParent) => onReparentSubRule('global', id, newParent)}
         />
       </section>
@@ -960,8 +988,10 @@ export default function AdvancedSettingsPage({
               query={query}
               onUpdateKeywordRuleCategory={(kw, cat) => onUpdateKeywordRuleCategory(c.cardId, kw, cat)}
               onDeleteKeywordRule={(kw, cat) => onDeleteKeywordRule(c.cardId, kw, cat)}
-              onReorderKeywordRule={(kw, dir) => onReorderKeywordRule(c.cardId, kw, dir)}
-              onPromoteKeywordRule={(kw, above) => onPromoteKeywordRuleAbove(c.cardId, kw, above)}
+              onSetKeywordPriority={(kw, p) => onSetKeywordRulePriority(c.cardId, kw, p)}
+              onPromoteKeywordRule={(kw, abovePriority, aboveCreatedAt) =>
+                onPromoteKeywordRuleAbove(c.cardId, kw, abovePriority, aboveCreatedAt)
+              }
               onMoveKeywordToGlobal={(kw) => onMoveKeywordRuleToGlobal(c.cardId, kw)}
               onUpdateSignatureRuleCategory={(sig, cat) => onUpdateSignatureRuleCategory(c.cardId, sig, cat)}
               onDeleteSignatureRule={(sig, cat) => onDeleteSignatureRule(c.cardId, sig, cat)}
@@ -970,8 +1000,10 @@ export default function AdvancedSettingsPage({
               onMoveSignatureToGlobal={(sig) => onMoveSignatureRuleToGlobal(c.cardId, sig)}
               onSetSub={(parent, kw, sub) => onCreateSubRule(c.cardId, parent, kw, sub)}
               onDeleteSub={(id, info) => onDeleteSubRule(c.cardId, id, info)}
-              onReorderSub={(id, dir) => onReorderSubRule(c.cardId, id, dir)}
-              onPromoteSub={(id, above) => onPromoteSubRuleAbove(c.cardId, id, above)}
+              onSetSubPriority={(id, p) => onSetSubRulePriority(c.cardId, id, p)}
+              onPromoteSub={(id, abovePriority, aboveCreatedAt) =>
+                onPromoteSubRuleAbove(c.cardId, id, abovePriority, aboveCreatedAt)
+              }
               onMoveSubToGlobal={(id) => onMoveSubRuleToGlobal(c.cardId, id)}
               onReparentSub={(id, newParent) => onReparentSubRule(c.cardId, id, newParent)}
             />

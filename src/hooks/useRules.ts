@@ -561,7 +561,7 @@ export function useRules(deps: Deps) {
 
   const handleCreateKeywordRuleFor = useCallback(
     (scope: string, keyword: string, category: string) => {
-      const rule: KeywordRule = { keyword, category, createdAt: Date.now(), updatedAt: Date.now() };
+      const rule: KeywordRule = { keyword, category, priority: 1, createdAt: Date.now(), updatedAt: Date.now() };
       saveKeywordRule(getScopeDbName(scope), rule);
       updateScopeKeywordRules(scope, (prev) => [...prev.filter((r) => r.keyword !== keyword), rule]);
       setToast(`Rule saved · “${keyword}” → ${category}`);
@@ -578,48 +578,34 @@ export function useRules(deps: Deps) {
     [freezeCategoryForRule, getScopeDbName, updateScopeKeywordRules],
   );
 
-  // Priority is "newest wins", so reordering swaps the createdAt timestamps
-  // of the two adjacent rules rather than needing a separate priority field.
-  // Scoped to rules targeting the same category, since that's how they're
-  // grouped and reordered in the Advanced Settings view.
-  // Keyword rules compete on their keyword text alone — resolveCategory picks
-  // the first substring match across ALL of a scope's keyword rules regardless
-  // of category, so reordering has to operate on that same full list. Scoping
-  // it to same-category siblings (as this used to) let you reorder rules that
-  // could never actually conflict, while leaving the real cross-category
-  // conflicts completely unaddressable from the UI.
-  const handleReorderKeywordRule = useCallback(
-    (scope: string, keyword: string, direction: 'up' | 'down') => {
+  // Direct priority set (1-10, higher wins a conflict between two matching
+  // rules) — the user-facing replacement for the old drag/arrow reordering.
+  const handleSetKeywordRulePriority = useCallback(
+    (scope: string, keyword: string, priority: number) => {
       updateScopeKeywordRules(scope, (prev) => {
-        const sorted = [...prev].sort((a, b) => b.createdAt - a.createdAt);
-        const idx = sorted.findIndex((r) => r.keyword === keyword);
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return prev;
-        const a = sorted[idx];
-        const b = sorted[swapIdx];
-        const updatedA: KeywordRule = { ...a, createdAt: b.createdAt };
-        const updatedB: KeywordRule = { ...b, createdAt: a.createdAt };
-        saveKeywordRules(getScopeDbName(scope), [updatedA, updatedB]);
-        return prev.map((r) =>
-          r.keyword === updatedA.keyword ? updatedA : r.keyword === updatedB.keyword ? updatedB : r,
-        );
+        const existing = prev.find((r) => r.keyword === keyword);
+        if (!existing) return prev;
+        const updated: KeywordRule = { ...existing, priority };
+        saveKeywordRule(getScopeDbName(scope), updated);
+        return prev.map((r) => (r.keyword === keyword ? updated : r));
       });
     },
     [getScopeDbName, updateScopeKeywordRules],
   );
 
   // One-click fix for a shadowed rule (see AdvancedSettingsPage's shadow
-  // detection): bump it to just above whatever rule is currently shadowing
-  // it. Works even when the shadowing rule lives in a different scope (e.g.
-  // a card rule shadowed by a global one) — priority is a shared numeric
-  // order across the merged set, so nudging this rule's own createdAt past
-  // the other rule's is enough; the other rule never needs to move.
+  // detection): bump it to the same priority tier as whatever's shadowing
+  // it, but created just after — same tier means it doesn't need to fight
+  // for a free number 1-10, and being newer within that tier is enough to
+  // win the tie-break, so the other rule never needs to move. Works even
+  // when the shadowing rule lives in a different scope (e.g. a card rule
+  // shadowed by a global one).
   const handlePromoteKeywordRuleAbove = useCallback(
-    (scope: string, keyword: string, aboveCreatedAt: number) => {
+    (scope: string, keyword: string, abovePriority: number, aboveCreatedAt: number) => {
       updateScopeKeywordRules(scope, (prev) => {
         const existing = prev.find((r) => r.keyword === keyword);
         if (!existing) return prev;
-        const updated: KeywordRule = { ...existing, createdAt: aboveCreatedAt + 1 };
+        const updated: KeywordRule = { ...existing, priority: abovePriority, createdAt: aboveCreatedAt + 1 };
         saveKeywordRule(getScopeDbName(scope), updated);
         return prev.map((r) => (r.keyword === keyword ? updated : r));
       });
@@ -669,7 +655,15 @@ export function useRules(deps: Deps) {
     (scope: string, parent: string, keyword: string, subName: string) => {
       const kw = keyword.trim().toLowerCase();
       if (!parent || !kw || !subName) return;
-      const rule: SubRule = { id: `${parent}${kw}`, parent, keyword: kw, sub: subName, createdAt: Date.now(), updatedAt: Date.now() };
+      const rule: SubRule = {
+        id: `${parent}${kw}`,
+        parent,
+        keyword: kw,
+        sub: subName,
+        priority: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
       saveSubRules(getScopeDbName(scope), [rule]);
       updateScopeSubRules(scope, (prev) => [...prev.filter((r) => r.id !== rule.id), rule]);
       setToast(`Sub-category rule saved · "${kw}" → ${parent} / ${subName}`);
@@ -704,21 +698,16 @@ export function useRules(deps: Deps) {
     [getScopeDbName, updateScopeSubRules],
   );
 
-  const handleReorderSubRule = useCallback(
-    (scope: string, id: string, direction: 'up' | 'down') => {
+  // Direct priority set (1-10) for sub-rules — same replacement as keyword
+  // rules above, scoped to siblings under the same parent category.
+  const handleSetSubRulePriority = useCallback(
+    (scope: string, id: string, priority: number) => {
       updateScopeSubRules(scope, (prev) => {
-        const target = prev.find((r) => r.id === id);
-        if (!target) return prev;
-        const siblings = prev.filter((r) => r.parent === target.parent).sort((a, b) => b.createdAt - a.createdAt);
-        const idx = siblings.findIndex((r) => r.id === id);
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (idx < 0 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
-        const a = siblings[idx];
-        const b = siblings[swapIdx];
-        const updatedA: SubRule = { ...a, createdAt: b.createdAt };
-        const updatedB: SubRule = { ...b, createdAt: a.createdAt };
-        saveSubRules(getScopeDbName(scope), [updatedA, updatedB]);
-        return prev.map((r) => (r.id === updatedA.id ? updatedA : r.id === updatedB.id ? updatedB : r));
+        const existing = prev.find((r) => r.id === id);
+        if (!existing) return prev;
+        const updated: SubRule = { ...existing, priority };
+        saveSubRules(getScopeDbName(scope), [updated]);
+        return prev.map((r) => (r.id === id ? updated : r));
       });
     },
     [getScopeDbName, updateScopeSubRules],
@@ -764,11 +753,11 @@ export function useRules(deps: Deps) {
   );
 
   const handlePromoteSubRuleAbove = useCallback(
-    (scope: string, id: string, aboveCreatedAt: number) => {
+    (scope: string, id: string, abovePriority: number, aboveCreatedAt: number) => {
       updateScopeSubRules(scope, (prev) => {
         const existing = prev.find((r) => r.id === id);
         if (!existing) return prev;
-        const updated: SubRule = { ...existing, createdAt: aboveCreatedAt + 1 };
+        const updated: SubRule = { ...existing, priority: abovePriority, createdAt: aboveCreatedAt + 1 };
         saveSubRules(getScopeDbName(scope), [updated]);
         return prev.map((r) => (r.id === id ? updated : r));
       });
@@ -1089,7 +1078,7 @@ export function useRules(deps: Deps) {
     // Handlers
     handleCreateKeywordRuleFor,
     handleDeleteKeywordRuleFor,
-    handleReorderKeywordRule,
+    handleSetKeywordRulePriority,
     handlePromoteKeywordRuleAbove,
     handleUpdateKeywordRuleCategory,
     handleUpdateSignatureRuleCategory,
@@ -1099,7 +1088,7 @@ export function useRules(deps: Deps) {
     handleCreateSubRule,
     handleDeleteSubRule,
     handleReparentSubRule,
-    handleReorderSubRule,
+    handleSetSubRulePriority,
     handlePromoteSubRuleAbove,
     handleMoveKeywordRuleToGlobal,
     handleMoveSignatureRuleToGlobal,

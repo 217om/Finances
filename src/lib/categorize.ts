@@ -195,8 +195,9 @@ interface MinimalTx {
  * "Transfer") would be a confusing false positive. Overrides and keyword
  * rules are more surgical/intentional, so they apply regardless of sign.
  *
- * `keywordRules` must be pre-sorted newest-first so the first substring match
- * is the highest-priority refinement.
+ * `keywordRules` must be pre-sorted by priority (highest first, ties broken
+ * by newest-first) so the first substring match is the highest-priority
+ * refinement.
  */
 export function resolveCategory(
   tx: MinimalTx,
@@ -225,7 +226,7 @@ export function makeResolver(
   overrides: Map<string, string>,
   keywordRules: import('../types').KeywordRule[] = [],
 ): (tx: MinimalTx) => string {
-  const sorted = [...keywordRules].sort((a, b) => b.createdAt - a.createdAt);
+  const sorted = [...keywordRules].sort((a, b) => (b.priority ?? 1) - (a.priority ?? 1) || b.createdAt - a.createdAt);
   return (tx) => resolveCategory(tx, rules, overrides, sorted);
 }
 
@@ -248,14 +249,14 @@ interface KeywordRanked {
 }
 
 /**
- * Both keyword rules and per-parent sub-rules resolve the same way: newest
- * first, first substring match wins. That means whenever one rule's keyword
- * is a substring of another's, the substring rule — if it has equal or
- * higher priority (evaluated first) — will always match first too, so the
- * longer/narrower rule can never actually apply. `sortedRules` must already
- * be in evaluation order (newest/highest-priority first, the same order
- * `makeResolver` and `makeSubResolver` use). Returns the specific rule that
- * shadows `target`, or null if nothing does.
+ * Both keyword rules and per-parent sub-rules resolve the same way: highest
+ * priority first (ties broken newest-first), first substring match wins.
+ * That means whenever one rule's keyword is a substring of another's, the
+ * substring rule — if it has equal or higher priority (evaluated first) —
+ * will always match first too, so the longer/narrower rule can never
+ * actually apply. `sortedRules` must already be in evaluation order (the
+ * same order `makeResolver` and `makeSubResolver` use). Returns the specific
+ * rule that shadows `target`, or null if nothing does.
  */
 export function findShadowingRule<T extends KeywordRanked>(target: T, sortedRules: T[]): T | null {
   for (const r of sortedRules) {

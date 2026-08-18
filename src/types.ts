@@ -109,17 +109,23 @@ export interface CategoryOverride {
 
 /**
  * A refinement rule: any transaction whose description contains `keyword` gets
- * `category`. Keyword rules outrank the wizard's signature rules, and a newer
- * keyword rule wins over an older one, so later refinements take priority.
+ * `category`. Keyword rules outrank the wizard's signature rules. When two
+ * keyword rules both match the same transaction, the higher `priority` wins;
+ * a tie falls back to whichever was created more recently.
  */
 export interface KeywordRule {
   keyword: string; // lowercased substring to match
   category: string;
-  /** Doubles as priority (newer wins at resolution time; drag-to-reorder
-   *  rewrites it) — not a reliable "last edited" signal, see updatedAt. */
+  /** 1-10, user-set, higher wins a conflict between two matching rules.
+   *  Optional only for records written before this field existed — treat
+   *  missing as 1, the same as the field's own default for new rules. */
+  priority?: number;
+  /** When this rule was created — no longer doubles as priority (see
+   *  `priority` above), but still breaks a tie between two rules at the
+   *  same priority: the more recently created one wins. */
   createdAt: number;
   /** See CategoryRule.updatedAt — same purpose, kept separate from
-   *  createdAt's priority role. */
+   *  createdAt's tie-break role. */
   updatedAt?: number;
 }
 
@@ -134,11 +140,16 @@ export interface SubRule {
   parent: string; // top-level category this applies within
   keyword: string; // lowercased substring
   sub: string; // sub-category name
-  /** Doubles as priority (drag-to-reorder rewrites it) — not a reliable
-   *  "last edited" signal, see updatedAt. */
+  /** 1-10, user-set, higher wins a conflict between two matching sub-rules
+   *  under the same parent. Optional only for records written before this
+   *  field existed — treat missing as 1, same as new sub-rules' default. */
+  priority?: number;
+  /** When this sub-rule was created — no longer doubles as priority (see
+   *  `priority` above), but still breaks a tie between two sub-rules at the
+   *  same priority: the more recently created one wins. */
   createdAt: number;
   /** See CategoryRule.updatedAt — same purpose, kept separate from
-   *  createdAt's priority role. */
+   *  createdAt's tie-break role. */
   updatedAt?: number;
 }
 
