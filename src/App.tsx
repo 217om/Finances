@@ -71,6 +71,7 @@ import {
 import CloudSyncSettings from './components/CloudSyncSettings';
 import { syncEngine } from './lib/cloudSync/syncEngine';
 import { useSyncState } from './lib/cloudSync/useSyncState';
+import type { ProviderId } from './lib/cloudSync/types';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
@@ -811,9 +812,12 @@ export default function App() {
 
   // Shared by both restore paths (a picked file, or a cloud sync download)
   // once each has already confirmed with the user — applies a parsed backup
-  // to every piece of state it touches.
+  // to every piece of state it touches. `silent` skips the toast, for the
+  // automatic catch-up pull below — that one runs on every load a connected
+  // provider is present, so announcing it every time would be noise (and
+  // misleading on the common case where there was nothing new to merge).
   const applyRestoredBackup = useCallback(
-    async (backup: FullBackupFile) => {
+    async (backup: FullBackupFile, opts?: { silent?: boolean }) => {
       const result = await restoreFullBackup(
         backup,
         cards,
@@ -844,7 +848,7 @@ export default function App() {
       setGlobalSubRules(result.globalSubRules);
       setCustomCategories(result.customCategories);
       setReloadToken((n) => n + 1);
-      setToast('Full backup restored.');
+      if (!opts?.silent) setToast('Full backup restored.');
     },
     [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues],
   );
@@ -1057,12 +1061,54 @@ export default function App() {
     });
   }, []);
 
+  // A device that's been closed while another device pushed newer data would
+  // otherwise auto-push its own stale snapshot the moment it's reopened —
+  // notifyChange() below fires unconditionally on mount, with no way to know
+  // the cloud copy has since moved on. So on every load, before any push is
+  // allowed, silently pull and merge whatever each connected provider
+  // already has (additive, same updatedAt-based merge as a manual restore —
+  // never deletes anything). If nothing's connected, or a pull fails (e.g.
+  // offline), this still unblocks push after one attempt, so a network blip
+  // doesn't permanently stop this device from backing up. Each pull gets a
+  // timeout — neither provider's download() has one of its own, and unlike
+  // "Restore from cloud" (a visible, retryable button) this runs silently on
+  // every load, so a network stall here must never be able to block this
+  // device's own sync indefinitely.
+  const [initialCloudMergeDone, setInitialCloudMergeDone] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids: ProviderId[] = ['google', 'onedrive'];
+      for (const id of ids) {
+        if (cancelled || !syncEngine.isConfigured(id) || !cloudSyncState[id].connected) continue;
+        try {
+          const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timed-out')), 15000),
+          );
+          const json = await Promise.race([syncEngine.pull(id), timeout]);
+          if (json && !cancelled) {
+            await applyRestoredBackup(parseFullBackup(json), { silent: true });
+          }
+        } catch {
+          /* best effort — a failed or slow pull shouldn't block this device's own sync */
+        }
+      }
+      if (!cancelled) setInitialCloudMergeDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Broad on purpose: any of these changing means the next full-backup
   // payload would differ, which is the only signal a debounced "does
   // anything need pushing" check actually needs.
   useEffect(() => {
+    if (!initialCloudMergeDone) return;
     syncEngine.notifyChange();
   }, [
+    initialCloudMergeDone,
     transactions,
     rules,
     overrides,
