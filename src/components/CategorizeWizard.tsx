@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { CategoryOverride, CategoryRule, KeywordRule, Transaction } from '../types';
 import type { TxGroup } from '../lib/grouping';
-import { EXPENSE_CATEGORIES, categoryColor } from '../lib/categorize';
+import { EXPENSE_CATEGORIES, categorize, categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
 import CategoryPicker from './CategoryPicker';
 
@@ -76,6 +76,19 @@ export default function CategorizeWizard({
 
   const splitIds = useMemo(() => new Set(splits.flatMap((s) => s.ids)), [splits]);
   const includedCount = group ? group.txs.length - excluded.size - splitIds.size : 0;
+
+  // These merchant groups are formed purely by a shared leading word in the
+  // description (see signatureOf in lib/categorize) — "amazon" catches both
+  // Prime Video and Marketplace orders, for instance. `suggested` is only the
+  // majority guess, so flag when the built-in guess actually disagrees for
+  // some of the still-included transactions: applying `category` to all of
+  // them would silently misclassify the minority unless the user notices and
+  // splits or unchecks them first.
+  const disagreeingCount = useMemo(() => {
+    if (!group) return 0;
+    return group.txs.filter((t) => !excluded.has(t.id) && !splitIds.has(t.id) && categorize(t.description, t.amount) !== category)
+      .length;
+  }, [group, excluded, splitIds, category]);
 
   const toggle = (id: string) => {
     setExcluded((prev) => {
@@ -208,6 +221,13 @@ export default function CategorizeWizard({
 
             <p className="muted wiz-hint">Uncheck any that don't belong, they'll move to leftovers.</p>
 
+            {disagreeingCount > 0 && (
+              <p className="wiz-warn">
+                ⚠ {disagreeingCount} of these look like a different category on their own — check the list below before
+                applying {category || 'a category'} to all of them.
+              </p>
+            )}
+
             <KeywordSplitTool
               candidates={group.txs.filter((t) => !excluded.has(t.id) && !splitIds.has(t.id))}
               categoryOptions={categoryOptions}
@@ -244,6 +264,7 @@ export default function CategorizeWizard({
                   );
                 }
                 const on = !excluded.has(t.id);
+                const disagrees = on && categorize(t.description, t.amount) !== category;
                 return (
                   <label key={t.id} className={`wiz-row ${on ? '' : 'wiz-row-off'}`}>
                     <input type="checkbox" checked={on} onChange={() => toggle(t.id)} />
@@ -252,6 +273,11 @@ export default function CategorizeWizard({
                       {t.description || '—'}
                     </span>
                     <span className="wiz-amt neg">{money(t.amount)}</span>
+                    {disagrees && (
+                      <span className="wiz-disagree-tag" title={`Guessed ${categorize(t.description, t.amount)} on its own`}>
+                        ?
+                      </span>
+                    )}
                   </label>
                 );
               })}

@@ -10,6 +10,7 @@ interface Props {
   /** Optional leading "keep" choice (used by the leftovers step). */
   keepValue?: string;
   keepLabel?: string;
+  disabled?: boolean;
 }
 
 const NEW = '__new__';
@@ -26,6 +27,7 @@ export default function CategoryPicker({
   onCreate,
   keepValue,
   keepLabel,
+  disabled,
 }: Props) {
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
@@ -86,6 +88,7 @@ export default function CategoryPicker({
   return (
     <select
       value={value}
+      disabled={disabled}
       onChange={(e) => {
         if (e.target.value === NEW) setAdding(true);
         else onChange(e.target.value);

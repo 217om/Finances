@@ -99,6 +99,7 @@ interface Deps {
   setReloadToken: Dispatch<SetStateAction<number>>;
   setToast: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
+  confirmAsync: (message: string, options?: { confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
 }
 
 export function useRules(deps: Deps) {
@@ -115,6 +116,7 @@ export function useRules(deps: Deps) {
     setReloadToken,
     setToast,
     setError,
+    confirmAsync,
   } = deps;
 
   const [otherCardsData, setOtherCardsData] = useState<Record<string, OtherCardData>>({});
@@ -1020,11 +1022,12 @@ export function useRules(deps: Deps) {
           backup.globalKeywordRules.length +
           backup.globalSubRules.length +
           backup.cards.reduce((a, c) => a + c.rules.length + c.keywordRules.length + c.subRules.length, 0);
-        const ok = confirm(
+        const ok = await confirmAsync(
           `Import this rules file (from ${backup.exportedAt.slice(0, 10)})? It covers ${ruleCount} rule` +
             `${ruleCount === 1 ? '' : 's'} across ${backup.cards.length} card` +
             `${backup.cards.length === 1 ? '' : 's'} plus global rules. Existing rules are kept, ` +
             'matching ones are overwritten, nothing is deleted.',
+          { confirmLabel: 'Import', danger: false },
         );
         if (!ok) return;
         const result = await restoreRulesBackup(backup, cards);
@@ -1042,7 +1045,7 @@ export function useRules(deps: Deps) {
         setError(`Could not import that rules file. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [cards, setReloadToken, setToast, setError],
+    [cards, setReloadToken, setToast, setError, confirmAsync],
   );
 
   return {

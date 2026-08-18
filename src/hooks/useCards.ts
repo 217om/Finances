@@ -60,6 +60,7 @@ interface Deps {
   setWizardOpen: Dispatch<SetStateAction<boolean>>;
   setReloadToken: Dispatch<SetStateAction<number>>;
   setToast: Dispatch<SetStateAction<string | null>>;
+  confirmAsync: (message: string, options?: { confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
 }
 
 export function useCards(deps: Deps) {
@@ -73,6 +74,7 @@ export function useCards(deps: Deps) {
     setWizardOpen,
     setReloadToken,
     setToast,
+    confirmAsync,
   } = deps;
 
   const [cards, setCards] = useState<Card[]>(() => loadCards());
@@ -281,7 +283,7 @@ export function useCards(deps: Deps) {
   );
 
   const handleRenameCard = useCallback(
-    (id: string, name: string) => {
+    async (id: string, name: string) => {
       const trimmed = name.trim();
       if (!trimmed) return;
       const source = cards.find((c) => c.id === id);
@@ -289,10 +291,11 @@ export function useCards(deps: Deps) {
       const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
       const target = cards.find((c) => c.id !== id && normalize(c.name) === normalize(trimmed));
       if (target) {
-        const proceed = confirm(
+        const proceed = await confirmAsync(
           `A card named "${target.name}" already exists. Merge "${source.name}" into it? All of ` +
             `"${source.name}"'s transactions will move into "${target.name}", and "${source.name}" will ` +
             'be removed. This cannot be undone.',
+          { confirmLabel: 'Merge' },
         );
         if (!proceed) return;
         void handleMergeCards(source, target);
@@ -304,7 +307,7 @@ export function useCards(deps: Deps) {
         return next;
       });
     },
-    [cards, handleMergeCards],
+    [cards, handleMergeCards, confirmAsync],
   );
 
   const handleDeleteCard = useCallback(
@@ -312,7 +315,7 @@ export function useCards(deps: Deps) {
       const card = cards.find((c) => c.id === id);
       if (!card) return;
       if (cards.length <= 1) return;
-      if (!confirm(`Delete "${card.name}" and all of its data? This cannot be undone.`)) return;
+      if (!(await confirmAsync(`Delete "${card.name}" and all of its data? This cannot be undone.`))) return;
 
       await deleteCardDatabase(card.dbName);
       try {
@@ -354,7 +357,7 @@ export function useCards(deps: Deps) {
       }
       setToast(`Deleted card · ${card.name}`);
     },
-    [cards, activeCardId, combineEnabled, setCombineEnabled, setCardTypes, setCardCheckpoints, setWizardOpen, setToast],
+    [cards, activeCardId, combineEnabled, setCombineEnabled, setCardTypes, setCardCheckpoints, setWizardOpen, setToast, confirmAsync],
   );
 
   return {

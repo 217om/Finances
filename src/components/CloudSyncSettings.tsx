@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { syncEngine } from '../lib/cloudSync/syncEngine';
 import { useSyncState } from '../lib/cloudSync/useSyncState';
 import type { ProviderId } from '../lib/cloudSync/types';
+import { useConfirm } from '../hooks/useConfirm';
 
 interface Props {
   onClose: () => void;
@@ -26,6 +27,7 @@ function formatWhen(ms: number | null): string {
 }
 
 function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFromCloud: (json: string) => Promise<void> }) {
+  const { confirmAsync, confirmDialog } = useConfirm();
   const state = useSyncState()[id];
   const [busy, setBusy] = useState(false);
   const configured = syncEngine.isConfigured(id);
@@ -45,8 +47,9 @@ function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFrom
       // profile). Only push after the user has actually pulled it down;
       // decline, and this stays connected without uploading anything until
       // a manual "Sync now".
-      const wantsRestore = confirm(
+      const wantsRestore = await confirmAsync(
         `${PROVIDER_LABEL[id]} already has a CashFlow backup, probably from another device. Restore it into this browser now? Existing data here is kept either way — matching cards are merged, nothing is deleted.`,
+        { confirmLabel: 'Restore', danger: false },
       );
       if (!wantsRestore) return;
       const json = await syncEngine.pull(id);
@@ -76,9 +79,10 @@ function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFrom
 
   const handleRestore = async () => {
     if (
-      !confirm(
+      !(await confirmAsync(
         `Restore the latest backup from ${PROVIDER_LABEL[id]}? Existing data here is kept, matching cards are merged, nothing is deleted.`,
-      )
+        { confirmLabel: 'Restore', danger: false },
+      ))
     ) {
       return;
     }
@@ -97,8 +101,13 @@ function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFrom
     }
   };
 
-  const handleDisconnect = () => {
-    if (!confirm(`Disconnect ${PROVIDER_LABEL[id]}? This stops future syncing but doesn't delete the backup already there.`)) {
+  const handleDisconnect = async () => {
+    if (
+      !(await confirmAsync(
+        `Disconnect ${PROVIDER_LABEL[id]}? This stops future syncing but doesn't delete the backup already there.`,
+        { confirmLabel: 'Disconnect', danger: false },
+      ))
+    ) {
       return;
     }
     syncEngine.disconnect(id);
@@ -106,6 +115,7 @@ function ProviderRow({ id, onRestoreFromCloud }: { id: ProviderId; onRestoreFrom
 
   return (
     <div className="cloud-provider-row">
+      {confirmDialog}
       <div className="cloud-provider-head">
         <span className="cloud-provider-name">{PROVIDER_LABEL[id]}</span>
         {state.connected && <span className="cloud-provider-account muted">{state.accountLabel ?? 'Connected'}</span>}

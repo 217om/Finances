@@ -4,6 +4,7 @@ import { evalNote, formatResult, cardSlug, type CardGetter } from '../lib/notesC
 import { loadCards, type Card } from '../lib/cards';
 import { loadCardCategoryTotals, sumCategory, type CardCategoryData } from '../lib/cardTotals';
 import { RANGE_PRESETS, resolvePreset, type RangePreset } from '../lib/dateRanges';
+import { useConfirm } from '../hooks/useConfirm';
 import {
   isRichBody,
   plainTextToHtml,
@@ -193,6 +194,7 @@ function computeAutocomplete(
  * ordinary free text otherwise.
  */
 export default function NotesWidget() {
+  const { confirmAsync, confirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -494,8 +496,8 @@ export default function NotesWidget() {
     setActiveId(n.id);
   }
 
-  function removeNote(id: string) {
-    if (!confirm('Delete this note? This cannot be undone.')) return;
+  async function removeNote(id: string) {
+    if (!(await confirmAsync('Delete this note? This cannot be undone.'))) return;
     void deleteNote(id);
     historyRef.current.delete(id);
     setNotes((prev) => {
@@ -695,6 +697,7 @@ export default function NotesWidget() {
 
   return (
     <div className="notes-fab-wrap">
+      {confirmDialog}
       <button type="button" className="notes-fab" onClick={toggleOpen} title="Notes" aria-label="Notes">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
           <path
@@ -725,7 +728,7 @@ export default function NotesWidget() {
             onPointerCancel={handleDragEnd}
           >
             <h2>Notes</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleOpen}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleOpen} aria-label="Close notes">
               ✕
             </button>
           </div>

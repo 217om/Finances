@@ -98,10 +98,15 @@ import { useBudgets } from './hooks/useBudgets';
 import { useAssets } from './hooks/useAssets';
 import { useCards } from './hooks/useCards';
 import { useRules } from './hooks/useRules';
+import { useConfirm } from './hooks/useConfirm';
 
 type Theme = 'light' | 'dark';
 
 export default function App() {
+  // Styled stand-in for window.confirm() — shared by App's own handlers and
+  // threaded into useCards/useRules for theirs.
+  const { confirmAsync, confirmDialog } = useConfirm();
+
   // Global, independent of which card is active — same as Notes.
   const [theme, setTheme] = useState<Theme>(() => {
     try {
@@ -198,6 +203,7 @@ export default function App() {
     setWizardOpen,
     setReloadToken,
     setToast,
+    confirmAsync,
   });
 
   // Which card's transaction count Advanced Settings shows next to each
@@ -330,6 +336,7 @@ export default function App() {
     dbName,
     currency,
     transactions,
+    confirmAsync,
     setCategoryFilter,
     setCombinedCategoryFilter,
     setWizardOpen,
@@ -863,12 +870,13 @@ export default function App() {
           0,
         );
         const noteCount = Array.isArray(backup.notes) ? backup.notes.length : 0;
-        const ok = confirm(
+        const ok = await confirmAsync(
           `Restore this backup (from ${backup.exportedAt.slice(0, 10)})? It covers ${txCount} ` +
             `transaction${txCount === 1 ? '' : 's'} across ${backupCards.length} card` +
             `${backupCards.length === 1 ? '' : 's'} and ${noteCount} note` +
             `${noteCount === 1 ? '' : 's'}. Existing data is kept, matching cards are ` +
             'merged and new cards are added.',
+          { confirmLabel: 'Restore', danger: false },
         );
         if (!ok) return;
         await applyRestoredBackup(backup);
@@ -876,7 +884,7 @@ export default function App() {
         setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
       }
     },
-    [applyRestoredBackup],
+    [applyRestoredBackup, confirmAsync],
   );
 
   // The confirm dialog for a cloud restore lives in CloudSyncSettings
@@ -979,7 +987,7 @@ export default function App() {
   );
 
   const handleClearAll = useCallback(async () => {
-    if (!confirm('Delete all stored statements and analysis for this card? This cannot be undone.')) {
+    if (!(await confirmAsync('Delete all stored statements and analysis for this card? This cannot be undone.'))) {
       return;
     }
     await clearAll(dbName);
@@ -996,21 +1004,21 @@ export default function App() {
     setSubOverrides([]);
     setCategoryFilter(defaultCategoryFilter());
     setToast('All data cleared for this card.');
-  }, [dbName, activeCardId]);
+  }, [dbName, activeCardId, confirmAsync]);
 
   const handleClearTransactionsOnly = useCallback(async () => {
     if (
-      !confirm(
+      !(await confirmAsync(
         'Remove all transactions from this card? Categories, rules, and filters are all kept, ' +
           'this just clears the statements themselves.',
-      )
+      ))
     ) {
       return;
     }
     await clearTransactionsOnly(dbName);
     setTransactions([]);
     setToast('Transactions cleared. Categories and rules were kept.');
-  }, [dbName]);
+  }, [dbName, confirmAsync]);
 
   // --- Cloud sync ------------------------------------------------------
   // The sync engine builds its own upload payload on demand (reusing the
@@ -1195,7 +1203,13 @@ export default function App() {
                   className={`tabs-right ${view === 'budgets' ? 'on' : ''}`}
                   onClick={() => handleTabClick('budgets')}
                   disabled={!combineEnabled}
-                  title={combineEnabled ? undefined : 'Switch on "Combine all cards" to use Budgets'}
+                  title={
+                    combineEnabled
+                      ? undefined
+                      : cards.length < 2
+                        ? 'Add another card, then choose "Combine all cards" from the Card menu, to use Budgets'
+                        : 'Choose "Combine all cards" from the Card menu to use Budgets'
+                  }
                 >
                   Budgets
                 </button>
@@ -1293,7 +1307,11 @@ export default function App() {
                 />
               ) : (
                 <section className="panel">
-                  <p className="muted">Switch on "Combine all cards" above to use Budgets.</p>
+                  <p className="muted">
+                    {cards.length < 2
+                      ? 'Add another card, then choose "Combine all cards" from the Card menu above, to use Budgets.'
+                      : 'Choose "Combine all cards" from the Card menu above to use Budgets.'}
+                  </p>
                 </section>
               )
             ) : view === 'balances' ? (
@@ -1430,6 +1448,7 @@ export default function App() {
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {confirmDialog}
 
       <footer className="footer">
         {cloudSyncActive

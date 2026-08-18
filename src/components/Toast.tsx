@@ -13,7 +13,10 @@ export default function Toast({ message, onDone }: Props) {
 
   return (
     <div className="toast" role="status">
-      {message}
+      <span>{message}</span>
+      <button type="button" className="toast-close" onClick={onDone} aria-label="Dismiss">
+        ×
+      </button>
     </div>
   );
 }

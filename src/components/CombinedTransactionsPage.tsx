@@ -6,6 +6,7 @@ import { UNSORTED } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { chronologicalCompare } from '../lib/balances';
 import { money } from '../lib/format';
+import { useConfirm } from '../hooks/useConfirm';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
 import TrashIcon from './TrashIcon';
@@ -56,6 +57,7 @@ function compareBase(col: SortCol, a: CombinedRow, b: CombinedRow): number {
  * one is applied straight to the transaction's own card.
  */
 export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDeleteTransaction, categoryFilter }: Props) {
+  const { confirmAsync, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [categorySelected, setCategorySelected] = useState<Set<string> | null>(null);
@@ -110,6 +112,8 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
     return { min, max };
   }, [rows]);
 
+  const hasBalance = useMemo(() => rows.some((r) => r.t.balance != null), [rows]);
+
   const needle = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
@@ -136,6 +140,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
 
   return (
     <div className="tx-page">
+      {confirmDialog}
       <p className="muted combine-readonly-note">
         Showing every card together. Switch to a single card to edit categories.
       </p>
@@ -259,6 +264,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
                   onSort={(dir) => setSort({ col: 'amount', dir })}
                 />
               </th>
+              {hasBalance && <th className="num">Balance</th>}
               <th className="tx-note">Note</th>
               <th className="tx-delete" />
             </tr>
@@ -279,6 +285,11 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
                   {r.sub !== UNSORTED ? ` / ${r.sub}` : ''}
                 </td>
                 <td className={`num ${r.t.amount >= 0 ? 'pos' : 'neg'}`} data-label="Amount">{money(r.t.amount)}</td>
+                {hasBalance && (
+                  <td className="num muted" data-label="Balance">
+                    {r.t.balance != null ? money(r.t.balance) : '—'}
+                  </td>
+                )}
                 <td className="tx-note" data-label="Note">
                   <TxNoteCell note={r.t.note} onSave={(note) => onSetTxNote(r.cardId, r.t.id, note)} />
                 </td>
@@ -288,8 +299,8 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
                     className="tx-delete-btn"
                     title="Delete transaction"
                     aria-label="Delete transaction"
-                    onClick={() => {
-                      if (confirm('Delete this transaction? This can’t be undone.')) onDeleteTransaction(r.cardId, r.t.id);
+                    onClick={async () => {
+                      if (await confirmAsync('Delete this transaction? This can’t be undone.')) onDeleteTransaction(r.cardId, r.t.id);
                     }}
                   >
                     <TrashIcon />
@@ -299,7 +310,7 @@ export default function CombinedTransactionsPage({ rows, jump, onSetTxNote, onDe
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted tx-empty">
+                <td colSpan={hasBalance ? 8 : 7} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

@@ -63,20 +63,18 @@ export default function CardSelector({ cards, activeCardId, combineEnabled, onSw
               {c.name}
             </button>
           ))}
-          {cards.length > 1 && (
-            <>
-              <div className="menu-sep" />
-              <button
-                type="button"
-                role="option"
-                aria-selected={combineEnabled}
-                className="card-option-combine"
-                onClick={pick(COMBINE_CARD_ID)}
-              >
-                ⬡ Combine all cards
-              </button>
-            </>
-          )}
+          <div className="menu-sep" />
+          <button
+            type="button"
+            role="option"
+            aria-selected={combineEnabled}
+            className="card-option-combine"
+            disabled={cards.length < 2}
+            title={cards.length < 2 ? 'Add another card to combine (used for Budgets and combined totals)' : undefined}
+            onClick={pick(COMBINE_CARD_ID)}
+          >
+            ⬡ Combine all cards
+          </button>
         </div>
       )}
     </div>

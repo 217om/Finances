@@ -246,12 +246,42 @@ function changePct(latest: MonthlySummary | null, prior: MonthlySummary | null):
   return ((latest.net - prior.net) / Math.abs(prior.net)) * 100;
 }
 
-/** Compute the whole-history overview from a flat transaction list. */
+/** The true calendar start date of a pay-cycle month bucket (month buckets
+ *  are keyed "YYYY-MM", labelled by the month they start in — see periodKey). */
+function monthBucketStartISO(monthKey: string, startDay: number): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  return `${y}-${pad2(m)}-${pad2(Math.max(1, startDay))}`;
+}
+
+/**
+ * True when a "prior" bucket only looks partial because the caller filtered
+ * transactions down to `rangeStart`, which happens to fall in the middle of
+ * that bucket's calendar span — as opposed to the bucket genuinely being the
+ * first period of all recorded history. Comparing a full period against one
+ * that's been artificially clipped this way produces a misleading percentage
+ * (e.g. "-104% vs prior week" when the prior week is really just one or two
+ * days that survived the filter), so callers should drop the prior bucket
+ * entirely rather than compare against it.
+ */
+function isClippedByRange(bucketStartISO: string, rangeStart: string | undefined, historyStart: string | undefined): boolean {
+  if (!rangeStart || !historyStart) return false;
+  return historyStart < rangeStart && bucketStartISO < rangeStart;
+}
+
+/** Compute the whole-history overview from a flat transaction list.
+ *  `rangeStart`/`historyStart` are optional: when the caller has filtered
+ *  `txs` down to a selected date range, pass the range's lower bound as
+ *  `rangeStart` and the card's true earliest transaction date as
+ *  `historyStart` so the week/month "vs prior" comparisons can detect and
+ *  ignore a prior period that the filter clipped rather than a genuinely
+ *  quiet one. */
 export function buildOverview(
   txs: Transaction[],
   startDay = 1,
   categoryOf: CategoryOf = defaultCategoryOf,
   weekStartDay = 1,
+  rangeStart?: string,
+  historyStart?: string,
 ): Overview {
   const months = summarizeByMonth(txs, startDay, categoryOf);
   const active = months.filter((m) => m.txCount > 0);
@@ -285,10 +315,17 @@ export function buildOverview(
   // construction (see summarizeByMonth/summarizeByWeek) — the one before it
   // may be a genuine quiet stretch with no activity at all.
   const latestMonth = months.length > 0 ? months[months.length - 1] : null;
-  const priorMonth = months.length > 1 ? months[months.length - 2] : null;
+  let priorMonth = months.length > 1 ? months[months.length - 2] : null;
   const weeks = summarizeByWeek(txs, weekStartDay, categoryOf);
   const latestWeek = weeks.length > 0 ? weeks[weeks.length - 1] : null;
-  const priorWeek = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+  let priorWeek = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+
+  if (priorMonth && isClippedByRange(monthBucketStartISO(priorMonth.month, startDay), rangeStart, historyStart)) {
+    priorMonth = null;
+  }
+  if (priorWeek && isClippedByRange(priorWeek.month, rangeStart, historyStart)) {
+    priorWeek = null;
+  }
 
   return {
     months,

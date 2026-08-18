@@ -128,8 +128,8 @@ export default function Dashboard({
   // Overview cards always describe whatever the date range controls above
   // are currently showing, not the card's whole history.
   const overview = useMemo(
-    () => buildOverview(rangedTransactions, monthStartDay, categoryOf, weekStartDay),
-    [rangedTransactions, monthStartDay, categoryOf, weekStartDay],
+    () => buildOverview(rangedTransactions, monthStartDay, categoryOf, weekStartDay, lo, dateBounds.min),
+    [rangedTransactions, monthStartDay, categoryOf, weekStartDay, lo, dateBounds.min],
   );
 
   const compareOptions = useMemo(() => compareOptionsFor(preset, from, to), [preset, from, to]);

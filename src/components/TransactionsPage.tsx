@@ -5,6 +5,7 @@ import { UNSORTED, type SubResolver } from '../lib/subcategory';
 import { isExcluded, type CategoryFilterState } from '../lib/categoryFilter';
 import { chronologicalCompare } from '../lib/balances';
 import { money } from '../lib/format';
+import { useConfirm } from '../hooks/useConfirm';
 import CategoryPicker from './CategoryPicker';
 import ColumnHeaderMenu from './ColumnHeaderMenu';
 import TxNoteCell from './TxNoteCell';
@@ -34,6 +35,10 @@ interface Props {
   onSetSubCategory: (id: string, parent: string, subName: string) => void;
   onSetTxNote: (id: string, note: string) => void;
   onDeleteTransaction: (id: string) => void;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
 type TypeFilter = 'all' | 'expense' | 'income';
@@ -81,6 +86,7 @@ export default function TransactionsPage({
   onSetTxNote,
   onDeleteTransaction,
 }: Props) {
+  const { confirmAsync, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [categorySelected, setCategorySelected] = useState<Set<string> | null>(null);
@@ -89,6 +95,10 @@ export default function TransactionsPage({
   const [toDate, setToDate] = useState(jump?.to ?? '');
   const [visible, setVisible] = useState(PAGE);
   const [hiddenActive, setHiddenActive] = useState(Boolean(jump));
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState('');
+
+  const hasBalance = useMemo(() => transactions.some((t) => t.balance != null), [transactions]);
 
   // A fresh chart-click jump pre-fills the date range and (only this once)
   // restricts to categories that aren't hidden elsewhere in the app.
@@ -160,16 +170,63 @@ export default function TransactionsPage({
     [base, typeFilter, categorySelected, fromDate, toDate, needle, hiddenActive, categoryFilter, sub],
   );
 
-  // Keep the rendered list bounded whenever the filters change.
+  // Keep the rendered list bounded whenever the filters change, and drop any
+  // selection — it was made against the old filtered set.
   useEffect(() => {
     setVisible(PAGE);
+    setSelected(new Set());
   }, [search, typeFilter, categorySelected, fromDate, toDate]);
 
   const shown = filtered.slice(0, visible);
   const total = filtered.reduce((a, r) => a + r.t.amount, 0);
 
+  const selectedRows = useMemo(() => filtered.filter((r) => selected.has(r.t.id)), [filtered, selected]);
+  const selectedAllSameSign = selectedRows.length > 0 && selectedRows.every((r) => (r.t.amount < 0) === (selectedRows[0].t.amount < 0));
+  const shownSelectedCount = shown.filter((r) => selected.has(r.t.id)).length;
+  const allShownSelected = shown.length > 0 && shownSelectedCount === shown.length;
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllShown = () => {
+    setSelected((prev) => {
+      if (allShownSelected) {
+        const next = new Set(prev);
+        for (const r of shown) next.delete(r.t.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const r of shown) next.add(r.t.id);
+      return next;
+    });
+  };
+
+  const applyBulkCategory = () => {
+    if (!bulkCategory || selectedRows.length === 0) return;
+    for (const r of selectedRows) onSetCategory(r.t.id, bulkCategory);
+    setBulkCategory('');
+    setSelected(new Set());
+  };
+
+  const deleteSelected = async () => {
+    if (selectedRows.length === 0) return;
+    const ok = await confirmAsync(`Delete ${plural(selectedRows.length, 'transaction')}? This can't be undone.`, {
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    for (const r of selectedRows) onDeleteTransaction(r.t.id);
+    setSelected(new Set());
+  };
+
   return (
     <div className="tx-page">
+      {confirmDialog}
       <div className="tx-controls">
         <input
           className="explorer-search"
@@ -237,10 +294,46 @@ export default function TransactionsPage({
         <span className={total >= 0 ? 'pos' : 'neg'}>{money(total)}</span> net
       </div>
 
+      {selectedRows.length > 0 && (
+        <div className="cattx-bulk">
+          <span>{plural(selectedRows.length, 'selected')}</span>
+          <CategoryPicker
+            value={bulkCategory}
+            onChange={setBulkCategory}
+            options={selectedAllSameSign && selectedRows[0].t.amount >= 0 ? incomeOptions : options}
+            onCreate={onCreateCategory}
+            keepValue=""
+            keepLabel="Set category to…"
+            disabled={!selectedAllSameSign}
+          />
+          <button type="button" className="btn btn-primary btn-sm" disabled={!bulkCategory} onClick={applyBulkCategory}>
+            Apply
+          </button>
+          {!selectedAllSameSign && <span className="muted">Mixed income/expense — recategorize each type separately.</span>}
+          <button type="button" className="btn btn-sm btn-danger" onClick={deleteSelected}>
+            Delete selected
+          </button>
+          <button type="button" className="linklike" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="tx-table-wrap">
         <table className="data-table tx-table">
           <thead>
             <tr>
+              <th className="cattx-check">
+                <input
+                  type="checkbox"
+                  checked={allShownSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = shownSelectedCount > 0 && !allShownSelected;
+                  }}
+                  onChange={toggleAllShown}
+                  aria-label="Select all visible transactions"
+                />
+              </th>
               <th className="tx-th-menu">
                 <ColumnHeaderMenu
                   label="Date"
@@ -280,13 +373,22 @@ export default function TransactionsPage({
                   onSort={(dir) => setSort({ col: 'amount', dir })}
                 />
               </th>
+              {hasBalance && <th className="num">Balance</th>}
               <th className="tx-note">Note</th>
               <th className="tx-delete" />
             </tr>
           </thead>
           <tbody>
             {shown.map(({ t, cat }) => (
-              <tr key={t.id}>
+              <tr key={t.id} className={selected.has(t.id) ? 'row-selected' : undefined}>
+                <td className="cattx-check" data-label="Select">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(t.id)}
+                    onChange={() => toggleOne(t.id)}
+                    aria-label={`Select transaction: ${t.description || t.date}`}
+                  />
+                </td>
                 <td className="tx-date" data-label="Date">{t.date}</td>
                 <td className="desc" data-label="Description" title={t.description}>
                   {t.description || '—'}
@@ -327,6 +429,11 @@ export default function TransactionsPage({
                   </div>
                 </td>
                 <td className={`num ${t.amount >= 0 ? 'pos' : 'neg'}`} data-label="Amount">{money(t.amount)}</td>
+                {hasBalance && (
+                  <td className="num muted" data-label="Balance">
+                    {t.balance != null ? money(t.balance) : '—'}
+                  </td>
+                )}
                 <td className="tx-note" data-label="Note">
                   <TxNoteCell note={t.note} onSave={(note) => onSetTxNote(t.id, note)} />
                 </td>
@@ -336,8 +443,8 @@ export default function TransactionsPage({
                     className="tx-delete-btn"
                     title="Delete transaction"
                     aria-label="Delete transaction"
-                    onClick={() => {
-                      if (confirm('Delete this transaction? This can’t be undone.')) onDeleteTransaction(t.id);
+                    onClick={async () => {
+                      if (await confirmAsync('Delete this transaction? This can’t be undone.')) onDeleteTransaction(t.id);
                     }}
                   >
                     <TrashIcon />
@@ -347,7 +454,7 @@ export default function TransactionsPage({
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted tx-empty">
+                <td colSpan={hasBalance ? 8 : 7} className="muted tx-empty">
                   No transactions match these filters.
                 </td>
               </tr>

@@ -479,6 +479,7 @@ function ScopedCategoryRules({
 
   return (
     <div className="rules-groups">
+      <p className="muted rules-legend">PRI — priority; when rules conflict, the higher number wins.</p>
       {categoryGroups.map(([cat, g]) => (
         <details key={cat} open={searching || undefined}>
           <summary>

@@ -67,4 +67,27 @@ describe('buildOverview', () => {
     const overview = buildOverview(txs, 1);
     expect(overview.savingsRate).toBe(0);
   });
+
+  it('drops a prior week/month clipped by the caller\'s date filter instead of comparing against it', () => {
+    // Full history goes back to June; the caller (e.g. a "Month to date"
+    // dashboard filter) only hands buildOverview the Aug 1-7 slice. Aug 1
+    // isn't a Monday, so the week bucket before Aug 3 only has 2 real days
+    // of data — comparing against it would produce a nonsense percentage.
+    const fullHistoryStart = '2026-06-01';
+    const rangeStart = '2026-08-01';
+    const txs = [tx('2026-08-01', -50), tx('2026-08-02', -10), tx('2026-08-05', -1000)];
+    const overview = buildOverview(txs, 1, undefined, 1, rangeStart, fullHistoryStart);
+    expect(overview.priorWeek).toBeNull();
+    expect(overview.weekChangePct).toBeNull();
+  });
+
+  it('keeps the prior week/month comparison when nothing was clipped', () => {
+    // No external date filter in play (rangeStart === historyStart), so a
+    // genuinely quiet prior week is still a real, comparable data point.
+    const start = '2026-07-27';
+    const txs = [tx('2026-07-27', -100), tx('2026-08-03', -50)];
+    const overview = buildOverview(txs, 1, undefined, 1, start, start);
+    expect(overview.priorWeek).not.toBeNull();
+    expect(overview.weekChangePct).not.toBeNull();
+  });
 });
