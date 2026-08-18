@@ -3132,18 +3132,14 @@ th.num {
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
-.budget-quickfill {
+.budget-cadence-select {
   margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--muted);
   font-size: 11px;
-  cursor: pointer;
-  padding: 2px 6px;
-  white-space: nowrap;
-}
-.budget-quickfill:hover {
-  color: var(--accent);
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
 }
 .budget-remove {
   background: none;
@@ -3170,6 +3166,20 @@ th.num {
   padding: 5px 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+.budget-input-computed {
+  color: var(--muted);
+  cursor: help;
+}
+.budget-cycle-amount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.budget-cycle-amount .budget-input {
+  width: 72px;
 }
 .budget-actual {
   font-size: 11px;

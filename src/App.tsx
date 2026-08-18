@@ -245,12 +245,15 @@ export default function App() {
     setBudgets,
     budgetEntries,
     setBudgetEntries,
+    budgetCycleAmounts,
+    setBudgetCycleAmounts,
     handleCreateBudget,
     handleRenameBudget,
+    handleSetBudgetCadence,
     handleToggleBudgetCategory,
     handleDeleteBudget,
     handleSetBudgetAmount,
-    handleSetBudgetAmountForWeeks,
+    handleSetBudgetCycleAmount,
   } = useBudgets();
   // Assets are global, like budgets — see hooks/useAssets.ts. cardTypes,
   // cardCheckpoints, and wizardOpen are declared earlier, above useCards.
@@ -808,6 +811,7 @@ export default function App() {
         filterPresets,
         budgets,
         budgetEntries,
+        budgetCycleAmounts,
         assets,
         assetValues,
       );
@@ -815,7 +819,18 @@ export default function App() {
     } catch (e) {
       setToast(`Could not build the full backup. ${(e as Error).message ?? ''}`.trim());
     }
-  }, [cards, activeCardId, theme, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues]);
+  }, [
+    cards,
+    activeCardId,
+    theme,
+    combinedCategoryFilter,
+    filterPresets,
+    budgets,
+    budgetEntries,
+    budgetCycleAmounts,
+    assets,
+    assetValues,
+  ]);
 
   // Shared by both restore paths (a picked file, or a cloud sync download)
   // once each has already confirmed with the user — applies a parsed backup
@@ -832,6 +847,7 @@ export default function App() {
         filterPresets,
         budgets,
         budgetEntries,
+        budgetCycleAmounts,
         assets,
         assetValues,
       );
@@ -842,6 +858,7 @@ export default function App() {
       setFilterPresets(result.filterPresets);
       setBudgets(result.budgets);
       setBudgetEntries(result.budgetEntries);
+      setBudgetCycleAmounts(result.budgetCycleAmounts);
       setAssets(result.assets);
       setAssetValues(result.assetValues);
       // Restored cards may carry a card type / balance checkpoints that
@@ -857,7 +874,7 @@ export default function App() {
       setReloadToken((n) => n + 1);
       if (!opts?.silent) setToast('Full backup restored.');
     },
-    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, assets, assetValues],
+    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, budgetCycleAmounts, assets, assetValues],
   );
 
   const handleRestoreFullBackup = useCallback(
@@ -1034,6 +1051,7 @@ export default function App() {
     filterPresets,
     budgets,
     budgetEntries,
+    budgetCycleAmounts,
     assets,
     assetValues,
   });
@@ -1046,6 +1064,7 @@ export default function App() {
       filterPresets,
       budgets,
       budgetEntries,
+      budgetCycleAmounts,
       assets,
       assetValues,
     };
@@ -1062,6 +1081,7 @@ export default function App() {
         p.filterPresets,
         p.budgets,
         p.budgetEntries,
+        p.budgetCycleAmounts,
         p.assets,
         p.assetValues,
       );
@@ -1298,12 +1318,14 @@ export default function App() {
                   categoryOptions={budgetCategoryOptions}
                   budgets={budgets}
                   budgetEntries={budgetEntries}
+                  budgetCycleAmounts={budgetCycleAmounts}
                   onCreateBudget={handleCreateBudget}
                   onRenameBudget={handleRenameBudget}
+                  onSetCadence={handleSetBudgetCadence}
                   onDeleteBudget={handleDeleteBudget}
                   onToggleBudgetCategory={handleToggleBudgetCategory}
                   onSetAmount={handleSetBudgetAmount}
-                  onSetAmountForWeeks={handleSetBudgetAmountForWeeks}
+                  onSetCycleAmount={handleSetBudgetCycleAmount}
                 />
               ) : (
                 <section className="panel">

@@ -6,6 +6,7 @@ import { categorize } from './categorize';
 import {
   BUDGETS_KEY,
   BUDGET_ENTRIES_KEY,
+  BUDGET_CYCLE_AMOUNTS_KEY,
   CARD_TYPE_KEY,
   BALANCE_CHECKPOINTS_KEY,
   ASSETS_KEY,
@@ -47,11 +48,14 @@ import {
 } from './categoryFilter';
 import { isValidPresetList, mergePresets, type CategoryFilterPreset } from './categoryFilterPresets';
 import {
+  isValidBudgetCycleAmounts,
   isValidBudgetEntries,
   isValidBudgets,
+  mergeBudgetCycleAmounts,
   mergeBudgetEntries,
   mergeBudgets,
   type Budget,
+  type BudgetCycleAmount,
   type BudgetEntry,
 } from './budget';
 import {
@@ -121,6 +125,9 @@ export interface FullBackupFile {
    *  lib/budget.ts and lib/cards' BUDGETS_KEY doc comment. */
   budgets: Budget[];
   budgetEntries: BudgetEntry[];
+  /** A 'daily'/'monthly'-cadence budget's one rate/total per cycle — see
+   *  lib/budget.ts' BudgetCadence and lib/cards' BUDGET_CYCLE_AMOUNTS_KEY. */
+  budgetCycleAmounts: BudgetCycleAmount[];
   /** Free-form assets tracked for net worth, independent of any card — see
    *  lib/balances.ts and lib/cards' ASSETS_KEY doc comment. */
   assets: Asset[];
@@ -296,6 +303,7 @@ export async function buildFullBackup(
   filterPresets: CategoryFilterPreset[],
   budgets: Budget[],
   budgetEntries: BudgetEntry[],
+  budgetCycleAmounts: BudgetCycleAmount[],
   assets: Asset[],
   assetValues: AssetValueEntry[],
 ): Promise<FullBackupFile> {
@@ -360,6 +368,7 @@ export async function buildFullBackup(
     filterPresets,
     budgets,
     budgetEntries,
+    budgetCycleAmounts,
     assets,
     assetValues,
     globalRules,
@@ -598,6 +607,7 @@ export async function restoreFullBackup(
   existingFilterPresets: CategoryFilterPreset[],
   existingBudgets: Budget[],
   existingBudgetEntries: BudgetEntry[],
+  existingBudgetCycleAmounts: BudgetCycleAmount[],
   existingAssets: Asset[],
   existingAssetValues: AssetValueEntry[],
 ): Promise<{
@@ -608,6 +618,7 @@ export async function restoreFullBackup(
   filterPresets: CategoryFilterPreset[];
   budgets: Budget[];
   budgetEntries: BudgetEntry[];
+  budgetCycleAmounts: BudgetCycleAmount[];
   assets: Asset[];
   assetValues: AssetValueEntry[];
   globalRules: CategoryRule[];
@@ -740,6 +751,10 @@ export async function restoreFullBackup(
   const budgetEntries = mergeBudgetEntries(existingBudgetEntries, incomingBudgetEntries);
   writeLS(BUDGET_ENTRIES_KEY, JSON.stringify(budgetEntries));
 
+  const incomingBudgetCycleAmounts = isValidBudgetCycleAmounts(backup.budgetCycleAmounts) ? backup.budgetCycleAmounts : [];
+  const budgetCycleAmounts = mergeBudgetCycleAmounts(existingBudgetCycleAmounts, incomingBudgetCycleAmounts);
+  writeLS(BUDGET_CYCLE_AMOUNTS_KEY, JSON.stringify(budgetCycleAmounts));
+
   const incomingAssets = isValidAssets(backup.assets) ? backup.assets : [];
   const assets = mergeAssets(existingAssets, incomingAssets);
   writeLS(ASSETS_KEY, JSON.stringify(assets));
@@ -803,6 +818,7 @@ export async function restoreFullBackup(
     filterPresets,
     budgets,
     budgetEntries,
+    budgetCycleAmounts,
     assets,
     assetValues,
     globalRules,

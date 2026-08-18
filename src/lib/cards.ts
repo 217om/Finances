@@ -45,9 +45,12 @@ export const COMBINED_CATEGORY_FILTER_KEY = 'cashflow.combinedCategoryFilter';
 export const CATEGORY_FILTER_PRESETS_KEY = 'cashflow.categoryFilterPresets';
 /** Budgets apply at the total (all-cards-combined) level, not per card — see
  *  lib/budget.ts. Each budget is a named group of one or more categories;
- *  its weekly target amounts live under BUDGET_ENTRIES_KEY. */
+ *  a 'weekly'-cadence budget's per-week amounts live under
+ *  BUDGET_ENTRIES_KEY, while a 'daily'/'monthly'-cadence budget's one
+ *  rate/total per cycle lives under BUDGET_CYCLE_AMOUNTS_KEY instead. */
 export const BUDGETS_KEY = 'cashflow.budgets';
 export const BUDGET_ENTRIES_KEY = 'cashflow.budgetEntries';
+export const BUDGET_CYCLE_AMOUNTS_KEY = 'cashflow.budgetCycleAmounts';
 /** 'debit' or 'credit', per card — see lib/balances.ts for why credit
  *  balances are shown as negative debt. Defaults to 'debit' when unset. */
 export const CARD_TYPE_KEY = 'cashflow.cardType';

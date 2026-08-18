@@ -2,16 +2,21 @@ import { useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import { categoryColor } from '../lib/categorize';
 import { dayLabelShort, money } from '../lib/format';
+import { useConfirm } from '../hooks/useConfirm';
 import {
   actualSpend,
   adjacentPeriod,
   currentCyclePeriod,
   cycleBounds,
-  getBudgetAmount,
+  dayOffsetInWindow,
+  getBudgetCycleAmount,
   todayISO,
+  weekTarget,
   weekWindowsForCycle,
   windowDayCount,
   type Budget,
+  type BudgetCadence,
+  type BudgetCycleAmount,
   type BudgetEntry,
   type WeekWindow,
 } from '../lib/budget';
@@ -24,26 +29,37 @@ interface Props {
   categoryOptions: string[];
   budgets: Budget[];
   budgetEntries: BudgetEntry[];
+  budgetCycleAmounts: BudgetCycleAmount[];
   onCreateBudget: (name: string) => void;
   onRenameBudget: (id: string, name: string) => void;
+  onSetCadence: (id: string, cadence: BudgetCadence) => void;
   onDeleteBudget: (id: string) => void;
   onToggleBudgetCategory: (id: string, category: string) => void;
   onSetAmount: (budgetId: string, weekStart: string, amount: number) => void;
-  onSetAmountForWeeks: (budgetId: string, weekStarts: string[], amount: number) => void;
+  onSetCycleAmount: (budgetId: string, period: string, amount: number) => void;
 }
+
+const CADENCE_LABEL: Record<BudgetCadence, string> = {
+  weekly: 'Weekly',
+  daily: 'Daily',
+  monthly: 'Monthly',
+};
 
 function weekHeaderLabel(w: WeekWindow): string {
   return w.from === w.to ? dayLabelShort(w.from) : `${dayLabelShort(w.from)} – ${dayLabelShort(w.to)}`;
 }
 
-/** A single week's editable budget input + computed actual, for one budget. */
+/** A single week's computed (or, for a 'weekly' budget, directly editable)
+ *  target + actual, for one budget. */
 function BudgetCell({
   budget,
   actual,
+  editable,
   onCommit,
 }: {
   budget: number;
   actual: number;
+  editable: boolean;
   onCommit: (amount: number) => void;
 }) {
   const [text, setText] = useState(budget > 0 ? String(budget) : '');
@@ -60,23 +76,29 @@ function BudgetCell({
 
   return (
     <div className="budget-cell">
-      <input
-        type="number"
-        min="0"
-        step="0.01"
-        placeholder="—"
-        className="budget-input"
-        value={shown}
-        onFocus={() => {
-          setFocused(true);
-          setText(budget > 0 ? String(budget) : '');
-        }}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        }}
-      />
+      {editable ? (
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="—"
+          className="budget-input"
+          value={shown}
+          onFocus={() => {
+            setFocused(true);
+            setText(budget > 0 ? String(budget) : '');
+          }}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+        />
+      ) : (
+        <div className="budget-input budget-input-computed" title="Set by this budget's daily/monthly amount, not editable per week">
+          {budget > 0 ? money(budget, { compact: true }) : '—'}
+        </div>
+      )}
       <div className={`budget-actual ${over ? 'budget-over' : ''}`}>{money(actual, { compact: true })}</div>
       {budget > 0 && (
         <div className="budget-bar">
@@ -114,34 +136,88 @@ function BudgetSummaryCards({ budget, actual }: { budget: number; actual: number
   );
 }
 
-/** One budget's name (renameable), category membership (editable), and its
- *  weekly cells. */
+/** The single rate/total input for a 'daily' or 'monthly' cadence budget —
+ *  one number for the whole cycle, spread across the weekly cells below by
+ *  weekTarget instead of being typed into each cell directly. */
+function CycleAmountInput({
+  cadence,
+  amount,
+  onCommit,
+}: {
+  cadence: 'daily' | 'monthly';
+  amount: number;
+  onCommit: (amount: number) => void;
+}) {
+  const [text, setText] = useState(amount > 0 ? String(amount) : '');
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? text : amount > 0 ? String(amount) : '';
+
+  const commit = () => {
+    setFocused(false);
+    const n = Number(text);
+    onCommit(Number.isFinite(n) && n > 0 ? n : 0);
+  };
+
+  return (
+    <label className="budget-cycle-amount">
+      <span className="muted">{cadence === 'daily' ? 'Per day' : 'Per cycle'}</span>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        placeholder="0"
+        className="budget-input"
+        value={shown}
+        onFocus={() => {
+          setFocused(true);
+          setText(amount > 0 ? String(amount) : '');
+        }}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </label>
+  );
+}
+
+/** One budget's name (renameable), cadence, category membership (editable),
+ *  and its weekly cells. */
 function BudgetRow({
   budget,
+  period,
+  bounds,
   weeks,
   budgetEntries,
+  budgetCycleAmounts,
   categoryOptions,
   actualsByWeek,
   cycleTotal,
   today,
   onRename,
+  onSetCadence,
   onDelete,
   onToggleCategory,
   onSetAmount,
-  onSetAmountForWeeks,
+  onSetCycleAmount,
 }: {
   budget: Budget;
+  period: string;
+  bounds: { from: string; to: string };
   weeks: WeekWindow[];
   budgetEntries: BudgetEntry[];
+  budgetCycleAmounts: BudgetCycleAmount[];
   categoryOptions: string[];
   actualsByWeek: number[];
   cycleTotal: { budget: number; actual: number };
   today: string;
   onRename: (name: string) => void;
+  onSetCadence: (cadence: BudgetCadence) => void;
   onDelete: () => void;
   onToggleCategory: (category: string) => void;
   onSetAmount: (weekStart: string, amount: number) => void;
-  onSetAmountForWeeks: (weekStarts: string[], amount: number) => void;
+  onSetCycleAmount: (amount: number) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [nameText, setNameText] = useState(budget.name);
@@ -154,6 +230,7 @@ function BudgetRow({
   };
 
   const availableToAdd = categoryOptions.filter((c) => !budget.categories.includes(c));
+  const cadence = budget.cadence ?? 'weekly';
 
   return (
     <tr>
@@ -187,17 +264,18 @@ function BudgetRow({
               {budget.name}
             </button>
           )}
-          <button
-            type="button"
-            className="budget-quickfill"
-            title="Copy the first week's amount to every week shown"
-            onClick={() => {
-              const first = getBudgetAmount(budgetEntries, budget.id, weeks[0].weekStart);
-              if (first > 0) onSetAmountForWeeks(weeks.map((w) => w.weekStart), first);
-            }}
+          <select
+            className="budget-cadence-select"
+            value={cadence}
+            title="How this budget's target amount is set"
+            onChange={(e) => onSetCadence(e.target.value as BudgetCadence)}
           >
-            apply 1st week to all
-          </button>
+            {(Object.keys(CADENCE_LABEL) as BudgetCadence[]).map((c) => (
+              <option key={c} value={c}>
+                {CADENCE_LABEL[c]}
+              </option>
+            ))}
+          </select>
           <button type="button" className="budget-remove" title="Delete this budget" onClick={onDelete}>
             ✕
           </button>
@@ -238,13 +316,21 @@ function BudgetRow({
             </button>
           )}
         </div>
+        {cadence !== 'weekly' && (
+          <CycleAmountInput
+            cadence={cadence}
+            amount={getBudgetCycleAmount(budgetCycleAmounts, budget.id, period)}
+            onCommit={onSetCycleAmount}
+          />
+        )}
         <BudgetSummaryCards budget={cycleTotal.budget} actual={cycleTotal.actual} />
       </td>
       {weeks.map((w, i) => (
         <td key={w.weekStart} className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}>
           <BudgetCell
-            budget={getBudgetAmount(budgetEntries, budget.id, w.weekStart)}
+            budget={weekTarget(budget, period, bounds, w, budgetEntries, budgetCycleAmounts)}
             actual={actualsByWeek[i] ?? 0}
+            editable={cadence === 'weekly'}
             onCommit={(amount) => onSetAmount(w.weekStart, amount)}
           />
         </td>
@@ -255,8 +341,9 @@ function BudgetRow({
 
 /** Weekly budget vs. actual, applied at the total (all-cards-combined)
  *  level. A "budget" is a named envelope covering one or more categories —
- *  the actual spend across all of them is compared against one weekly
- *  target. */
+ *  the actual spend across all of them is compared against one target,
+ *  either typed per week directly or (for a daily/monthly-cadence budget)
+ *  computed from one rate/total entered for the whole cycle. */
 export default function BudgetsPage({
   transactions,
   categoryOf,
@@ -265,24 +352,33 @@ export default function BudgetsPage({
   categoryOptions,
   budgets,
   budgetEntries,
+  budgetCycleAmounts,
   onCreateBudget,
   onRenameBudget,
+  onSetCadence,
   onDeleteBudget,
   onToggleBudgetCategory,
   onSetAmount,
-  onSetAmountForWeeks,
+  onSetCycleAmount,
 }: Props) {
+  const { confirmAsync, confirmDialog } = useConfirm();
   const [period, setPeriod] = useState(() => currentCyclePeriod(monthStartDay));
   const isCurrentPeriod = period === currentCyclePeriod(monthStartDay);
   const [newBudgetName, setNewBudgetName] = useState('');
   const [creating, setCreating] = useState(false);
   const today = useMemo(() => todayISO(), []);
 
+  // Deleted budgets are kept (not removed) so the deletion itself survives
+  // a sync merge — see deleteBudget's doc comment in lib/budget.ts. Never
+  // shown here.
+  const liveBudgets = useMemo(() => budgets.filter((b) => !b.deletedAt), [budgets]);
+
   const bounds = useMemo(() => cycleBounds(period, monthStartDay), [period, monthStartDay]);
   const weeks = useMemo(
     () => weekWindowsForCycle(period, monthStartDay, weekStartDay),
     [period, monthStartDay, weekStartDay],
   );
+  const currentWeekIndex = weeks.findIndex((w) => w.from <= today && today <= w.to);
 
   // Only expense transactions within this cycle need scanning at all.
   const cycleTx = useMemo(
@@ -292,41 +388,41 @@ export default function BudgetsPage({
 
   const actualsByBudget = useMemo(() => {
     const map = new Map<string, number[]>();
-    for (const b of budgets) {
+    for (const b of liveBudgets) {
       map.set(
         b.id,
         weeks.map((w) => actualSpend(cycleTx, categoryOf, b.categories, w.from, w.to)),
       );
     }
     return map;
-  }, [budgets, weeks, cycleTx, categoryOf]);
+  }, [liveBudgets, weeks, cycleTx, categoryOf]);
 
   const weekTotals = useMemo(
     () =>
       weeks.map((w, i) => {
         let budgetSum = 0;
         let actualSum = 0;
-        for (const b of budgets) {
-          budgetSum += getBudgetAmount(budgetEntries, b.id, w.weekStart);
+        for (const b of liveBudgets) {
+          budgetSum += weekTarget(b, period, bounds, w, budgetEntries, budgetCycleAmounts);
           actualSum += actualsByBudget.get(b.id)?.[i] ?? 0;
         }
         return { budget: budgetSum, actual: actualSum };
       }),
-    [weeks, budgets, budgetEntries, actualsByBudget],
+    [weeks, liveBudgets, period, bounds, budgetEntries, budgetCycleAmounts, actualsByBudget],
   );
 
   // Whole-cycle (all weeks shown, summed) totals — per budget, and the
   // grand total across every budget — for the small summary cards.
   const cycleTotalsByBudget = useMemo(() => {
     const map = new Map<string, { budget: number; actual: number }>();
-    for (const b of budgets) {
+    for (const b of liveBudgets) {
       const actuals = actualsByBudget.get(b.id) ?? [];
-      const budgetSum = weeks.reduce((a, w) => a + getBudgetAmount(budgetEntries, b.id, w.weekStart), 0);
+      const budgetSum = weeks.reduce((a, w) => a + weekTarget(b, period, bounds, w, budgetEntries, budgetCycleAmounts), 0);
       const actualSum = actuals.reduce((a, x) => a + x, 0);
       map.set(b.id, { budget: budgetSum, actual: actualSum });
     }
     return map;
-  }, [budgets, weeks, budgetEntries, actualsByBudget]);
+  }, [liveBudgets, weeks, period, bounds, budgetEntries, budgetCycleAmounts, actualsByBudget]);
 
   const grandCycleTotal = useMemo(
     () =>
@@ -349,13 +445,21 @@ export default function BudgetsPage({
     onCreateBudget(name || 'New budget');
   };
 
+  const deleteBudget = async (id: string, name: string) => {
+    const ok = await confirmAsync(`Delete "${name}"? Its budget amounts for every cycle go with it. This can't be undone.`, {
+      confirmLabel: 'Delete',
+    });
+    if (ok) onDeleteBudget(id);
+  };
+
   return (
     <div className="budgets-page">
+      {confirmDialog}
       <section className="panel">
         <div className="panel-head">
           <div>
             <h2>Budgets</h2>
-            <p className="muted">Applies across every card. Set a weekly target, actuals fill in automatically.</p>
+            <p className="muted">Applies across every card. Set a target, actuals fill in automatically.</p>
           </div>
         </div>
 
@@ -411,7 +515,7 @@ export default function BudgetsPage({
         </div>
       </section>
 
-      {budgets.length === 0 ? (
+      {liveBudgets.length === 0 ? (
         <section className="panel">
           <p className="muted">Create a budget above, then assign it one or more categories.</p>
         </section>
@@ -422,42 +526,48 @@ export default function BudgetsPage({
               <thead>
                 <tr>
                   <th>Budget</th>
-                  {weeks.map((w) => (
-                    <th
-                      key={w.weekStart}
-                      className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}
-                    >
-                      {weekHeaderLabel(w)}
-                      <span className="budget-days-tag">
-                        {windowDayCount(w)} day{windowDayCount(w) === 1 ? '' : 's'}
-                      </span>
-                    </th>
-                  ))}
+                  {weeks.map((w, i) => {
+                    const isCurrent = i === currentWeekIndex;
+                    return (
+                      <th key={w.weekStart} className={`num ${isCurrent ? 'budget-col-current' : ''}`}>
+                        {weekHeaderLabel(w)}
+                        <span className="budget-days-tag">
+                          {isCurrent
+                            ? `Day ${dayOffsetInWindow(w, today)} of ${windowDayCount(w)}`
+                            : `${windowDayCount(w)} day${windowDayCount(w) === 1 ? '' : 's'}`}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {budgets.map((b) => (
+                {liveBudgets.map((b) => (
                   <BudgetRow
                     key={b.id}
                     budget={b}
+                    period={period}
+                    bounds={bounds}
                     weeks={weeks}
                     budgetEntries={budgetEntries}
+                    budgetCycleAmounts={budgetCycleAmounts}
                     categoryOptions={categoryOptions}
                     actualsByWeek={actualsByBudget.get(b.id) ?? []}
                     cycleTotal={cycleTotalsByBudget.get(b.id) ?? { budget: 0, actual: 0 }}
                     today={today}
                     onRename={(name) => onRenameBudget(b.id, name)}
-                    onDelete={() => onDeleteBudget(b.id)}
+                    onSetCadence={(cadence) => onSetCadence(b.id, cadence)}
+                    onDelete={() => deleteBudget(b.id, b.name)}
                     onToggleCategory={(category) => onToggleBudgetCategory(b.id, category)}
                     onSetAmount={(weekStart, amount) => onSetAmount(b.id, weekStart, amount)}
-                    onSetAmountForWeeks={(weekStarts, amount) => onSetAmountForWeeks(b.id, weekStarts, amount)}
+                    onSetCycleAmount={(amount) => onSetCycleAmount(b.id, period, amount)}
                   />
                 ))}
               </tbody>
               {/* A "Total" row is only informative once there's more than one
                   budget to add up — with just one, it's an exact duplicate
                   of that budget's own row and numbers. */}
-              {budgets.length > 1 && (
+              {liveBudgets.length > 1 && (
                 <tfoot>
                   <tr>
                     <td className="strong">
