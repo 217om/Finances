@@ -235,38 +235,38 @@ function BudgetRow({
   return (
     <tr>
       <td>
+        <div className="budget-cat-cell">
+          {renaming ? (
+            <input
+              autoFocus
+              className="budget-name-input"
+              value={nameText}
+              onChange={(e) => setNameText(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitName();
+                if (e.key === 'Escape') {
+                  setNameText(budget.name);
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="budget-name linklike"
+              title="Rename this budget"
+              onClick={() => {
+                setNameText(budget.name);
+                setRenaming(true);
+              }}
+            >
+              {budget.name}
+            </button>
+          )}
+        </div>
         <div className="budget-row-main">
           <div className="budget-row-left">
-            <div className="budget-cat-cell">
-              {renaming ? (
-                <input
-                  autoFocus
-                  className="budget-name-input"
-                  value={nameText}
-                  onChange={(e) => setNameText(e.target.value)}
-                  onBlur={commitName}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitName();
-                    if (e.key === 'Escape') {
-                      setNameText(budget.name);
-                      setRenaming(false);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="budget-name linklike"
-                  title="Rename this budget"
-                  onClick={() => {
-                    setNameText(budget.name);
-                    setRenaming(true);
-                  }}
-                >
-                  {budget.name}
-                </button>
-              )}
-            </div>
             <div className="budget-chips">
               {budget.categories.map((c) => (
                 <button
