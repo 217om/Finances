@@ -24,6 +24,8 @@ export interface MiniSubResolver {
 export default function CategoryFilterPanel({
   expenses,
   incomeTagged,
+  allExpenses,
+  allIncomeTagged,
   sub,
   categoryFilter,
   onToggleCategoryFilter,
@@ -34,8 +36,15 @@ export default function CategoryFilterPanel({
   onDeletePreset,
   onApplyPreset,
 }: {
+  /** Current date-range's transactions — drive the amount shown per row. */
   expenses: Tagged[];
   incomeTagged: Tagged[];
+  /** Every transaction regardless of date range — drives which rows exist
+   *  and what order they're in, so switching the range on the page above
+   *  doesn't reshuffle or hide/show rows in this filter list; only the
+   *  amounts next to them change. */
+  allExpenses: Tagged[];
+  allIncomeTagged: Tagged[];
   sub: MiniSubResolver;
   categoryFilter: CategoryFilterState;
   onToggleCategoryFilter: (category: string) => void;
@@ -49,32 +58,46 @@ export default function CategoryFilterPanel({
   onDeletePreset: (id: string) => void;
   onApplyPreset: (filter: CategoryFilterState) => void;
 }) {
-  const categoryTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const x of expenses) totals.set(x.cat, (totals.get(x.cat) ?? 0) + -x.t.amount);
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  }, [expenses]);
+  // Row set and order come from `universe` (all-time, unaffected by the
+  // page's date-range picker above) so switching ranges never adds, drops,
+  // or reshuffles a row — only the displayed amount, summed from `current`
+  // (the active range), changes. A category/sub with no activity in the
+  // current range still gets a row, just showing 0.
+  const totalsFor = (
+    universe: Tagged[],
+    current: Tagged[],
+    keyOf: (x: Tagged) => string,
+    valueOf: (x: Tagged) => number,
+  ): [string, number][] => {
+    const allTime = new Map<string, number>();
+    for (const x of universe) allTime.set(keyOf(x), (allTime.get(keyOf(x)) ?? 0) + valueOf(x));
+    const inRange = new Map<string, number>();
+    for (const x of current) inRange.set(keyOf(x), (inRange.get(keyOf(x)) ?? 0) + valueOf(x));
+    return [...allTime.keys()]
+      .sort((a, b) => (allTime.get(b) ?? 0) - (allTime.get(a) ?? 0))
+      .map((k) => [k, inRange.get(k) ?? 0]);
+  };
 
-  const incomeTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const x of incomeTagged) totals.set(x.cat, (totals.get(x.cat) ?? 0) + x.t.amount);
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  }, [incomeTagged]);
+  const categoryTotals = useMemo(
+    () => totalsFor(allExpenses, expenses, (x) => x.cat, (x) => -x.t.amount),
+    [allExpenses, expenses],
+  );
+
+  const incomeTotals = useMemo(
+    () => totalsFor(allIncomeTagged, incomeTagged, (x) => x.cat, (x) => x.t.amount),
+    [allIncomeTagged, incomeTagged],
+  );
 
   // Includes Unsorted (transactions in a split category with no sub-category
   // assigned) as its own toggleable row, sorted last — otherwise there'd be
   // no way to hide just the leftover bucket while keeping a named
   // sub-category (or the rest of the category) visible.
   const subTotalsFor = (category: string) => {
-    const totals = new Map<string, number>();
-    for (const x of expenses) {
-      if (x.cat !== category) continue;
-      const s = sub.subOf(x.t, category);
-      totals.set(s, (totals.get(s) ?? 0) + -x.t.amount);
-    }
-    const entries = [...totals.entries()];
+    const universe = allExpenses.filter((x) => x.cat === category);
+    const current = expenses.filter((x) => x.cat === category);
+    const entries = totalsFor(universe, current, (x) => sub.subOf(x.t, category), (x) => -x.t.amount);
     const unsorted = entries.filter(([s]) => s === UNSORTED);
-    const named = entries.filter(([s]) => s !== UNSORTED).sort((a, b) => b[1] - a[1]);
+    const named = entries.filter(([s]) => s !== UNSORTED);
     return [...named, ...unsorted];
   };
 

@@ -103,6 +103,17 @@ export default function CombinedCategoriesPage({
     () => ranged.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
     [ranged, categoryOf],
   );
+  // Unranged (all-time) versions feed the filter panel's row set/order and
+  // the sub-category list below, so switching the date range above never
+  // adds, drops, or reshuffles a filter row — only the amount next to it.
+  const allExpenses = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
+  const allIncomeTagged = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
 
   const [category, setCategory] = useState<string | null>(null);
   const [leaf, setLeaf] = useState<string | null>(null);
@@ -203,9 +214,12 @@ export default function CombinedCategoriesPage({
   const combinedSub = useMemo<MiniSubResolver>(
     () => ({
       subOf,
+      // All-time, not range-scoped — otherwise a sub-category with no
+      // activity in the current range would vanish from the panel instead
+      // of just showing 0.
       subsForParent: (parent) => {
         const names = new Set<string>();
-        for (const x of expenses) {
+        for (const x of allExpenses) {
           if (x.cat !== parent) continue;
           const s = subOf(x.t, parent);
           if (s !== UNSORTED) names.add(s);
@@ -213,7 +227,7 @@ export default function CombinedCategoriesPage({
         return [...names].sort();
       },
     }),
-    [subOf, expenses],
+    [subOf, allExpenses],
   );
 
   return (
@@ -344,6 +358,8 @@ export default function CombinedCategoriesPage({
       <CategoryFilterPanel
         expenses={expenses}
         incomeTagged={incomeTagged}
+        allExpenses={allExpenses}
+        allIncomeTagged={allIncomeTagged}
         sub={combinedSub}
         categoryFilter={categoryFilter}
         onToggleCategoryFilter={onToggleCategoryFilter}

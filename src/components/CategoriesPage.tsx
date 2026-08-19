@@ -90,6 +90,17 @@ export default function CategoriesPage({
     () => ranged.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
     [ranged, categoryOf],
   );
+  // Unranged (all-time) versions feed the filter panel's row set/order, so
+  // switching the date range above never adds, drops, or reshuffles a
+  // filter row — only the amount next to it.
+  const allExpenses = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount < 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
+  const allIncomeTagged = useMemo<Tagged[]>(
+    () => transactions.filter((t) => t.amount >= 0).map((t) => ({ t, cat: categoryOf(t) })),
+    [transactions, categoryOf],
+  );
 
   // The chart/treemap respects the visibility filter — both a fully-excluded
   // category AND an excluded sub-category within an otherwise-visible one
@@ -288,6 +299,8 @@ export default function CategoriesPage({
       <CategoryFilterPanel
         expenses={expenses}
         incomeTagged={incomeTagged}
+        allExpenses={allExpenses}
+        allIncomeTagged={allIncomeTagged}
         sub={sub}
         categoryFilter={categoryFilter}
         onToggleCategoryFilter={onToggleCategoryFilter}
