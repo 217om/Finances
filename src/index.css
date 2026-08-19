@@ -3042,6 +3042,20 @@ th.num {
 .budget-table tbody tr:last-child td {
   padding-bottom: 22px;
 }
+/* The name lives in its own row (above the chips/cards + selector/weekly
+ * cells row) purely so it doesn't factor into that row's height — table
+ * vertical-align: middle centers cells against the row they're actually
+ * in, and the name would otherwise pull the taller chips+cards column's
+ * center away from the shorter selector/weekly-cell columns next to it.
+ * Tightened padding here keeps the two rows reading as one budget entry. */
+.budget-name-row td {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.budget-name-row + tr td {
+  padding-top: 4px;
+  vertical-align: middle;
+}
 .budget-table tfoot td {
   padding-top: 22px;
   border-top: 2px solid var(--border);

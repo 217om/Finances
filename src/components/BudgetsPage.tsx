@@ -233,115 +233,126 @@ function BudgetRow({
   const cadence = budget.cadence ?? 'weekly';
 
   return (
-    <tr>
-      <td>
-        <div className="budget-cat-cell">
-          {renaming ? (
-            <input
-              autoFocus
-              className="budget-name-input"
-              value={nameText}
-              onChange={(e) => setNameText(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitName();
-                if (e.key === 'Escape') {
-                  setNameText(budget.name);
-                  setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="budget-name linklike"
-              title="Rename this budget"
-              onClick={() => {
-                setNameText(budget.name);
-                setRenaming(true);
-              }}
-            >
-              {budget.name}
-            </button>
-          )}
-        </div>
-        <div className="budget-row-main">
-          <div className="budget-row-left">
-            <div className="budget-chips">
-              {budget.categories.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="budget-chip"
-                  style={{ borderColor: categoryColor(c) }}
-                  title="Remove this category from the budget"
-                  onClick={() => onToggleCategory(c)}
-                >
-                  {c} <span aria-hidden>✕</span>
-                </button>
-              ))}
-              {editingCats ? (
-                <select
-                  autoFocus
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) onToggleCategory(e.target.value);
-                    setEditingCats(false);
-                  }}
-                  onBlur={() => setEditingCats(false)}
-                >
-                  <option value="">{availableToAdd.length === 0 ? 'No more categories' : 'Add category…'}</option>
-                  {availableToAdd.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <button type="button" className="budget-add-chip" onClick={() => setEditingCats(true)}>
-                  + category
-                </button>
-              )}
-            </div>
-            {cadence !== 'weekly' && (
-              <CycleAmountInput
-                cadence={cadence}
-                amount={getBudgetCycleAmount(budgetCycleAmounts, budget.id, period)}
-                onCommit={onSetCycleAmount}
+    <>
+      {/* A label row above, spanning every column, so it never factors into
+       *  this budget's real content row below — the chips/cards column and
+       *  the selector/weekly-cells columns are the only two things that need
+       *  to line up with each other, and native table row valign only
+       *  centers them correctly when nothing else shares their row. */}
+      <tr className="budget-name-row">
+        <td colSpan={weeks.length + 1}>
+          <div className="budget-cat-cell">
+            {renaming ? (
+              <input
+                autoFocus
+                className="budget-name-input"
+                value={nameText}
+                onChange={(e) => setNameText(e.target.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitName();
+                  if (e.key === 'Escape') {
+                    setNameText(budget.name);
+                    setRenaming(false);
+                  }
+                }}
               />
+            ) : (
+              <button
+                type="button"
+                className="budget-name linklike"
+                title="Rename this budget"
+                onClick={() => {
+                  setNameText(budget.name);
+                  setRenaming(true);
+                }}
+              >
+                {budget.name}
+              </button>
             )}
-            <BudgetSummaryCards budget={cycleTotal.budget} actual={cycleTotal.actual} />
           </div>
-          <div className="budget-row-right">
-            <select
-              className="budget-cadence-select"
-              value={cadence}
-              title="How this budget's target amount is set"
-              onChange={(e) => onSetCadence(e.target.value as BudgetCadence)}
-            >
-              {(Object.keys(CADENCE_LABEL) as BudgetCadence[]).map((c) => (
-                <option key={c} value={c}>
-                  {CADENCE_LABEL[c]}
-                </option>
-              ))}
-            </select>
-            <button type="button" className="budget-remove" title="Delete this budget" onClick={onDelete}>
-              ✕
-            </button>
-          </div>
-        </div>
-      </td>
-      {weeks.map((w, i) => (
-        <td key={w.weekStart} className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}>
-          <BudgetCell
-            budget={weekTarget(budget, period, bounds, w, budgetEntries, budgetCycleAmounts)}
-            actual={actualsByWeek[i] ?? 0}
-            editable={cadence === 'weekly'}
-            onCommit={(amount) => onSetAmount(w.weekStart, amount)}
-          />
         </td>
-      ))}
-    </tr>
+      </tr>
+      <tr>
+        <td>
+          <div className="budget-row-main">
+            <div className="budget-row-left">
+              <div className="budget-chips">
+                {budget.categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="budget-chip"
+                    style={{ borderColor: categoryColor(c) }}
+                    title="Remove this category from the budget"
+                    onClick={() => onToggleCategory(c)}
+                  >
+                    {c} <span aria-hidden>✕</span>
+                  </button>
+                ))}
+                {editingCats ? (
+                  <select
+                    autoFocus
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) onToggleCategory(e.target.value);
+                      setEditingCats(false);
+                    }}
+                    onBlur={() => setEditingCats(false)}
+                  >
+                    <option value="">{availableToAdd.length === 0 ? 'No more categories' : 'Add category…'}</option>
+                    {availableToAdd.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <button type="button" className="budget-add-chip" onClick={() => setEditingCats(true)}>
+                    + category
+                  </button>
+                )}
+              </div>
+              {cadence !== 'weekly' && (
+                <CycleAmountInput
+                  cadence={cadence}
+                  amount={getBudgetCycleAmount(budgetCycleAmounts, budget.id, period)}
+                  onCommit={onSetCycleAmount}
+                />
+              )}
+              <BudgetSummaryCards budget={cycleTotal.budget} actual={cycleTotal.actual} />
+            </div>
+            <div className="budget-row-right">
+              <select
+                className="budget-cadence-select"
+                value={cadence}
+                title="How this budget's target amount is set"
+                onChange={(e) => onSetCadence(e.target.value as BudgetCadence)}
+              >
+                {(Object.keys(CADENCE_LABEL) as BudgetCadence[]).map((c) => (
+                  <option key={c} value={c}>
+                    {CADENCE_LABEL[c]}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="budget-remove" title="Delete this budget" onClick={onDelete}>
+                ✕
+              </button>
+            </div>
+          </div>
+        </td>
+        {weeks.map((w, i) => (
+          <td key={w.weekStart} className={`num ${w.from <= today && today <= w.to ? 'budget-col-current' : ''}`}>
+            <BudgetCell
+              budget={weekTarget(budget, period, bounds, w, budgetEntries, budgetCycleAmounts)}
+              actual={actualsByWeek[i] ?? 0}
+              editable={cadence === 'weekly'}
+              onCommit={(amount) => onSetAmount(w.weekStart, amount)}
+            />
+          </td>
+        ))}
+      </tr>
+    </>
   );
 }
 
