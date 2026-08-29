@@ -3429,22 +3429,31 @@ th.num {
 .exec-view-controls {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+.exec-view-controls p {
+  margin: 0;
 }
 .exec-caveat {
   margin-top: 14px;
   font-size: 12px;
 }
 .exec-table-wrap {
+  max-height: none;
   overflow-x: auto;
+  overflow-y: visible;
 }
 .exec-table {
   min-width: 640px;
 }
-.exec-table.exec-period-table {
-  min-width: 0;
-  max-width: 420px;
+.exec-table.exec-table-wide {
+  min-width: 720px;
+}
+.exec-table.exec-table-wide td.num,
+.exec-table.exec-table-wide th.num {
+  min-width: 110px;
 }
 .exec-table td:first-child,
 .exec-table th:first-child {
@@ -3463,19 +3472,29 @@ th.num {
 }
 .exec-table tbody tr.exec-subrow td {
   border-bottom: none;
-  padding-top: 2px;
-  padding-bottom: 2px;
-}
-.exec-table tbody tr.exec-subrow td:first-child {
-  padding-left: 26px;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 .exec-table tbody tr.exec-subrow + tr.exec-row-total td {
   padding-top: 12px;
 }
-.exec-subrow-label {
+.exec-cat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.exec-cat-cell-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.exec-cat-cell-amt {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Responsive ---------- */
