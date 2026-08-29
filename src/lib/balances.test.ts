@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Transaction } from '../types';
 import {
+  assetsNetAsOf,
   chronologicalCompare,
   computeCardBalance,
   mergeAssets,
   mergeCheckpoints,
+  netWorthAsOf,
   netWorthHistory,
   signedAssetValue,
   signedBalance,
   type Asset,
+  type AssetValueEntry,
   type BalanceCheckpoint,
 } from './balances';
 
@@ -172,5 +175,64 @@ describe('netWorthHistory', () => {
 
   it('returns an empty history with nothing to track', () => {
     expect(netWorthHistory([], [], [])).toEqual([]);
+  });
+});
+
+describe('assetsNetAsOf / netWorthAsOf (the Executive Summary bridge building block)', () => {
+  const asset = (id: string, kind: Asset['kind'] = 'asset'): Asset => ({ id, name: id, createdAt: 1, kind });
+  const value = (assetId: string, date: string, value: number): AssetValueEntry => ({
+    id: `${assetId}_${date}`,
+    assetId,
+    date,
+    value,
+    createdAt: 1,
+  });
+
+  it('assetsNetAsOf sums the latest value on or before the date, per asset, signing liabilities negative', () => {
+    const assets = [asset('house'), asset('loan', 'liability')];
+    const values = [value('house', '2026-01-01', 100000), value('loan', '2026-01-01', 20000)];
+    expect(assetsNetAsOf(assets, values, '2026-06-01')).toBe(80000);
+  });
+
+  it('assetsNetAsOf ignores a value entered after the as-of date', () => {
+    const assets = [asset('house')];
+    const values = [value('house', '2026-01-01', 100000), value('house', '2026-12-01', 150000)];
+    expect(assetsNetAsOf(assets, values, '2026-06-01')).toBe(100000);
+  });
+
+  it('netWorthAsOf sums every card plus every asset and reports complete when every anchor is known', () => {
+    const cardA = {
+      type: 'debit' as const,
+      transactions: [tx({ date: '2026-08-01', amount: 0, balance: 500 })],
+      checkpoints: [],
+    };
+    const result = netWorthAsOf([cardA], [asset('house')], [value('house', '2026-01-01', 1000)], '2026-08-15');
+    expect(result).toEqual({ amount: 1500, complete: true });
+  });
+
+  it('flags incomplete when a card had activity before the as-of date but no anchor to reconstruct from', () => {
+    // A transaction exists, but neither it nor anything else carries a
+    // balance, and there's no manual checkpoint either — genuinely unknown,
+    // not a safe zero.
+    const cardA = {
+      type: 'debit' as const,
+      transactions: [tx({ date: '2026-08-01', amount: -50 })],
+      checkpoints: [],
+    };
+    const result = netWorthAsOf([cardA], [], [], '2026-08-15');
+    expect(result.amount).toBe(0);
+    expect(result.complete).toBe(false);
+  });
+
+  it('does not flag incomplete for a card with no activity at all before the as-of date', () => {
+    // The card just didn't exist yet as of this date — 0 is the correct
+    // answer, not a guess.
+    const cardA = {
+      type: 'debit' as const,
+      transactions: [tx({ date: '2026-09-01', amount: -50 })],
+      checkpoints: [],
+    };
+    const result = netWorthAsOf([cardA], [], [], '2026-08-15');
+    expect(result).toEqual({ amount: 0, complete: true });
   });
 });

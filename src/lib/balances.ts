@@ -176,7 +176,7 @@ export function computeCardBalance(
 /** Same reconciliation as computeCardBalance, but as of a given date rather
  *  than "now" — everything dated after `asOf` is ignored, as if it hadn't
  *  happened yet. Powers the net worth history chart. */
-function cardBalanceAsOf(
+export function cardBalanceAsOf(
   type: CardType,
   transactions: Transaction[],
   checkpoints: BalanceCheckpoint[],
@@ -248,6 +248,49 @@ export function cardBalanceHistory(
   return [...dates]
     .sort()
     .map((date) => ({ date, amount: cardBalanceAsOf(type, transactions, checkpoints, date).amount ?? 0 }));
+}
+
+/** Every tracked asset's signed value as of a given date (the latest entry
+ *  on or before it), summed. Isolated from cards so callers can measure the
+ *  asset-only portion of a net worth change separately from cash movement. */
+export function assetsNetAsOf(assets: Asset[], assetValues: AssetValueEntry[], asOf: string): number {
+  return assets.reduce((a, asset) => {
+    const entry = latestAssetValue(assetValues, asset.id, asOf);
+    return a + (entry ? signedAssetValue(asset.kind, entry.value) : 0);
+  }, 0);
+}
+
+export interface NetWorthAsOfResult {
+  amount: number;
+  /** False when at least one card had a transaction or checkpoint dated at
+   *  or before `asOf` but no real anchor (statement balance or checkpoint)
+   *  to compute an actual balance from as of that date — its contribution
+   *  was defaulted to 0, which may be significantly wrong rather than a
+   *  safe placeholder. A card with no activity at all before `asOf` (it
+   *  simply didn't exist yet) doesn't count against this — 0 is the correct
+   *  answer for it, not a guess. */
+  complete: boolean;
+}
+
+/** Net worth (every card plus every asset, cards signed debt-as-negative) as
+ *  of a given date — the building block for reconstructing a past opening or
+ *  closing balance the same way computeCardBalance already does for "now". */
+export function netWorthAsOf(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  asOf: string,
+): NetWorthAsOfResult {
+  let complete = true;
+  const cardTotal = cards.reduce((a, c) => {
+    const computed = cardBalanceAsOf(c.type, c.transactions, c.checkpoints, asOf);
+    if (computed.amount === null) {
+      const hadActivity = c.transactions.some((t) => t.date <= asOf) || c.checkpoints.some((cp) => cp.date <= asOf);
+      if (hadActivity) complete = false;
+    }
+    return a + (computed.amount ?? 0);
+  }, 0);
+  return { amount: cardTotal + assetsNetAsOf(assets, assetValues, asOf), complete };
 }
 
 // --- Validation & merge (for full-backup restore) ----------------------------

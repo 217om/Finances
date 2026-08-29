@@ -88,6 +88,7 @@ import AdvancedSettingsPage from './components/AdvancedSettingsPage';
 import CardManager from './components/CardManager';
 import BudgetsPage from './components/BudgetsPage';
 import BalancesPage from './components/BalancesPage';
+import ExecutiveSummaryPage from './components/ExecutiveSummaryPage';
 import {
   isValidCheckpoints,
   makeCheckpoint,
@@ -348,16 +349,16 @@ export default function App() {
     setError,
   });
 
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced'>(
-    'dashboard',
-  );
+  const [view, setView] = useState<
+    'summary' | 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced'
+  >('summary');
   // Set only when jumping in from a chart click (Dashboard -> a specific
   // day/week/month's transactions); cleared on any normal tab navigation, so
   // the Transactions tab is never affected by category filters otherwise.
   const [txJump, setTxJump] = useState<{ from: string; to: string; token: number } | null>(null);
 
   const handleTabClick = useCallback(
-    (next: 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced') => {
+    (next: 'summary' | 'dashboard' | 'transactions' | 'categories' | 'budgets' | 'balances' | 'advanced') => {
       setTxJump(null);
       setView(next);
     },
@@ -478,6 +479,12 @@ export default function App() {
       return !isExcluded(categoryFilter, cat, sub);
     });
   }, [transactions, categoryOf, subResolver, categoryFilter]);
+
+  // Every card's transactions merged with their own categorization, always —
+  // unlike combinedAllData below, not gated behind "Combine all cards",
+  // since the Executive Summary is inherently a cross-card view no matter
+  // which single card (if any) is currently active.
+  const everyCardCombinedData = useMemo(() => combineAllData(allCardSnapshots), [allCardSnapshots]);
 
   const combinedSnapshots = useMemo<CardSnapshot[]>(
     () => (combineEnabled ? allCardSnapshots : []),
@@ -1199,6 +1206,13 @@ export default function App() {
               <nav className="tabs">
                 <button
                   type="button"
+                  className={view === 'summary' ? 'on' : ''}
+                  onClick={() => handleTabClick('summary')}
+                >
+                  Executive Summary
+                </button>
+                <button
+                  type="button"
                   className={view === 'dashboard' ? 'on' : ''}
                   onClick={() => handleTabClick('dashboard')}
                 >
@@ -1250,7 +1264,7 @@ export default function App() {
               </nav>
             )}
 
-            {(view === 'dashboard' || !hasData) && !combineEnabled && (
+            {(view === 'summary' || view === 'dashboard' || !hasData) && !combineEnabled && (
               <UploadPanel onFiles={handleFiles} compact={hasData} />
             )}
 
@@ -1269,6 +1283,16 @@ export default function App() {
 
             {!hasData ? (
               <EmptyState />
+            ) : view === 'summary' ? (
+              <ExecutiveSummaryPage
+                cards={balanceCardRows}
+                cardCount={balanceCardRows.length}
+                assets={assets}
+                assetValues={assetValues}
+                combinedTransactions={everyCardCombinedData.transactions}
+                categoryOf={everyCardCombinedData.categoryOf}
+                monthStartDay={monthStartDay}
+              />
             ) : view === 'categories' ? (
               combineEnabled && combinedAllData ? (
                 <CombinedCategoriesPage
