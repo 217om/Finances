@@ -1290,8 +1290,8 @@ export default function App() {
                 assets={assets}
                 assetValues={assetValues}
                 combinedTransactions={everyCardCombinedData.transactions}
-                categoryOf={everyCardCombinedData.categoryOf}
                 monthStartDay={monthStartDay}
+                weekStartDay={weekStartDay}
               />
             ) : view === 'categories' ? (
               combineEnabled && combinedAllData ? (

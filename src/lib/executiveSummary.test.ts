@@ -15,11 +15,9 @@ function tx(overrides: Partial<Transaction> & { date: string; amount: number; de
   };
 }
 
-const categoryOf = (t: Transaction): string => (t.amount >= 0 ? 'Income' : 'Shopping');
-
 describe('buildExecutiveSummary', () => {
   it('returns null with absolutely nothing tracked', () => {
-    expect(buildExecutiveSummary([], [], [], [], categoryOf, 1)).toBeNull();
+    expect(buildExecutiveSummary([], [], [], [], 1)).toBeNull();
   });
 
   it('reconstructs opening/closing balances from the statement anchor and bridges them with categorized transactions', () => {
@@ -35,11 +33,12 @@ describe('buildExecutiveSummary', () => {
     ];
     const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
 
-    const summary = buildExecutiveSummary(cards, [], [], cardTxs, categoryOf, 1, 2);
+    const summary = buildExecutiveSummary(cards, [], [], cardTxs, 1, 1, 'month', 2);
     vi.useRealTimers();
 
     expect(summary).not.toBeNull();
     expect(summary!.periods.map((p) => p.period)).toEqual(['2026-07', '2026-08']);
+    expect(summary!.periods.map((p) => p.label)).toEqual(['Jul 2026', 'Aug 2026']);
 
     const july = summary!.periods[0];
     // Opening balance the day before July: only the anchor itself applies (no
@@ -86,7 +85,7 @@ describe('buildExecutiveSummary', () => {
     ];
     const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
 
-    const summary = buildExecutiveSummary(cards, [], [], cardTxs, categoryOf, 1, 2);
+    const summary = buildExecutiveSummary(cards, [], [], cardTxs, 1, 1, 'month', 2);
     vi.useRealTimers();
 
     expect(summary!.anyIncomplete).toBe(true);
@@ -98,7 +97,7 @@ describe('buildExecutiveSummary', () => {
     expect(july.closingComplete).toBe(false);
   });
 
-  it('isolates asset value changes from card cash flow, and includes both assets and cards in the categorized-window totals', () => {
+  it('isolates asset value changes from card cash flow', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
 
@@ -113,7 +112,7 @@ describe('buildExecutiveSummary', () => {
       { id: 'v2', assetId: 'house', date: '2026-08-10', value: 105000, createdAt: 1 },
     ];
 
-    const summary = buildExecutiveSummary(cards, assets, assetValues, cardTxs, categoryOf, 1, 1);
+    const summary = buildExecutiveSummary(cards, assets, assetValues, cardTxs, 1, 1, 'month', 1);
     vi.useRealTimers();
 
     const august = summary!.periods[0];
@@ -122,24 +121,31 @@ describe('buildExecutiveSummary', () => {
     expect(august.other).toBeCloseTo(0);
   });
 
-  it('aggregates source/use category totals across the whole shown window, sorted by amount descending', () => {
+  it('week granularity buckets by week-start instead of pay-cycle month, honoring weekStartDay', () => {
     vi.useFakeTimers();
+    // A Saturday.
     vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
 
     const cardTxs: Transaction[] = [
-      tx({ date: '2026-07-01', amount: 0, balance: 0 }),
-      tx({ date: '2026-07-10', amount: 100, description: 'Salary' }),
-      tx({ date: '2026-08-05', amount: 400, description: 'Salary' }),
-      tx({ date: '2026-08-06', amount: -30, description: 'Shopping' }),
+      tx({ date: '2026-08-02', amount: 0, balance: 1000 }), // a Sunday, anchor
+      tx({ date: '2026-08-05', amount: 200, description: 'Salary' }), // Wednesday, week of Aug 2
+      tx({ date: '2026-08-10', amount: -50, description: 'Shopping' }), // Monday, week of Aug 9
     ];
     const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
 
-    const summary = buildExecutiveSummary(cards, [], [], cardTxs, categoryOf, 1, 2);
+    // weekStartDay = 0 (Sunday) so Aug 2 (a Sunday) starts its own week.
+    const summary = buildExecutiveSummary(cards, [], [], cardTxs, 1, 0, 'week', 2);
     vi.useRealTimers();
 
-    expect(summary!.sourceCategories).toEqual([{ category: 'Income', amount: 500 }]);
-    expect(summary!.useCategories).toEqual([{ category: 'Shopping', amount: 30 }]);
-    expect(summary!.totalSources).toBe(500);
-    expect(summary!.totalUses).toBe(30);
+    expect(summary!.periods.map((p) => p.period)).toEqual(['2026-08-02', '2026-08-09']);
+    expect(summary!.periods[0].from).toBe('2026-08-02');
+    expect(summary!.periods[0].to).toBe('2026-08-08');
+    expect(summary!.periods[0].label).toBe('Aug 2 – Aug 8');
+    expect(summary!.periods[0].sources).toBe(200);
+
+    // The second (current, in-progress) week is clipped to "today" (Aug 15
+    // fake-timed), not the full Aug 9–15 span end.
+    expect(summary!.periods[1].to).toBe('2026-08-15');
+    expect(summary!.periods[1].uses).toBe(50);
   });
 });

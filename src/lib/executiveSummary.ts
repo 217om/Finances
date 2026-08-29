@@ -1,6 +1,7 @@
 // The cash-flow "bridge" report: opening balance -> sources of cash -> uses
 // of cash -> change in other asset values -> closing balance, one column per
-// pay-cycle month, combined across every card (plus tracked assets).
+// period (a pay-cycle month, or a week), combined across every card (plus
+// tracked assets).
 //
 // Opening/closing balances reuse the exact same anchor-plus-forward-sum
 // reconstruction the Balances tab already relies on for "current balance"
@@ -16,18 +17,19 @@
 // up there instead of silently being absorbed into "sources" or "uses".
 
 import type { Transaction } from '../types';
+import { startOfWeek } from './aggregate';
 import { netWorthAsOf, assetsNetAsOf, type Asset, type AssetValueEntry, type BalanceCheckpoint, type CardType } from './balances';
 import { adjacentPeriod, cycleBounds, currentCyclePeriod, todayISO } from './budget';
 import { addDaysISO } from './rangePresets';
+import { dayLabelShort, monthLabel } from './format';
 
-export interface CategoryAmount {
-  category: string;
-  amount: number;
-}
+export type SummaryGranularity = 'week' | 'month';
 
 export interface PeriodBridge {
-  /** "YYYY-MM" pay-cycle period key. */
+  /** "YYYY-MM" pay-cycle key for a month, or the week's start date for a week. */
   period: string;
+  /** Ready-to-display column header, e.g. "Aug 2026" or "Jul 27 – Aug 2". */
+  label: string;
   from: string;
   to: string;
   opening: number;
@@ -48,55 +50,69 @@ export interface ExecutiveSummary {
   opening: number;
   closing: number;
   netChange: number;
-  totalSources: number;
-  totalUses: number;
-  totalAssetChange: number;
-  totalOther: number;
-  sourceCategories: CategoryAmount[]; // whole window, sorted desc
-  useCategories: CategoryAmount[];
   /** True when any period's opening/closing balance had to default part of
    *  a card to 0 for lack of an anchor that far back. */
   anyIncomplete: boolean;
 }
 
+function lastPeriodKey(granularity: SummaryGranularity, monthStartDay: number, weekStartDay: number, today: string): string {
+  return granularity === 'week' ? startOfWeek(today, weekStartDay) : currentCyclePeriod(monthStartDay);
+}
+
+function stepPeriod(granularity: SummaryGranularity, key: string, delta: number): string {
+  return granularity === 'week' ? addDaysISO(key, delta * 7) : adjacentPeriod(key, delta);
+}
+
+function periodBounds(granularity: SummaryGranularity, key: string, monthStartDay: number): { from: string; to: string } {
+  return granularity === 'week' ? { from: key, to: addDaysISO(key, 6) } : cycleBounds(key, monthStartDay);
+}
+
+function periodLabel(granularity: SummaryGranularity, key: string, bounds: { from: string; to: string }): string {
+  return granularity === 'week' ? `${dayLabelShort(bounds.from)} – ${dayLabelShort(bounds.to)}` : monthLabel(key);
+}
+
+const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 8, month: 6 };
+
 /**
- * Builds the trailing `periodCount` pay-cycle months' cash bridge, ending at
- * the current (possibly still in-progress) cycle — its "closing" balance is
- * always as of today, not the calendar cycle's full end date.
+ * Builds the trailing periods' cash bridge (pay-cycle months by default, or
+ * weeks — see `granularity`), ending at the current, possibly still
+ * in-progress period — its "closing" balance is always as of today, not the
+ * full calendar period's end date.
  *
  * `cards` drives the balance reconstruction (needs each card's own
- * transactions/checkpoints/type); `combinedTransactions`/`categoryOf` drive
- * the sources/uses breakdown and should already be the union of every card's
- * transactions with each one's own categorization applied (see
- * lib/combine.ts's combineAllData) — unfiltered by any card's own hidden-
- * category filter, since this report is meant to explain the real cash
- * movement, not a curated subset of it.
+ * transactions/checkpoints/type); `combinedTransactions` should already be
+ * the union of every card's transactions (see lib/combine.ts's
+ * combineAllData) — unfiltered by any card's own hidden-category filter,
+ * since this report is meant to explain the real cash movement, not a
+ * curated subset of it.
  */
 export function buildExecutiveSummary(
   cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
   assets: Asset[],
   assetValues: AssetValueEntry[],
   combinedTransactions: Transaction[],
-  categoryOf: (tx: Transaction) => string,
   monthStartDay: number,
-  periodCount = 6,
+  weekStartDay = 1,
+  granularity: SummaryGranularity = 'month',
+  periodCount?: number,
 ): ExecutiveSummary | null {
   const hasAnyData =
     combinedTransactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
   if (!hasAnyData) return null;
 
+  const count = periodCount ?? DEFAULT_PERIOD_COUNT[granularity];
   const today = todayISO();
-  const lastPeriod = currentCyclePeriod(monthStartDay);
+  const lastPeriod = lastPeriodKey(granularity, monthStartDay, weekStartDay, today);
   let startPeriod = lastPeriod;
-  for (let i = 1; i < periodCount; i++) startPeriod = adjacentPeriod(startPeriod, -1);
+  for (let i = 1; i < count; i++) startPeriod = stepPeriod(granularity, startPeriod, -1);
 
   const periods: PeriodBridge[] = [];
   let cur = startPeriod;
-  for (let i = 0; i < periodCount; i++) {
-    const bounds = cycleBounds(cur, monthStartDay);
+  for (let i = 0; i < count; i++) {
+    const bounds = periodBounds(granularity, cur, monthStartDay);
     const from = bounds.from;
-    // The current cycle is still in progress — its "closing" is as of today,
-    // not the full calendar cycle end, which hasn't happened yet.
+    // The current period is still in progress — its "closing" is as of
+    // today, not the full calendar period's end, which hasn't happened yet.
     const to = cur === lastPeriod && bounds.to > today ? today : bounds.to;
     const openingAsOf = addDaysISO(from, -1);
 
@@ -119,6 +135,7 @@ export function buildExecutiveSummary(
 
     periods.push({
       period: cur,
+      label: periodLabel(granularity, cur, bounds),
       from,
       to,
       opening: openingNW.amount,
@@ -132,33 +149,14 @@ export function buildExecutiveSummary(
       txCount,
     });
 
-    cur = adjacentPeriod(cur, 1);
+    cur = stepPeriod(granularity, cur, 1);
   }
-
-  const windowFrom = periods[0].from;
-  const windowTo = periods[periods.length - 1].to;
-  const sourceMap = new Map<string, number>();
-  const useMap = new Map<string, number>();
-  for (const t of combinedTransactions) {
-    if (t.date < windowFrom || t.date > windowTo) continue;
-    const cat = categoryOf(t);
-    if (t.amount >= 0) sourceMap.set(cat, (sourceMap.get(cat) ?? 0) + t.amount);
-    else useMap.set(cat, (useMap.get(cat) ?? 0) + -t.amount);
-  }
-  const toSorted = (m: Map<string, number>): CategoryAmount[] =>
-    [...m.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
 
   return {
     periods,
     opening: periods[0].opening,
     closing: periods[periods.length - 1].closing,
     netChange: periods[periods.length - 1].closing - periods[0].opening,
-    totalSources: periods.reduce((a, p) => a + p.sources, 0),
-    totalUses: periods.reduce((a, p) => a + p.uses, 0),
-    totalAssetChange: periods.reduce((a, p) => a + p.assetChange, 0),
-    totalOther: periods.reduce((a, p) => a + p.other, 0),
-    sourceCategories: toSorted(sourceMap),
-    useCategories: toSorted(useMap),
     anyIncomplete: periods.some((p) => !p.openingComplete || !p.closingComplete),
   };
 }
