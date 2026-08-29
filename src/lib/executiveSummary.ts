@@ -152,7 +152,10 @@ function hasAnyData(
   return transactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
 }
 
-const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 8, month: 6 };
+// Weekly columns carry a full top-5-plus-Other breakdown each, so fewer of
+// them fit comfortably than the old simple-totals table did — 4 (roughly a
+// month of weeks) instead of 8.
+const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 4, month: 6 };
 
 /**
  * The trailing `periodCount` periods (pay-cycle months by default, or

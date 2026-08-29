@@ -3453,11 +3453,20 @@ th.num {
 }
 .exec-table.exec-table-wide td.num,
 .exec-table.exec-table-wide th.num {
-  min-width: 110px;
+  min-width: 190px;
 }
 .exec-table td:first-child,
 .exec-table th:first-child {
   min-width: 200px;
+}
+/* A clear divider between one period's column and the next — otherwise the
+ * category rows (which have their own internal left/right split) read as
+ * one undifferentiated block with no sense of where a period ends. */
+.exec-table td.num,
+.exec-table th.num {
+  padding-left: 18px;
+  padding-right: 18px;
+  border-left: 1px solid var(--divider);
 }
 .exec-table tbody tr.exec-row-opening td {
   border-bottom: none;
@@ -3472,8 +3481,8 @@ th.num {
 }
 .exec-table tbody tr.exec-subrow td {
   border-bottom: none;
-  padding-top: 3px;
-  padding-bottom: 3px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 .exec-table tbody tr.exec-subrow + tr.exec-row-total td {
   padding-top: 12px;
