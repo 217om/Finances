@@ -481,9 +481,8 @@ export default function App() {
   }, [transactions, categoryOf, subResolver, categoryFilter]);
 
   // Every card's transactions merged with their own categorization, always —
-  // unlike combinedAllData below, not gated behind "Combine all cards",
-  // since the Executive Summary is inherently a cross-card view no matter
-  // which single card (if any) is currently active.
+  // unlike combinedAllData below, not gated behind "Combine all cards". Feeds
+  // the Executive Summary when it's showing the combined (all-cards) view.
   const everyCardCombinedData = useMemo(() => combineAllData(allCardSnapshots), [allCardSnapshots]);
 
   const combinedSnapshots = useMemo<CardSnapshot[]>(
@@ -507,6 +506,32 @@ export default function App() {
       })),
     [allCardSnapshots, cardTypes, cardCheckpoints],
   );
+
+  // The Executive Summary tells one card's own story when a single card is
+  // active, and the full cross-card (plus tracked assets) story when
+  // "Combine all cards" is on — unlike Balances, which always shows every
+  // card regardless of that toggle.
+  const execSummaryData = useMemo(() => {
+    if (combineEnabled) {
+      return {
+        cards: balanceCardRows,
+        transactions: everyCardCombinedData.transactions,
+        assets,
+        assetValues,
+        cardCount: balanceCardRows.length,
+        cardName: undefined as string | undefined,
+      };
+    }
+    const activeRow = balanceCardRows.find((c) => c.cardId === activeCardId);
+    return {
+      cards: activeRow ? [activeRow] : [],
+      transactions: activeRow?.transactions ?? [],
+      assets: [] as typeof assets,
+      assetValues: [] as typeof assetValues,
+      cardCount: activeRow ? 1 : 0,
+      cardName: activeRow?.cardName,
+    };
+  }, [combineEnabled, balanceCardRows, everyCardCombinedData, assets, assetValues, activeCardId]);
 
   // Unfiltered by any card's own hidden-category filter — every combined view
   // (Dashboard and Categories alike) is driven by the combined view's own
@@ -1285,11 +1310,12 @@ export default function App() {
               <EmptyState />
             ) : view === 'summary' ? (
               <ExecutiveSummaryPage
-                cards={balanceCardRows}
-                cardCount={balanceCardRows.length}
-                assets={assets}
-                assetValues={assetValues}
-                combinedTransactions={everyCardCombinedData.transactions}
+                cards={execSummaryData.cards}
+                cardCount={execSummaryData.cardCount}
+                cardName={execSummaryData.cardName}
+                assets={execSummaryData.assets}
+                assetValues={execSummaryData.assetValues}
+                transactions={execSummaryData.transactions}
                 monthStartDay={monthStartDay}
                 weekStartDay={weekStartDay}
               />

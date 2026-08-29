@@ -13,9 +13,12 @@ interface CardInput {
 interface Props {
   cards: CardInput[];
   cardCount: number;
+  /** Set when showing a single card's own story (not "Combine all cards") —
+   *  swaps the subtitle to name that card instead of talking about a count. */
+  cardName?: string;
   assets: Asset[];
   assetValues: AssetValueEntry[];
-  combinedTransactions: Transaction[];
+  transactions: Transaction[];
   monthStartDay: number;
   weekStartDay: number;
 }
@@ -27,25 +30,28 @@ const GRANULARITIES: { key: SummaryGranularity; label: string }[] = [
 
 /**
  * The one report the rest of the app builds up to: what your cash position
- * was, broadly why it moved, and what it is now — combined across every
- * card (and any other tracked assets), trailing several months or weeks.
- * See lib/executiveSummary.ts for how the bridge and its "other" reconciling
- * line are computed.
+ * was, broadly why it moved, and what it is now. Shows one card's own story
+ * when a single card is active, or the full cross-card (plus tracked
+ * assets) picture when "Combine all cards" is on. See
+ * lib/executiveSummary.ts for how the bridge (and its reconciling "other"
+ * amount, folded straight into Sources/Uses below rather than shown on its
+ * own line) is computed.
  */
 export default function ExecutiveSummaryPage({
   cards,
   cardCount,
+  cardName,
   assets,
   assetValues,
-  combinedTransactions,
+  transactions,
   monthStartDay,
   weekStartDay,
 }: Props) {
   const [granularity, setGranularity] = useState<SummaryGranularity>('month');
 
   const summary = useMemo(
-    () => buildExecutiveSummary(cards, assets, assetValues, combinedTransactions, monthStartDay, weekStartDay, granularity),
-    [cards, assets, assetValues, combinedTransactions, monthStartDay, weekStartDay, granularity],
+    () => buildExecutiveSummary(cards, assets, assetValues, transactions, monthStartDay, weekStartDay, granularity),
+    [cards, assets, assetValues, transactions, monthStartDay, weekStartDay, granularity],
   );
 
   if (!summary) {
@@ -63,8 +69,10 @@ export default function ExecutiveSummaryPage({
 
   const { periods, opening, closing, netChange, anyIncomplete } = summary;
   const hasAssets = assets.length > 0;
-  const hasOther = periods.some((p) => Math.abs(p.other) > 1);
   const periodWord = granularity === 'week' ? 'weeks' : 'months';
+  const subtitle = cardName
+    ? `Trailing ${periods.length} ${periodWord} for ${cardName}.`
+    : `Trailing ${periods.length} ${periodWord}, combined across ${cardCount} card${cardCount === 1 ? '' : 's'}${hasAssets ? ' and your other tracked assets' : ''}.`;
 
   return (
     <div className="exec-page">
@@ -72,10 +80,7 @@ export default function ExecutiveSummaryPage({
         <div className="panel-head">
           <div>
             <h2>Executive Summary</h2>
-            <p className="muted">
-              Trailing {periods.length} {periodWord}, combined across {cardCount} card{cardCount === 1 ? '' : 's'}
-              {hasAssets ? ' and your other tracked assets' : ''}.
-            </p>
+            <p className="muted">{subtitle}</p>
           </div>
           <div className="seg seg-sm">
             {GRANULARITIES.map((g) => (
@@ -116,8 +121,8 @@ export default function ExecutiveSummaryPage({
         {anyIncomplete && (
           <p className="muted exec-caveat">
             * One or more cards' balance early in this window couldn't be reconstructed (no statement
-            balance or manual entry that far back) and was treated as zero — folded into "Other /
-            unexplained" below rather than hidden.
+            balance or manual entry that far back) and was treated as zero — folded into Sources or Uses
+            of cash below (whichever direction it moved) rather than hidden.
           </p>
         )}
       </section>
@@ -152,19 +157,28 @@ export default function ExecutiveSummaryPage({
               </tr>
               <tr>
                 <td>Sources of cash</td>
-                {periods.map((p) => (
-                  <td key={p.period} className={`num ${p.sources > 0 ? 'pos' : 'muted'}`}>
-                    {p.sources > 0 ? `+${money(p.sources, { compact: true })}` : '—'}
-                  </td>
-                ))}
+                {periods.map((p) => {
+                  // Any unreconciled gap (see lib/executiveSummary.ts's "other")
+                  // is folded straight in here when it moved the balance up,
+                  // rather than shown on its own separate line.
+                  const shown = p.sources + Math.max(p.other, 0);
+                  return (
+                    <td key={p.period} className={`num ${shown > 0.005 ? 'pos' : 'muted'}`}>
+                      {shown > 0.005 ? `+${money(shown, { compact: true })}` : '—'}
+                    </td>
+                  );
+                })}
               </tr>
               <tr>
                 <td>Uses of cash</td>
-                {periods.map((p) => (
-                  <td key={p.period} className={`num ${p.uses > 0 ? 'neg' : 'muted'}`}>
-                    {p.uses > 0 ? `-${money(p.uses, { compact: true })}` : '—'}
-                  </td>
-                ))}
+                {periods.map((p) => {
+                  const shown = p.uses + Math.max(-p.other, 0);
+                  return (
+                    <td key={p.period} className={`num ${shown > 0.005 ? 'neg' : 'muted'}`}>
+                      {shown > 0.005 ? `-${money(shown, { compact: true })}` : '—'}
+                    </td>
+                  );
+                })}
               </tr>
               {hasAssets && (
                 <tr>
@@ -172,16 +186,6 @@ export default function ExecutiveSummaryPage({
                   {periods.map((p) => (
                     <td key={p.period} className={`num ${p.assetChange === 0 ? 'muted' : p.assetChange > 0 ? 'pos' : 'neg'}`}>
                       {p.assetChange === 0 ? '—' : money(p.assetChange, { sign: true, compact: true })}
-                    </td>
-                  ))}
-                </tr>
-              )}
-              {hasOther && (
-                <tr>
-                  <td className="muted">Other / unexplained</td>
-                  {periods.map((p) => (
-                    <td key={p.period} className="num muted">
-                      {Math.abs(p.other) > 1 ? money(p.other, { sign: true, compact: true }) : '—'}
                     </td>
                   ))}
                 </tr>
