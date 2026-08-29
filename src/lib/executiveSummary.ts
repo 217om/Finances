@@ -71,6 +71,117 @@ function periodLabel(granularity: SummaryGranularity, key: string, bounds: { fro
   return granularity === 'week' ? `${dayLabelShort(bounds.from)} – ${dayLabelShort(bounds.to)}` : monthLabel(key);
 }
 
+export interface CategoryAmount {
+  category: string;
+  amount: number;
+}
+
+export interface CategoryBreakdown {
+  /** Every category's amount, including whatever landed in `otherTotal`. */
+  total: number;
+  /** Up to TOP_CATEGORY_COUNT categories, sorted by amount descending. */
+  top: CategoryAmount[];
+  /** Every remaining category beyond `top`, summed into one catch-all —
+   *  plus any reconciling gap (see the file header) that moved the balance
+   *  in this direction, so `total` always equals top + this exactly, with
+   *  nothing left unaccounted for. */
+  otherTotal: number;
+}
+
+export interface CurrentPeriodSummary {
+  period: string;
+  label: string;
+  from: string;
+  to: string;
+  opening: number;
+  openingComplete: boolean;
+  closing: number;
+  closingComplete: boolean;
+  netChange: number;
+  assetChange: number;
+  sources: CategoryBreakdown;
+  uses: CategoryBreakdown;
+}
+
+const TOP_CATEGORY_COUNT = 5;
+
+function categoryBreakdown(map: Map<string, number>, gapAdd: number): CategoryBreakdown {
+  const sorted = [...map.entries()]
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount);
+  const top = sorted.slice(0, TOP_CATEGORY_COUNT);
+  const rawTotal = sorted.reduce((a, r) => a + r.amount, 0);
+  const otherTotal = sorted.slice(TOP_CATEGORY_COUNT).reduce((a, r) => a + r.amount, 0) + gapAdd;
+  return { total: rawTotal + gapAdd, top, otherTotal };
+}
+
+/**
+ * The current (possibly still in-progress) single period's opening/closing
+ * balance plus a sources/uses breakdown capped at the top
+ * `TOP_CATEGORY_COUNT` categories each, with everything past that folded
+ * into one "other" catch-all per side — same "cards"/`transactions`/
+ * `categoryOf` inputs and reconciling-gap handling as buildExecutiveSummary,
+ * just for one period instead of a trailing trend.
+ */
+export function currentPeriodSummary(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  transactions: Transaction[],
+  categoryOf: (tx: Transaction) => string,
+  monthStartDay: number,
+  weekStartDay = 1,
+  granularity: SummaryGranularity = 'month',
+): CurrentPeriodSummary | null {
+  const hasAnyData = transactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
+  if (!hasAnyData) return null;
+
+  const today = todayISO();
+  const key = lastPeriodKey(granularity, monthStartDay, weekStartDay, today);
+  const bounds = periodBounds(granularity, key, monthStartDay);
+  const from = bounds.from;
+  const to = bounds.to > today ? today : bounds.to;
+  const openingAsOf = addDaysISO(from, -1);
+
+  const openingNW = netWorthAsOf(cards, assets, assetValues, openingAsOf);
+  const closingNW = netWorthAsOf(cards, assets, assetValues, to);
+  const assetChange = assetsNetAsOf(assets, assetValues, to) - assetsNetAsOf(assets, assetValues, openingAsOf);
+
+  const sourceMap = new Map<string, number>();
+  const useMap = new Map<string, number>();
+  let rawSources = 0;
+  let rawUses = 0;
+  for (const t of transactions) {
+    if (t.date < from || t.date > to || t.amount === 0) continue;
+    const cat = categoryOf(t);
+    if (t.amount > 0) {
+      rawSources += t.amount;
+      sourceMap.set(cat, (sourceMap.get(cat) ?? 0) + t.amount);
+    } else {
+      rawUses += -t.amount;
+      useMap.set(cat, (useMap.get(cat) ?? 0) + -t.amount);
+    }
+  }
+
+  const netChange = closingNW.amount - openingNW.amount;
+  const gap = netChange - (rawSources - rawUses) - assetChange;
+
+  return {
+    period: key,
+    label: periodLabel(granularity, key, bounds),
+    from,
+    to,
+    opening: openingNW.amount,
+    openingComplete: openingNW.complete,
+    closing: closingNW.amount,
+    closingComplete: closingNW.complete,
+    netChange,
+    assetChange,
+    sources: categoryBreakdown(sourceMap, Math.max(gap, 0)),
+    uses: categoryBreakdown(useMap, Math.max(-gap, 0)),
+  };
+}
+
 const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 8, month: 6 };
 
 /**

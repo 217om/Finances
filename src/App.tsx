@@ -516,6 +516,7 @@ export default function App() {
       return {
         cards: balanceCardRows,
         transactions: everyCardCombinedData.transactions,
+        categoryOf: everyCardCombinedData.categoryOf,
         assets,
         assetValues,
         cardCount: balanceCardRows.length,
@@ -523,15 +524,17 @@ export default function App() {
       };
     }
     const activeRow = balanceCardRows.find((c) => c.cardId === activeCardId);
+    const activeSnapshot = allCardSnapshots.find((s) => s.cardId === activeCardId);
     return {
       cards: activeRow ? [activeRow] : [],
       transactions: activeRow?.transactions ?? [],
+      categoryOf: activeSnapshot?.categoryOf ?? ((_: Transaction) => 'Other'),
       assets: [] as typeof assets,
       assetValues: [] as typeof assetValues,
       cardCount: activeRow ? 1 : 0,
       cardName: activeRow?.cardName,
     };
-  }, [combineEnabled, balanceCardRows, everyCardCombinedData, assets, assetValues, activeCardId]);
+  }, [combineEnabled, balanceCardRows, everyCardCombinedData, allCardSnapshots, assets, assetValues, activeCardId]);
 
   // Unfiltered by any card's own hidden-category filter — every combined view
   // (Dashboard and Categories alike) is driven by the combined view's own
@@ -1316,6 +1319,7 @@ export default function App() {
                 assets={execSummaryData.assets}
                 assetValues={execSummaryData.assetValues}
                 transactions={execSummaryData.transactions}
+                categoryOf={execSummaryData.categoryOf}
                 monthStartDay={monthStartDay}
                 weekStartDay={weekStartDay}
               />
