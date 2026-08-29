@@ -42,67 +42,31 @@ const GRANULARITIES: { key: SummaryGranularity; label: string }[] = [
   { key: 'week', label: 'Weekly' },
 ];
 
-function CatRow({ category, amount, max, total }: { category: string; amount: number; max: number; total: number }) {
-  const pct = total > 0 ? (amount / total) * 100 : 0;
-  return (
-    <div className="catrow">
-      <div className="catrow-head">
-        <span className="catname">
-          <span className="catdot" style={{ background: categoryColor(category) }} />
-          {category}
-        </span>
-        <span className="catamt">
-          {money(amount)} <span className="muted">· {pct.toFixed(0)}%</span>
-        </span>
-      </div>
-      <div className="catbar-track">
-        <div
-          className="catbar-fill"
-          style={{ width: `${max > 0 ? (amount / max) * 100 : 0}%`, background: categoryColor(category) }}
-        />
-      </div>
-    </div>
-  );
-}
-
-/** Total up top, then the top 5 categories and an "Other" catch-all below —
- *  see lib/executiveSummary.ts's categoryBreakdown for how the cap and the
+/** The top-5-plus-"Other" rows under a Sources/Uses total row — see
+ *  lib/executiveSummary.ts's categoryBreakdown for how the cap and the
  *  reconciling gap (folded into "Other" rather than shown separately) work. */
-function CategoryBreakdownPanel({
-  title,
-  subtitle,
-  breakdown,
-  tone,
-  emptyLabel,
-}: {
-  title: string;
-  subtitle: string;
-  breakdown: CategoryBreakdown;
-  tone: 'pos' | 'neg';
-  emptyLabel: string;
-}) {
+function CategorySubRows({ breakdown, sign }: { breakdown: CategoryBreakdown; sign: '+' | '-' }) {
   const rows = breakdown.otherTotal > 0.005 ? [...breakdown.top, { category: 'Other', amount: breakdown.otherTotal }] : breakdown.top;
-  const max = rows.reduce((a, r) => Math.max(a, r.amount), 0);
-
   return (
-    <section className="panel">
-      <div className="panel-head">
-        <div>
-          <h2>{title}</h2>
-          <p className="muted">{subtitle}</p>
-        </div>
-      </div>
-      <div className={`exec-period-total ${tone}`}>{money(breakdown.total)}</div>
-      {rows.length === 0 ? (
-        <p className="muted">{emptyLabel}</p>
-      ) : (
-        <div className="catlist">
-          {rows.map((r) => (
-            <CatRow key={r.category} category={r.category} amount={r.amount} max={max} total={breakdown.total} />
-          ))}
-        </div>
-      )}
-    </section>
+    <>
+      {rows.map((r) => {
+        const pct = breakdown.total > 0 ? (r.amount / breakdown.total) * 100 : 0;
+        return (
+          <tr key={r.category} className="exec-subrow">
+            <td>
+              <span className="exec-subrow-label">
+                <span className="catdot" style={{ background: categoryColor(r.category) }} />
+                {r.category}
+              </span>
+            </td>
+            <td className="num muted">
+              {sign}
+              {money(r.amount, { compact: true })} · {pct.toFixed(0)}%
+            </td>
+          </tr>
+        );
+      })}
+    </>
   );
 }
 
@@ -141,64 +105,63 @@ function ThisPeriodView({
     : `Combined across ${cardCount} card${cardCount === 1 ? '' : 's'}${hasAssets ? ' and your other tracked assets' : ''}.`;
 
   return (
-    <>
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>{summary.label}</h2>
-            <p className="muted">{subtitle}</p>
-          </div>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2>{summary.label}</h2>
+          <p className="muted">{subtitle}</p>
         </div>
-        <div className="explorer-stats">
-          <div className="explorer-stat">
-            <div className="explorer-stat-label">Opening balance</div>
-            <div className="explorer-stat-value">{money(summary.opening)}</div>
-          </div>
-          <div className="explorer-stat">
-            <div className="explorer-stat-label">Closing balance</div>
-            <div className="explorer-stat-value">{money(summary.closing)}</div>
-          </div>
-          <div className="explorer-stat">
-            <div className="explorer-stat-label">Net change</div>
-            <div className={`explorer-stat-value ${summary.netChange >= 0 ? 'pos' : 'neg'}`}>
-              {money(summary.netChange, { sign: true })}
-            </div>
-          </div>
-          {hasAssets && (
-            <div className="explorer-stat">
-              <div className="explorer-stat-label">Asset value change</div>
-              <div className={`explorer-stat-value ${summary.assetChange === 0 ? '' : summary.assetChange > 0 ? 'pos' : 'neg'}`}>
-                {summary.assetChange === 0 ? '—' : money(summary.assetChange, { sign: true })}
-              </div>
-            </div>
-          )}
-        </div>
-        {incomplete && (
-          <p className="muted exec-caveat">
-            * One or more cards' balance couldn't be fully reconstructed this far back (no statement
-            balance or manual entry) — the gap was treated as zero and folded into Sources or Uses
-            below rather than hidden.
-          </p>
-        )}
-      </section>
-
-      <div className="two-col">
-        <CategoryBreakdownPanel
-          title="Sources of cash"
-          subtitle="This period's income, by category."
-          breakdown={summary.sources}
-          tone="pos"
-          emptyLabel="No income this period."
-        />
-        <CategoryBreakdownPanel
-          title="Uses of cash"
-          subtitle="This period's spending, by category."
-          breakdown={summary.uses}
-          tone="neg"
-          emptyLabel="No spending this period."
-        />
       </div>
-    </>
+      {incomplete && (
+        <p className="muted exec-caveat">
+          * One or more cards' balance couldn't be fully reconstructed this far back (no statement
+          balance or manual entry) — the gap was treated as zero and folded into Sources or Uses
+          below rather than hidden.
+        </p>
+      )}
+      <div className="table-wrap exec-table-wrap">
+        <table className="data-table exec-table exec-period-table">
+          <thead>
+            <tr>
+              <th>&nbsp;</th>
+              <th className="num">{summary.label}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="exec-row-opening">
+              <td>Opening balance</td>
+              <td className="num">{money(summary.opening, { compact: true })}</td>
+            </tr>
+            <tr className="exec-row-total">
+              <td>Sources of cash</td>
+              <td className={`num ${summary.sources.total > 0.005 ? 'pos' : 'muted'}`}>
+                {summary.sources.total > 0.005 ? `+${money(summary.sources.total, { compact: true })}` : '—'}
+              </td>
+            </tr>
+            <CategorySubRows breakdown={summary.sources} sign="+" />
+            <tr className="exec-row-total">
+              <td>Uses of cash</td>
+              <td className={`num ${summary.uses.total > 0.005 ? 'neg' : 'muted'}`}>
+                {summary.uses.total > 0.005 ? `-${money(summary.uses.total, { compact: true })}` : '—'}
+              </td>
+            </tr>
+            <CategorySubRows breakdown={summary.uses} sign="-" />
+            {hasAssets && (
+              <tr>
+                <td>Change in asset values</td>
+                <td className={`num ${summary.assetChange === 0 ? 'muted' : summary.assetChange > 0 ? 'pos' : 'neg'}`}>
+                  {summary.assetChange === 0 ? '—' : money(summary.assetChange, { sign: true, compact: true })}
+                </td>
+              </tr>
+            )}
+            <tr className="exec-row-closing">
+              <td>Closing balance</td>
+              <td className="num">{money(summary.closing, { compact: true })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

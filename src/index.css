@@ -3432,19 +3432,6 @@ th.num {
   gap: 10px;
   flex-wrap: wrap;
 }
-.exec-period-total {
-  font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 6px 0 14px;
-}
-.exec-period-total.pos {
-  color: var(--pos);
-}
-.exec-period-total.neg {
-  color: var(--neg);
-}
 .exec-caveat {
   margin-top: 14px;
   font-size: 12px;
@@ -3455,6 +3442,10 @@ th.num {
 .exec-table {
   min-width: 640px;
 }
+.exec-table.exec-period-table {
+  min-width: 0;
+  max-width: 420px;
+}
 .exec-table td:first-child,
 .exec-table th:first-child {
   min-width: 200px;
@@ -3462,10 +3453,29 @@ th.num {
 .exec-table tbody tr.exec-row-opening td {
   border-bottom: none;
 }
+.exec-table tbody tr.exec-row-total td {
+  font-weight: 600;
+}
 .exec-table tbody tr.exec-row-closing td {
   font-weight: 600;
   border-top: 2px solid var(--border);
   padding-top: 12px;
+}
+.exec-table tbody tr.exec-subrow td {
+  border-bottom: none;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.exec-table tbody tr.exec-subrow td:first-child {
+  padding-left: 26px;
+}
+.exec-table tbody tr.exec-subrow + tr.exec-row-total td {
+  padding-top: 12px;
+}
+.exec-subrow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ---------- Responsive ---------- */
