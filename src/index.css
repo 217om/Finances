@@ -3467,6 +3467,11 @@ th.num {
   padding-left: 18px;
   padding-right: 18px;
   border-left: 1px solid var(--divider);
+  /* Right-aligned, not the base .num class's centered, so a plain total
+   * (Opening/Closing balance, Sources/Uses totals) lands in the exact same
+   * column as the amounts in the category sub-rows below it, instead of
+   * floating in the middle of a much wider column. */
+  text-align: right;
 }
 .exec-table tbody tr.exec-row-opening td {
   border-bottom: none;
