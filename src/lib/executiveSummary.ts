@@ -85,8 +85,8 @@ function categoryBreakdown(map: Map<string, number>, gapAdd: number): CategoryBr
   return { total: rawTotal + gapAdd, top, otherTotal };
 }
 
-/** One period's full opening/closing + sources/uses breakdown — the shared
- *  computation behind both currentPeriodSummary and buildPeriodBreakdowns. */
+/** One period's full opening/closing + sources/uses breakdown — the
+ *  per-period computation behind buildPeriodBreakdowns. */
 function computePeriodSummary(
   cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
   assets: Asset[],
@@ -152,36 +152,15 @@ function hasAnyData(
   return transactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
 }
 
-/**
- * The current (possibly still in-progress) single period's opening/closing
- * balance plus a sources/uses breakdown capped at the top
- * `TOP_CATEGORY_COUNT` categories each, with everything past that folded
- * into one "other" catch-all per side.
- */
-export function currentPeriodSummary(
-  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
-  assets: Asset[],
-  assetValues: AssetValueEntry[],
-  transactions: Transaction[],
-  categoryOf: (tx: Transaction) => string,
-  monthStartDay: number,
-  weekStartDay = 1,
-  granularity: SummaryGranularity = 'month',
-): PeriodSummary | null {
-  if (!hasAnyData(cards, assets, transactions)) return null;
-  const today = todayISO();
-  const key = lastPeriodKey(granularity, monthStartDay, weekStartDay, today);
-  return computePeriodSummary(cards, assets, assetValues, transactions, categoryOf, monthStartDay, granularity, key, today);
-}
-
 const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 8, month: 6 };
 
 /**
  * The trailing `periodCount` periods (pay-cycle months by default, or
- * weeks), each with its own full opening/closing + sources/uses breakdown —
- * same computation as currentPeriodSummary, just for every period in the
- * window instead of only the latest. Chronological, oldest first; the last
- * entry is the current, possibly still in-progress period.
+ * weeks), each with its own full opening/closing + sources/uses breakdown.
+ * Chronological, oldest first; the last entry is the current, possibly
+ * still in-progress period. Leading periods with no activity at all are
+ * dropped (see below) — the result may have fewer than `periodCount`
+ * entries.
  *
  * `cards` drives the balance reconstruction (needs each card's own
  * transactions/checkpoints/type); `transactions`/`categoryOf` should already
@@ -215,5 +194,14 @@ export function buildPeriodBreakdowns(
     out.push(computePeriodSummary(cards, assets, assetValues, transactions, categoryOf, monthStartDay, granularity, cur, today));
     cur = stepPeriod(granularity, cur, 1);
   }
-  return out;
+
+  // Drop leading periods with nothing in them at all (no balance yet, no
+  // sources, no uses) — a blank "Mar 2026" column before your data actually
+  // starts isn't useful, it's just dead space. Never trims from the middle
+  // or drops the current period, even if it's still empty (a fresh month
+  // with no transactions yet is genuinely "now", worth showing).
+  const isEmpty = (p: PeriodSummary) =>
+    p.opening === 0 && p.closing === 0 && p.sources.total <= 0.005 && p.uses.total <= 0.005;
+  const firstReal = out.findIndex((p) => !isEmpty(p));
+  return firstReal <= 0 ? out : out.slice(firstReal);
 }

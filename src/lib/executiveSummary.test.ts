@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../types';
-import { buildPeriodBreakdowns, currentPeriodSummary } from './executiveSummary';
+import { buildPeriodBreakdowns } from './executiveSummary';
 
 let idCounter = 0;
 function tx(overrides: Partial<Transaction> & { date: string; amount: number; description?: string }): Transaction {
@@ -89,39 +89,6 @@ describe('buildPeriodBreakdowns', () => {
     expect(periods[1].to).toBe('2026-08-15');
     expect(periods[1].uses.total).toBe(50);
   });
-});
-
-describe('currentPeriodSummary', () => {
-  it('returns null with absolutely nothing tracked', () => {
-    expect(currentPeriodSummary([], [], [], [], categoryOf, 1)).toBeNull();
-  });
-
-  it('reconstructs the current period opening/closing and totals sources/uses', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0)); // Aug 15
-
-    const cardTxs: Transaction[] = [
-      tx({ date: '2026-07-31', amount: 0, balance: 1000, description: 'Anchor' }),
-      tx({ date: '2026-08-05', amount: 500, description: 'Salary' }),
-      tx({ date: '2026-08-06', amount: -80, description: 'Groceries' }),
-    ];
-    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
-
-    const summary = currentPeriodSummary(cards, [], [], cardTxs, categoryOf, 1, 1, 'month');
-    vi.useRealTimers();
-
-    expect(summary!.period).toBe('2026-08');
-    expect(summary!.label).toBe('Aug 2026');
-    expect(summary!.opening).toBe(1000);
-    expect(summary!.closing).toBe(1420); // 1000 + 500 - 80
-    expect(summary!.netChange).toBe(420);
-    expect(summary!.sources.total).toBe(500);
-    expect(summary!.sources.top).toEqual([{ category: 'Salary', amount: 500 }]);
-    expect(summary!.sources.otherTotal).toBe(0);
-    expect(summary!.uses.total).toBe(80);
-    expect(summary!.uses.top).toEqual([{ category: 'Groceries', amount: 80 }]);
-    expect(summary!.uses.otherTotal).toBe(0);
-  });
 
   it('caps the breakdown at the top 5 categories, folding the rest into otherTotal', () => {
     vi.useFakeTimers();
@@ -139,10 +106,11 @@ describe('currentPeriodSummary', () => {
     ];
     const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
 
-    const summary = currentPeriodSummary(cards, [], [], cardTxs, categoryOf, 1, 1, 'month');
+    const periods = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', 1);
     vi.useRealTimers();
+    const summary = periods[0];
 
-    expect(summary!.uses.top).toEqual([
+    expect(summary.uses.top).toEqual([
       { category: 'Groceries', amount: 100 },
       { category: 'Dining', amount: 90 },
       { category: 'Transport', amount: 80 },
@@ -150,8 +118,8 @@ describe('currentPeriodSummary', () => {
       { category: 'Shopping', amount: 60 },
     ]);
     // Entertainment (30) + Health (10), the 6th and 7th ranked categories.
-    expect(summary!.uses.otherTotal).toBe(40);
-    expect(summary!.uses.total).toBe(440);
+    expect(summary.uses.otherTotal).toBe(40);
+    expect(summary.uses.total).toBe(440);
   });
 
   it('folds an unreconciled balance gap into otherTotal instead of a separate line', () => {
@@ -163,15 +131,50 @@ describe('currentPeriodSummary', () => {
     const cardTxs: Transaction[] = [tx({ date: '2026-08-01', amount: 0, balance: 300, description: 'Anchor mid-period' })];
     const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
 
-    const summary = currentPeriodSummary(cards, [], [], cardTxs, categoryOf, 1, 1, 'month');
+    const periods = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', 1);
     vi.useRealTimers();
+    const summary = periods[0];
 
     // opening (July 31) has no anchor at all -> 0; closing (as of today) = 300.
-    expect(summary!.opening).toBe(0);
-    expect(summary!.closing).toBe(300);
-    expect(summary!.sources.top).toEqual([]);
-    expect(summary!.sources.otherTotal).toBe(300);
-    expect(summary!.sources.total).toBe(300);
-    expect(summary!.uses.total).toBe(0);
+    expect(summary.opening).toBe(0);
+    expect(summary.closing).toBe(300);
+    expect(summary.sources.top).toEqual([]);
+    expect(summary.sources.otherTotal).toBe(300);
+    expect(summary.sources.total).toBe(300);
+    expect(summary.uses.total).toBe(0);
+  });
+
+  it('drops leading periods with no activity at all, but keeps the current period even if it too is empty', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0)); // Aug 15
+
+    // Only June and July have any real data; asking for 6 trailing months
+    // (Mar–Aug) should drop the empty leading Mar/Apr/May columns, but keep
+    // August even though nothing has happened there yet — it's "now".
+    const cardTxs: Transaction[] = [
+      tx({ date: '2026-06-05', amount: -50, description: 'Groceries' }),
+      tx({ date: '2026-07-01', amount: 200, description: 'Salary' }),
+    ];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    const periods = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month'); // default count (6)
+    vi.useRealTimers();
+
+    expect(periods.map((p) => p.period)).toEqual(['2026-06', '2026-07', '2026-08']);
+  });
+
+  it('keeps every period (even all-empty ones) when nothing at all ever happened', () => {
+    // A checkpoint dated today with a zero balance: hasAnyData is true (a
+    // checkpoint exists), but every computed period is "empty" by the
+    // trim's own definition — should fall back to showing the full window
+    // rather than an empty result.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
+
+    const cards = [{ type: 'debit' as const, transactions: [], checkpoints: [{ id: 'c1', date: '2026-08-15', balance: 0, createdAt: 1 }] }];
+    const periods = buildPeriodBreakdowns(cards, [], [], [], categoryOf, 1, 1, 'month', 3);
+    vi.useRealTimers();
+
+    expect(periods).toHaveLength(3);
   });
 });
