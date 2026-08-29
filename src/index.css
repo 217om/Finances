@@ -3479,21 +3479,23 @@ th.num {
   padding-top: 12px;
 }
 .exec-cat-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
 }
 .exec-cat-cell-name {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
 .exec-cat-cell-amt {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
