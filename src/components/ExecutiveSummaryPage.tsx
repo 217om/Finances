@@ -187,6 +187,12 @@ export default function ExecutiveSummaryPage({
     : `Combined across ${cardCount} card${cardCount === 1 ? '' : 's'}${hasAssets ? ' and your other tracked assets' : ''}.`;
   const anyIncomplete = periods.some((p) => !p.openingComplete || !p.closingComplete);
   const salaryRuleNoMatchYet = mode === 'month' && !!salaryRule && !hasSalaryRuleMatch(transactions, salaryRule);
+  // The trailing-periods trend (Monthly/Weekly) always ends on the current,
+  // possibly still in-progress period — worth calling out so it's clear
+  // which column is "now" versus history. A Custom range is just whatever
+  // span the user picked, not necessarily current, so it never gets the
+  // badge.
+  const currentPeriodKey = mode !== 'custom' && periods.length > 0 ? periods[periods.length - 1].period : null;
 
   // The same "current balance" snapshot the Balances tab shows, one row —
   // cards and other assets together, not split into separate sections —
@@ -320,6 +326,7 @@ export default function ExecutiveSummaryPage({
                   {periods.map((p) => (
                     <th key={p.period} className="num">
                       {p.label}
+                      {p.period === currentPeriodKey && <span className="chip exec-current-chip">Current</span>}
                     </th>
                   ))}
                 </tr>

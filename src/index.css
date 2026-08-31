@@ -3516,17 +3516,27 @@ th.num {
 }
 .exec-table tbody tr.exec-row-sources td,
 .exec-table tbody tr.exec-subrow-sources td {
-  background: color-mix(in srgb, var(--pos) 7%, transparent);
+  background: color-mix(in srgb, var(--pos) 3%, transparent);
 }
 .exec-table tbody tr.exec-subrow-sources td {
   border-top: none;
 }
 .exec-table tbody tr.exec-row-uses td,
 .exec-table tbody tr.exec-subrow-uses td {
-  background: color-mix(in srgb, var(--neg) 7%, transparent);
+  background: color-mix(in srgb, var(--neg) 3%, transparent);
 }
 .exec-table tbody tr.exec-subrow-uses td {
   border-top: none;
+}
+.exec-current-chip {
+  display: block;
+  width: fit-content;
+  margin: 4px 0 0 auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-body);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .exec-table tbody tr.exec-row-closing td {
   font-weight: 600;
