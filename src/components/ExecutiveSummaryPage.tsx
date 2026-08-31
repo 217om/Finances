@@ -10,19 +10,22 @@ import {
   type SalaryRule,
   type SummaryGranularity,
 } from '../lib/executiveSummary';
-import type { Asset, AssetValueEntry, BalanceCheckpoint, CardType } from '../lib/balances';
+import {
+  cardBalanceHistory,
+  computeCardBalance,
+  latestAssetValue,
+  signedAssetValue,
+  type Asset,
+  type AssetValueEntry,
+  type NetWorthPoint,
+} from '../lib/balances';
 import { todayISO } from '../lib/budget';
 import { categoryColor } from '../lib/categorize';
-import { money } from '../lib/format';
-
-interface CardInput {
-  type: CardType;
-  transactions: Transaction[];
-  checkpoints: BalanceCheckpoint[];
-}
+import { dayLabel, money } from '../lib/format';
+import { BalanceSnapshotCard, freshnessLabel, type CardBalanceRow } from './BalancesPage';
 
 interface Props {
-  cards: CardInput[];
+  cards: CardBalanceRow[];
   cardCount: number;
   /** Set when showing a single card's own story (not "Combine all cards") —
    *  swaps the subtitle to name that card instead of talking about a count. */
@@ -184,8 +187,64 @@ export default function ExecutiveSummaryPage({
   const anyIncomplete = periods.some((p) => !p.openingComplete || !p.closingComplete);
   const salaryRuleNoMatchYet = mode === 'month' && !!salaryRule && !hasSalaryRuleMatch(transactions, salaryRule);
 
+  // The same "current balance" snapshot the Balances tab shows, one row —
+  // cards and other assets together, not split into separate sections —
+  // read-only here (no type toggle, "Update balance" button, or history;
+  // that stays the Balances tab's job).
+  const cardSnapshots = useMemo(
+    () =>
+      cards.map((c) => ({
+        key: c.cardId,
+        name: c.cardName,
+        badge: c.type === 'credit' ? 'Credit' : 'Debit',
+        computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
+        history: cardBalanceHistory(c.type, c.transactions, c.checkpoints),
+      })),
+    [cards],
+  );
+  const assetSnapshots = useMemo(
+    () =>
+      assets.map((a) => {
+        const kind = a.kind ?? 'asset';
+        const ownHistory = assetValues
+          .filter((v) => v.assetId === a.id)
+          .sort((a1, b1) => (a1.date < b1.date ? -1 : a1.date > b1.date ? 1 : 0))
+          .map((v): NetWorthPoint => ({ date: v.date, amount: signedAssetValue(kind, v.value) }));
+        const latest = latestAssetValue(assetValues, a.id);
+        return {
+          key: a.id,
+          name: a.name,
+          badge: kind === 'liability' ? 'Liability' : 'Asset',
+          amount: latest ? signedAssetValue(kind, latest.value) : null,
+          freshness: latest ? `As of ${dayLabel(latest.date)}` : 'No value entered yet',
+          history: ownHistory,
+        };
+      }),
+    [assets, assetValues],
+  );
+
   return (
     <div className="exec-page">
+      {(cardSnapshots.length > 0 || assetSnapshots.length > 0) && (
+        <section className="panel">
+          <div className="balance-grid">
+            {cardSnapshots.map((c) => (
+              <BalanceSnapshotCard
+                key={c.key}
+                name={c.name}
+                badge={c.badge}
+                amount={c.computed.amount}
+                freshness={freshnessLabel(c.computed)}
+                history={c.history}
+              />
+            ))}
+            {assetSnapshots.map((a) => (
+              <BalanceSnapshotCard key={a.key} name={a.name} badge={a.badge} amount={a.amount} freshness={a.freshness} history={a.history} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="exec-view-controls">
         <p className="muted">{subtitle}</p>
         <div className="seg seg-sm">

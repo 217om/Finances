@@ -12,6 +12,7 @@ import {
   type BalanceCheckpoint,
   type CardType,
   type ComputedBalance,
+  type NetWorthPoint,
 } from '../lib/balances';
 import { todayISO } from '../lib/budget';
 import { dayLabel, money } from '../lib/format';
@@ -42,7 +43,7 @@ interface Props {
   onDeleteAssetValue: (id: string) => void;
 }
 
-function freshnessLabel(computed: ComputedBalance): string {
+export function freshnessLabel(computed: ComputedBalance): string {
   if (computed.amount === null) return 'No balance entered yet';
   const asOf = dayLabel(computed.asOf!);
   if (computed.sinceCount === 0) {
@@ -52,6 +53,39 @@ function freshnessLabel(computed: ComputedBalance): string {
   return computed.fromCheckpoint
     ? `Estimated: your ${asOf} entry + ${computed.sinceCount} ${word} since`
     : `Estimated: the ${asOf} statement balance + ${computed.sinceCount} ${word} since`;
+}
+
+/** Read-only counterpart to CardBalanceCard/AssetRow below — same card look
+ *  (name, amount, freshness, sparkline), but no edit affordances (type
+ *  toggle, "Update balance", history). Used by the Executive Summary's
+ *  balance row, where this page's own editing tools would be out of place —
+ *  managing balances stays this tab's job. */
+export function BalanceSnapshotCard({
+  name,
+  badge,
+  amount,
+  freshness,
+  history,
+}: {
+  name: string;
+  badge: string;
+  amount: number | null;
+  freshness: string;
+  history: NetWorthPoint[];
+}) {
+  return (
+    <div className="balance-card">
+      <div className="balance-card-head">
+        <span className="balance-card-name">{name}</span>
+        <span className="chip">{badge}</span>
+      </div>
+      <div className={`balance-amount ${amount === null ? '' : amount >= 0 ? 'pos' : 'neg'}`}>
+        {amount === null ? '—' : money(amount)}
+      </div>
+      <div className="muted balance-freshness">{freshness}</div>
+      {history.length >= 2 && <Sparkline points={history} positive={amount === null || amount >= 0} />}
+    </div>
+  );
 }
 
 /** A small date + amount form, used both for a card's balance checkpoint and
