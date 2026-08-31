@@ -196,23 +196,22 @@ export default function ExecutiveSummaryPage({
 
   // When there's exactly one card and no assets, the period table's
   // opening/closing figures are that card's own numbers exactly (nothing
-  // else feeds them) — so its sparkline can be marked at each period
-  // boundary with those *exact* values, letting the chart's shape be read
-  // directly against the table below it. Doesn't apply once a second card
-  // or an asset is in the mix: the table would then be a combined total no
-  // single card's own line matches.
-  const periodMarkers = useMemo(() => {
+  // else feeds them) — so its sparkline can trace *just* those period
+  // boundaries instead of every individual transaction. A dense
+  // one-point-per-transaction line has no fixed relationship to the
+  // table's equal-width columns (a busy period packs more points into the
+  // same column as a quiet one), so its shape drifts out of sync with
+  // them; one point per boundary — evenly spaced by count, exactly like
+  // the table's own columns are — lines up with the table exactly instead
+  // of merely resembling it. Doesn't apply once a second card or an asset
+  // is in the mix: the table would then be a combined total no single
+  // card's own line matches.
+  const periodBoundaryLine = useMemo((): NetWorthPoint[] | null => {
     if (cards.length !== 1 || assets.length > 0 || periods.length === 0) return null;
-    const values = new Map<string, number>();
-    const dates = new Set<string>();
-    for (const p of periods) {
-      values.set(p.from, p.opening);
-      dates.add(p.from);
-    }
+    const points = periods.map((p): NetWorthPoint => ({ date: p.from, amount: p.opening }));
     const last = periods[periods.length - 1];
-    values.set(last.to, last.closing);
-    dates.add(last.to);
-    return { values, dates };
+    points.push({ date: last.to, amount: last.closing });
+    return points;
   }, [cards.length, assets.length, periods]);
 
   // The same "current balance" snapshot the Balances tab shows, one row —
@@ -222,26 +221,17 @@ export default function ExecutiveSummaryPage({
   const cardSnapshots = useMemo(
     () =>
       cards.map((c) => {
-        const history = cardBalanceHistory(c.type, c.transactions, c.checkpoints);
-        // Merge in the period-boundary points (exact table values override
-        // whatever this card's own history would otherwise show for that
-        // date) so the marked dots are guaranteed to match the table, not
-        // just closely track it.
-        const merged = periodMarkers
-          ? [...new Map([...history.map((p): [string, number] => [p.date, p.amount]), ...periodMarkers.values]).entries()]
-              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-              .map(([date, amount]): NetWorthPoint => ({ date, amount }))
-          : history;
+        const history = periodBoundaryLine ?? cardBalanceHistory(c.type, c.transactions, c.checkpoints);
         return {
           key: c.cardId,
           name: c.cardName,
           badge: c.type === 'credit' ? 'Credit' : 'Debit',
           computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
-          history: merged,
-          markerDates: periodMarkers?.dates,
+          history,
+          markerDates: periodBoundaryLine ? new Set(periodBoundaryLine.map((p) => p.date)) : undefined,
         };
       }),
-    [cards, periodMarkers],
+    [cards, periodBoundaryLine],
   );
   const assetSnapshots = useMemo(
     () =>
