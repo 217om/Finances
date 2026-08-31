@@ -1256,6 +1256,8 @@ export default function App() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onOpenCloudSync={() => setCloudSyncOpen(true)}
+        salaryRule={salaryRule}
+        onSalaryRuleChange={handleSetSalaryRule}
       />
 
       <main className="container">
@@ -1356,7 +1358,6 @@ export default function App() {
                 monthStartDay={monthStartDay}
                 weekStartDay={weekStartDay}
                 salaryRule={salaryRule}
-                onSalaryRuleChange={handleSetSalaryRule}
               />
             ) : view === 'categories' ? (
               combineEnabled && combinedAllData ? (

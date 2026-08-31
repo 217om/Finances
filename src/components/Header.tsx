@@ -1,4 +1,5 @@
 import type { Card } from '../lib/cards';
+import type { SalaryRule } from '../lib/executiveSummary';
 import SettingsMenu from './SettingsMenu';
 import CardSelector from './CardSelector';
 import SyncStatusBadge from './SyncStatusBadge';
@@ -25,6 +26,8 @@ interface Props {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onOpenCloudSync: () => void;
+  salaryRule: SalaryRule | null;
+  onSalaryRuleChange: (next: SalaryRule | null) => void;
 }
 
 export default function Header({
@@ -49,6 +52,8 @@ export default function Header({
   theme,
   onToggleTheme,
   onOpenCloudSync,
+  salaryRule,
+  onSalaryRuleChange,
 }: Props) {
   return (
     <header className="header">
@@ -91,6 +96,8 @@ export default function Header({
             onExportFullBackup={onExportFullBackup}
             onRestoreFullBackup={onRestoreFullBackup}
             onOpenCloudSync={onOpenCloudSync}
+            salaryRule={salaryRule}
+            onSalaryRuleChange={onSalaryRuleChange}
           />
         </div>
       </div>

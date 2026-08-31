@@ -189,6 +189,27 @@ export function cardBalanceAsOf(
   );
 }
 
+/** Same reconciliation as computeCardBalance, but cut immediately before a
+ *  specific transaction (true chronological order — see
+ *  chronologicalCompare) instead of by calendar date. Unlike cardBalanceAsOf,
+ *  this correctly excludes `cutoff` itself and anything that posted after it
+ *  even on the same date, while still including same-date transactions that
+ *  genuinely posted earlier. Used by the Executive Summary's salary-cycle
+ *  periods (lib/executiveSummary.ts) so a period's opening balance is always
+ *  "the balance right before the salary landed," never the salary itself. */
+export function cardBalanceBeforeTransaction(
+  type: CardType,
+  transactions: Transaction[],
+  checkpoints: BalanceCheckpoint[],
+  cutoff: Transaction,
+): ComputedBalance {
+  return computeCardBalance(
+    type,
+    transactions.filter((t) => chronologicalCompare(t, cutoff) < 0),
+    checkpoints.filter((c) => c.date < cutoff.date),
+  );
+}
+
 export interface NetWorthPoint {
   date: string;
   amount: number;

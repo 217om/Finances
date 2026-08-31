@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { currencyOptions } from '../lib/format';
+import type { SalaryRule } from '../lib/executiveSummary';
 
 interface Props {
   currency: string;
@@ -18,6 +19,11 @@ interface Props {
   onExportFullBackup: () => void;
   onRestoreFullBackup: (file: File) => void;
   onOpenCloudSync: () => void;
+  /** Identifies salary payments so the Executive Summary's Monthly periods
+   *  can open on the actual payday instead of a fixed day-of-month — null
+   *  means "not set up". See lib/executiveSummary.ts. */
+  salaryRule: SalaryRule | null;
+  onSalaryRuleChange: (next: SalaryRule | null) => void;
 }
 
 const ORDINALS = ['', '1st', '2nd', '3rd', ...Array.from({ length: 25 }, (_, i) => `${i + 4}th`)];
@@ -48,6 +54,8 @@ export default function SettingsMenu({
   onExportFullBackup,
   onRestoreFullBackup,
   onOpenCloudSync,
+  salaryRule,
+  onSalaryRuleChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -133,6 +141,55 @@ export default function SettingsMenu({
               ))}
             </select>
           </label>
+          <label className="settings-check" title="Executive Summary: open each Monthly period on the day this rule matches, instead of a fixed day-of-month">
+            <input
+              type="checkbox"
+              checked={salaryRule !== null}
+              onChange={(e) =>
+                onSalaryRuleChange(e.target.checked ? { keyword: '', minAmount: null, maxAmount: null } : null)
+              }
+            />
+            Salary-based periods
+          </label>
+          {salaryRule !== null && (
+            <div className="salary-rule-fields">
+              <label className="picker settings-field">
+                <span className="picker-label">Words to match</span>
+                <input
+                  type="text"
+                  placeholder="e.g. salary, payroll"
+                  value={salaryRule.keyword}
+                  onChange={(e) => onSalaryRuleChange({ ...salaryRule, keyword: e.target.value })}
+                />
+              </label>
+              <label className="picker settings-field">
+                <span className="picker-label">Min amount</span>
+                <input
+                  type="number"
+                  placeholder="Any"
+                  value={salaryRule.minAmount ?? ''}
+                  onChange={(e) =>
+                    onSalaryRuleChange({ ...salaryRule, minAmount: e.target.value === '' ? null : Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="picker settings-field">
+                <span className="picker-label">Max amount</span>
+                <input
+                  type="number"
+                  placeholder="Any"
+                  value={salaryRule.maxAmount ?? ''}
+                  onChange={(e) =>
+                    onSalaryRuleChange({ ...salaryRule, maxAmount: e.target.value === '' ? null : Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="muted settings-note">
+                Matches a transaction whose description contains these words, within the amount range —
+                use the range to pin down the one real salary payment.
+              </p>
+            </div>
+          )}
 
           <div className="menu-sep" />
           <div className="menu-section-label">Data</div>

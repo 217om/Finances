@@ -12,83 +12,8 @@ import {
 } from '../lib/executiveSummary';
 import type { Asset, AssetValueEntry, BalanceCheckpoint, CardType } from '../lib/balances';
 import { todayISO } from '../lib/budget';
-import { categoryColor, INCOME_CATEGORIES, INCOME_CATEGORY } from '../lib/categorize';
+import { categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
-
-const SALARY_CATEGORY_OPTIONS: string[] = [INCOME_CATEGORY, ...INCOME_CATEGORIES];
-
-/** The Monthly-mode control that lets periods open on the actual day a
- *  salary transaction landed instead of a fixed day-of-month — see
- *  lib/executiveSummary.ts's SalaryRule and buildSalaryCyclePeriods. */
-function SalaryRuleControls({
-  rule,
-  onChange,
-  transactions,
-  categoryOf,
-}: {
-  rule: SalaryRule | null;
-  onChange: (next: SalaryRule | null) => void;
-  transactions: Transaction[];
-  categoryOf: (tx: Transaction) => string;
-}) {
-  const enabled = rule !== null;
-  const update = (patch: Partial<SalaryRule>) => {
-    onChange({ category: rule?.category ?? 'Salary', minAmount: rule?.minAmount ?? null, maxAmount: rule?.maxAmount ?? null, ...patch });
-  };
-  const noMatchesYet = enabled && !hasSalaryRuleMatch(transactions, categoryOf, rule);
-
-  return (
-    <>
-      <div className="exec-view-controls">
-        <label className="filter-check">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => onChange(e.target.checked ? { category: 'Salary', minAmount: null, maxAmount: null } : null)}
-          />
-          Open each period on my salary date
-        </label>
-        {enabled && (
-          <div className="range-pickers">
-            <label className="picker">
-              <span className="picker-label">Category</span>
-              <select value={rule.category} onChange={(e) => update({ category: e.target.value })}>
-                {SALARY_CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="picker">
-              <span className="picker-label">Min amount</span>
-              <input
-                type="number"
-                placeholder="Any"
-                value={rule.minAmount ?? ''}
-                onChange={(e) => update({ minAmount: e.target.value === '' ? null : Number(e.target.value) })}
-              />
-            </label>
-            <label className="picker">
-              <span className="picker-label">Max amount</span>
-              <input
-                type="number"
-                placeholder="Any"
-                value={rule.maxAmount ?? ''}
-                onChange={(e) => update({ maxAmount: e.target.value === '' ? null : Number(e.target.value) })}
-              />
-            </label>
-          </div>
-        )}
-      </div>
-      {noMatchesYet && (
-        <p className="muted exec-caveat">
-          No transactions match this rule yet — showing the standard monthly periods until one does.
-        </p>
-      )}
-    </>
-  );
-}
 
 interface CardInput {
   type: CardType;
@@ -110,9 +35,9 @@ interface Props {
   weekStartDay: number;
   /** Identifies salary payments so Monthly periods can open on the actual
    *  payday instead of a fixed day-of-month — null means "not set up",
-   *  falling back to monthStartDay. See lib/executiveSummary.ts. */
+   *  falling back to monthStartDay. Configured in Settings, not here — see
+   *  lib/executiveSummary.ts. */
   salaryRule: SalaryRule | null;
-  onSalaryRuleChange: (next: SalaryRule | null) => void;
 }
 
 type ViewMode = SummaryGranularity | 'custom';
@@ -200,7 +125,6 @@ export default function ExecutiveSummaryPage({
   monthStartDay,
   weekStartDay,
   salaryRule,
-  onSalaryRuleChange,
 }: Props) {
   const [mode, setMode] = useState<ViewMode>('month');
 
@@ -258,6 +182,7 @@ export default function ExecutiveSummaryPage({
     ? `For ${cardName}.`
     : `Combined across ${cardCount} card${cardCount === 1 ? '' : 's'}${hasAssets ? ' and your other tracked assets' : ''}.`;
   const anyIncomplete = periods.some((p) => !p.openingComplete || !p.closingComplete);
+  const salaryRuleNoMatchYet = mode === 'month' && !!salaryRule && !hasSalaryRuleMatch(transactions, salaryRule);
 
   return (
     <div className="exec-page">
@@ -277,8 +202,11 @@ export default function ExecutiveSummaryPage({
         </div>
       </div>
 
-      {mode === 'month' && (
-        <SalaryRuleControls rule={salaryRule} onChange={onSalaryRuleChange} transactions={transactions} categoryOf={categoryOf} />
+      {salaryRuleNoMatchYet && (
+        <p className="muted exec-caveat">
+          Your salary rule (Settings → Preferences) hasn't matched a transaction yet — showing the
+          standard monthly periods until it does.
+        </p>
       )}
 
       {mode === 'custom' && (

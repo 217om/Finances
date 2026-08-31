@@ -18,7 +18,18 @@
 
 import type { Transaction } from '../types';
 import { startOfWeek } from './aggregate';
-import { netWorthAsOf, assetsNetAsOf, type Asset, type AssetValueEntry, type BalanceCheckpoint, type CardType } from './balances';
+import {
+  netWorthAsOf,
+  assetsNetAsOf,
+  cardBalanceAsOf,
+  cardBalanceBeforeTransaction,
+  chronologicalCompare,
+  type Asset,
+  type AssetValueEntry,
+  type BalanceCheckpoint,
+  type CardType,
+  type NetWorthAsOfResult,
+} from './balances';
 import { adjacentPeriod, cycleBounds, currentCyclePeriod, todayISO } from './budget';
 import { addDaysISO } from './rangePresets';
 import { dayLabelShort, monthLabel } from './format';
@@ -28,14 +39,16 @@ export type SummaryGranularity = 'week' | 'month';
 /**
  * Identifies which transactions are salary payments, so Monthly periods can
  * open on the actual day you got paid instead of a fixed day-of-month (see
- * buildSalaryCyclePeriods). A transaction counts as salary when it's
- * categorized as `category` (via categoryOf) AND its amount falls in
- * [minAmount, maxAmount] (either bound optional) — amount is always the
- * transaction's own signed value, so only ever matches positive (incoming)
- * transactions in practice.
+ * buildSalaryCyclePeriods). A transaction counts as salary when its
+ * description contains `keyword` (case-insensitive substring) AND its amount
+ * falls in [minAmount, maxAmount] (either bound optional) — amount is always
+ * the transaction's own signed value, so only ever matches positive
+ * (incoming) transactions in practice. The amount range exists to pin down
+ * the *one* transaction that's the actual salary among everything else the
+ * keyword might loosely match, not just to sanity-check it.
  */
 export interface SalaryRule {
-  category: string;
+  keyword: string;
   minAmount: number | null;
   maxAmount: number | null;
 }
@@ -44,8 +57,8 @@ export function isValidSalaryRule(x: unknown): x is SalaryRule {
   if (!x || typeof x !== 'object') return false;
   const r = x as Record<string, unknown>;
   return (
-    typeof r.category === 'string' &&
-    r.category.length > 0 &&
+    typeof r.keyword === 'string' &&
+    r.keyword.trim().length > 0 &&
     (r.minAmount === null || typeof r.minAmount === 'number') &&
     (r.maxAmount === null || typeof r.maxAmount === 'number')
   );
@@ -223,9 +236,10 @@ function hasAnyData(
   return transactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
 }
 
-function matchesSalaryRule(t: Transaction, categoryOf: (tx: Transaction) => string, rule: SalaryRule): boolean {
+function matchesSalaryRule(t: Transaction, rule: SalaryRule): boolean {
   if (t.amount <= 0) return false;
-  if (categoryOf(t) !== rule.category) return false;
+  const kw = rule.keyword.trim().toLowerCase();
+  if (!kw || !t.description.toLowerCase().includes(kw)) return false;
   if (rule.minAmount != null && t.amount < rule.minAmount) return false;
   if (rule.maxAmount != null && t.amount > rule.maxAmount) return false;
   return true;
@@ -234,20 +248,112 @@ function matchesSalaryRule(t: Transaction, categoryOf: (tx: Transaction) => stri
 /** Whether `rule` matches at least one transaction — lets the UI warn that a
  *  newly configured (or too-narrow) rule hasn't found a salary payment yet,
  *  so periods are still falling back to the fixed pay-cycle. */
-export function hasSalaryRuleMatch(transactions: Transaction[], categoryOf: (tx: Transaction) => string, rule: SalaryRule): boolean {
-  return transactions.some((t) => matchesSalaryRule(t, categoryOf, rule));
+export function hasSalaryRuleMatch(transactions: Transaction[], rule: SalaryRule): boolean {
+  return transactions.some((t) => matchesSalaryRule(t, rule));
+}
+
+/** Net worth (every card plus every asset) the instant before `salaryTx`
+ *  posted — like netWorthAsOf, except the one card that actually owns
+ *  `salaryTx` is cut by true transaction order (see
+ *  cardBalanceBeforeTransaction) instead of by calendar date, so a same-day
+ *  transaction that posted before the salary is included while the salary
+ *  itself (and anything after it that day) never is. Every other card still
+ *  uses the ordinary day-before cutoff — there's no cross-account ordering
+ *  information to do better than that. */
+function netWorthBeforeSalaryTx(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  salaryTx: Transaction,
+): NetWorthAsOfResult {
+  const dayBefore = addDaysISO(salaryTx.date, -1);
+  let complete = true;
+  const cardTotal = cards.reduce((a, c) => {
+    const ownsTx = c.transactions.some((t) => t.id === salaryTx.id);
+    const computed = ownsTx
+      ? cardBalanceBeforeTransaction(c.type, c.transactions, c.checkpoints, salaryTx)
+      : cardBalanceAsOf(c.type, c.transactions, c.checkpoints, dayBefore);
+    if (computed.amount === null) {
+      const hadActivity = ownsTx
+        ? c.transactions.some((t) => chronologicalCompare(t, salaryTx) < 0) || c.checkpoints.some((cp) => cp.date < salaryTx.date)
+        : c.transactions.some((t) => t.date <= dayBefore) || c.checkpoints.some((cp) => cp.date <= dayBefore);
+      if (hadActivity) complete = false;
+    }
+    return a + (computed.amount ?? 0);
+  }, 0);
+  return { amount: cardTotal + assetsNetAsOf(assets, assetValues, dayBefore), complete };
+}
+
+/** One salary-cycle period's full breakdown — `opening`/`closing` are given
+ *  (already reconstructed precisely, see buildSalaryCyclePeriods), and
+ *  Sources/Uses categorization walks transactions by true chronological
+ *  order relative to `startTx`/`nextStartTx` rather than by calendar date,
+ *  so a same-day transaction that posted before the salary lands in the
+ *  *previous* period, never this one. */
+function summarizeSalaryPeriod(
+  transactions: Transaction[],
+  categoryOf: (tx: Transaction) => string,
+  startTx: Transaction,
+  nextStartTx: Transaction | null,
+  today: string,
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  opening: NetWorthAsOfResult,
+  closing: NetWorthAsOfResult,
+): PeriodSummary {
+  const from = startTx.date;
+  const to = nextStartTx ? addDaysISO(nextStartTx.date, -1) : today;
+
+  const sourceMap = new Map<string, number>();
+  const useMap = new Map<string, number>();
+  let rawSources = 0;
+  let rawUses = 0;
+  for (const t of transactions) {
+    if (t.amount === 0) continue;
+    if (chronologicalCompare(t, startTx) < 0) continue;
+    if (nextStartTx ? chronologicalCompare(t, nextStartTx) >= 0 : t.date > today) continue;
+    const cat = categoryOf(t);
+    if (t.amount > 0) {
+      rawSources += t.amount;
+      sourceMap.set(cat, (sourceMap.get(cat) ?? 0) + t.amount);
+    } else {
+      rawUses += -t.amount;
+      useMap.set(cat, (useMap.get(cat) ?? 0) + -t.amount);
+    }
+  }
+
+  const assetChange = assetsNetAsOf(assets, assetValues, to) - assetsNetAsOf(assets, assetValues, addDaysISO(from, -1));
+  const netChange = closing.amount - opening.amount;
+  const gap = netChange - (rawSources - rawUses) - assetChange;
+
+  return {
+    period: from,
+    label: customRangeLabel(from, to),
+    from,
+    to,
+    opening: opening.amount,
+    openingComplete: opening.complete,
+    closing: closing.amount,
+    closingComplete: closing.complete,
+    netChange,
+    assetChange,
+    sources: categoryBreakdown(sourceMap, Math.max(gap, 0)),
+    uses: categoryBreakdown(useMap, Math.max(-gap, 0)),
+  };
 }
 
 /**
- * "Monthly" periods built from actual salary-payment dates instead of a
- * fixed day-of-month: each date a transaction matches `rule` (see
- * matchesSalaryRule) opens a new period running through the day before the
- * *next* salary date, so "opening balance" always means exactly what the
- * user means by it — the balance the day they got paid. The most recent
- * salary date's period runs through `today` (in progress). Returns null
- * (falling back to the fixed pay-cycle behavior) when the rule hasn't
- * matched anything yet, so the report never just goes blank while a newly
- * set-up rule is waiting for its first real match.
+ * "Monthly" periods built from actual salary-payment transactions instead of
+ * a fixed day-of-month: each transaction matching `rule` (see
+ * matchesSalaryRule) opens a new period running through just before the
+ * *next* matching transaction, so "opening balance" always means exactly
+ * what the user means by it — the balance right before the salary landed,
+ * with the salary itself always counted as this period's Sources, never
+ * folded into the prior period's closing. The most recent match's period
+ * runs through `today` (in progress). Returns null (falling back to the
+ * fixed pay-cycle behavior) when the rule hasn't matched anything yet, so
+ * the report never just goes blank while a newly set-up rule is waiting for
+ * its first real match.
  */
 function buildSalaryCyclePeriods(
   cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
@@ -259,17 +365,30 @@ function buildSalaryCyclePeriods(
   count: number,
   today: string,
 ): PeriodSummary[] | null {
-  const dates = [...new Set(transactions.filter((t) => matchesSalaryRule(t, categoryOf, rule)).map((t) => t.date))].sort();
-  if (dates.length === 0) return null;
+  const sortedMatches = transactions.filter((t) => matchesSalaryRule(t, rule)).sort(chronologicalCompare);
+  if (sortedMatches.length === 0) return null;
 
-  const bounds = dates.map((from, i) => ({
-    from,
-    to: i + 1 < dates.length ? addDaysISO(dates[i + 1], -1) : today,
-  }));
+  // Same date twice (e.g. a stray duplicate row) would otherwise open a
+  // degenerate same-day period — keep only the first (true-order-earliest)
+  // match per date.
+  const seenDates = new Set<string>();
+  const matches: Transaction[] = [];
+  for (const t of sortedMatches) {
+    if (seenDates.has(t.date)) continue;
+    seenDates.add(t.date);
+    matches.push(t);
+  }
 
-  return bounds
-    .slice(-count)
-    .map((b) => summarizeRange(cards, assets, assetValues, transactions, categoryOf, b.from, customRangeLabel(b.from, b.to), b.from, b.to));
+  const openings = matches.map((m) => netWorthBeforeSalaryTx(cards, assets, assetValues, m));
+  const nowNW = netWorthAsOf(cards, assets, assetValues, today);
+
+  const periods = matches.map((startTx, i) => {
+    const nextStartTx = i + 1 < matches.length ? matches[i + 1] : null;
+    const closing = nextStartTx ? openings[i + 1] : nowNW;
+    return summarizeSalaryPeriod(transactions, categoryOf, startTx, nextStartTx, today, assets, assetValues, openings[i], closing);
+  });
+
+  return periods.slice(-count);
 }
 
 // Weekly columns carry a full top-5-plus-Other breakdown each, so fewer of
