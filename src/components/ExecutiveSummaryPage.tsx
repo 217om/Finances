@@ -194,44 +194,20 @@ export default function ExecutiveSummaryPage({
   // badge.
   const currentPeriodKey = mode !== 'custom' && periods.length > 0 ? periods[periods.length - 1].period : null;
 
-  // When there's exactly one card and no assets, the period table's
-  // opening/closing figures are that card's own numbers exactly (nothing
-  // else feeds them) — so its sparkline can trace *just* those period
-  // boundaries instead of every individual transaction. A dense
-  // one-point-per-transaction line has no fixed relationship to the
-  // table's equal-width columns (a busy period packs more points into the
-  // same column as a quiet one), so its shape drifts out of sync with
-  // them; one point per boundary — evenly spaced by count, exactly like
-  // the table's own columns are — lines up with the table exactly instead
-  // of merely resembling it. Doesn't apply once a second card or an asset
-  // is in the mix: the table would then be a combined total no single
-  // card's own line matches.
-  const periodBoundaryLine = useMemo((): NetWorthPoint[] | null => {
-    if (cards.length !== 1 || assets.length > 0 || periods.length === 0) return null;
-    const points = periods.map((p): NetWorthPoint => ({ date: p.from, amount: p.opening }));
-    const last = periods[periods.length - 1];
-    points.push({ date: last.to, amount: last.closing });
-    return points;
-  }, [cards.length, assets.length, periods]);
-
   // The same "current balance" snapshot the Balances tab shows, one row —
   // cards and other assets together, not split into separate sections —
   // read-only here (no type toggle, "Update balance" button, or history;
   // that stays the Balances tab's job).
   const cardSnapshots = useMemo(
     () =>
-      cards.map((c) => {
-        const history = periodBoundaryLine ?? cardBalanceHistory(c.type, c.transactions, c.checkpoints);
-        return {
-          key: c.cardId,
-          name: c.cardName,
-          badge: c.type === 'credit' ? 'Credit' : 'Debit',
-          computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
-          history,
-          markerDates: periodBoundaryLine ? new Set(periodBoundaryLine.map((p) => p.date)) : undefined,
-        };
-      }),
-    [cards, periodBoundaryLine],
+      cards.map((c) => ({
+        key: c.cardId,
+        name: c.cardName,
+        badge: c.type === 'credit' ? 'Credit' : 'Debit',
+        computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
+        history: cardBalanceHistory(c.type, c.transactions, c.checkpoints),
+      })),
+    [cards],
   );
   const assetSnapshots = useMemo(
     () =>
@@ -267,7 +243,6 @@ export default function ExecutiveSummaryPage({
                 amount={c.computed.amount}
                 freshness={freshnessLabel(c.computed)}
                 history={c.history}
-                markerDates={c.markerDates}
               />
             ))}
             {assetSnapshots.map((a) => (
