@@ -3282,7 +3282,10 @@ th.num {
 }
 .balance-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  /* auto-fit (not auto-fill) collapses empty tracks instead of reserving
+     them, so a row with fewer cards than fit stretches to use the full
+     width instead of leaving dead space next to a single narrow card. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
 .balance-assets-panel .budget-add-row {

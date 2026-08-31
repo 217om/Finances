@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../types';
 import {
   assetsNetAsOf,
+  cardBalanceHistory,
   chronologicalCompare,
   computeCardBalance,
   mergeAssets,
@@ -175,6 +176,41 @@ describe('netWorthHistory', () => {
 
   it('returns an empty history with nothing to track', () => {
     expect(netWorthHistory([], [], [])).toEqual([]);
+  });
+});
+
+describe('cardBalanceHistory', () => {
+  it('returns an empty history with nothing to track', () => {
+    expect(cardBalanceHistory('debit', [], [])).toEqual([]);
+  });
+
+  it('appends a flat point at today when the latest activity is in the past', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 20, 12, 0, 0)); // Aug 20
+
+    const transactions = [
+      tx({ date: '2026-08-01', amount: 0, balance: 100 }),
+      tx({ date: '2026-08-05', amount: -20 }),
+    ];
+    const points = cardBalanceHistory('debit', transactions, []);
+    vi.useRealTimers();
+
+    expect(points).toEqual([
+      { date: '2026-08-01', amount: 100 },
+      { date: '2026-08-05', amount: 80 },
+      { date: '2026-08-20', amount: 80 }, // extended to today, flat at the latest balance
+    ]);
+  });
+
+  it('does not duplicate a point when the latest activity is already today', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 20, 12, 0, 0));
+
+    const transactions = [tx({ date: '2026-08-20', amount: 0, balance: 50 })];
+    const points = cardBalanceHistory('debit', transactions, []);
+    vi.useRealTimers();
+
+    expect(points).toEqual([{ date: '2026-08-20', amount: 50 }]);
   });
 });
 

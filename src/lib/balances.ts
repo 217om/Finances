@@ -15,6 +15,7 @@
 // debit balance.
 
 import type { Transaction } from '../types';
+import { todayISO } from './budget';
 
 export type CardType = 'debit' | 'credit';
 
@@ -255,7 +256,11 @@ export function netWorthHistory(
 }
 
 /** One card's own balance over time, same shape and step semantics as
- *  netWorthHistory but scoped to a single card — feeds its sparkline. */
+ *  netWorthHistory but scoped to a single card — feeds its sparkline. Always
+ *  runs through today: if the latest transaction/checkpoint date is in the
+ *  past, one more point is appended at today holding the balance flat, so
+ *  the sparkline's shape reflects the account's whole history up to now
+ *  instead of stopping wherever its data happens to end. */
 export function cardBalanceHistory(
   type: CardType,
   transactions: Transaction[],
@@ -266,9 +271,15 @@ export function cardBalanceHistory(
   for (const cp of checkpoints) dates.add(cp.date);
   if (dates.size === 0) return [];
 
-  return [...dates]
+  const points = [...dates]
     .sort()
     .map((date) => ({ date, amount: cardBalanceAsOf(type, transactions, checkpoints, date).amount ?? 0 }));
+
+  const today = todayISO();
+  const last = points[points.length - 1];
+  if (last.date < today) points.push({ date: today, amount: last.amount });
+
+  return points;
 }
 
 /** Every tracked asset's signed value as of a given date (the latest entry
