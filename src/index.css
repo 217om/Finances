@@ -3504,8 +3504,29 @@ th.num {
 .exec-table tbody tr.exec-row-opening td {
   border-bottom: none;
 }
+/* Sources of cash and Uses of cash are otherwise just two bold rows in a
+ * long list, with nothing marking where one block ends and the next
+ * begins. A top border plus a faint sources-green/uses-red tint (carried
+ * down through that block's own category rows) turns each into a clearly
+ * bounded group instead of a flat, undifferentiated list. */
 .exec-table tbody tr.exec-row-total td {
   font-weight: 600;
+  border-top: 1px solid var(--divider);
+  padding-top: 12px;
+}
+.exec-table tbody tr.exec-row-sources td,
+.exec-table tbody tr.exec-subrow-sources td {
+  background: color-mix(in srgb, var(--pos) 7%, transparent);
+}
+.exec-table tbody tr.exec-subrow-sources td {
+  border-top: none;
+}
+.exec-table tbody tr.exec-row-uses td,
+.exec-table tbody tr.exec-subrow-uses td {
+  background: color-mix(in srgb, var(--neg) 7%, transparent);
+}
+.exec-table tbody tr.exec-subrow-uses td {
+  border-top: none;
 }
 .exec-table tbody tr.exec-row-closing td {
   font-weight: 600;
@@ -3516,9 +3537,6 @@ th.num {
   border-bottom: none;
   padding-top: 4px;
   padding-bottom: 4px;
-}
-.exec-table tbody tr.exec-subrow + tr.exec-row-total td {
-  padding-top: 12px;
 }
 .exec-cat-cell {
   display: flex;

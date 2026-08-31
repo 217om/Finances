@@ -87,11 +87,12 @@ function CategoryRankRows({ periods, pick, sign }: { periods: PeriodSummary[]; p
   };
   const perPeriodRows = periods.map(rowsFor);
   const rowCount = Math.max(0, ...perPeriodRows.map((r) => r.filter((x) => x !== null).length));
+  const groupClass = sign === '+' ? 'exec-subrow-sources' : 'exec-subrow-uses';
 
   return (
     <>
       {Array.from({ length: rowCount }).map((_, i) => (
-        <tr key={i} className="exec-subrow">
+        <tr key={i} className={`exec-subrow ${groupClass}`}>
           <td>&nbsp;</td>
           {perPeriodRows.map((rows, colIdx) => (
             <td key={periods[colIdx].period} className="num">
@@ -332,7 +333,7 @@ export default function ExecutiveSummaryPage({
                     </td>
                   ))}
                 </tr>
-                <tr className="exec-row-total">
+                <tr className="exec-row-total exec-row-sources">
                   <td>Sources of cash</td>
                   {periods.map((p) => (
                     <td key={p.period} className={`num ${p.sources.total > 0.005 ? 'pos' : 'muted'}`}>
@@ -341,7 +342,7 @@ export default function ExecutiveSummaryPage({
                   ))}
                 </tr>
                 <CategoryRankRows periods={periods} pick={(p) => p.sources} sign="+" />
-                <tr className="exec-row-total">
+                <tr className="exec-row-total exec-row-uses">
                   <td>Uses of cash</td>
                   {periods.map((p) => (
                     <td key={p.period} className={`num ${p.uses.total > 0.005 ? 'neg' : 'muted'}`}>
