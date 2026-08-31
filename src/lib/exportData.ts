@@ -11,6 +11,7 @@ import {
   BALANCE_CHECKPOINTS_KEY,
   ASSETS_KEY,
   ASSET_VALUES_KEY,
+  SALARY_RULE_KEY,
   CATEGORY_FILTER_KEY,
   COMBINED_CATEGORY_FILTER_KEY,
   CATEGORY_FILTER_PRESETS_KEY,
@@ -71,6 +72,7 @@ import {
   type BalanceCheckpoint,
   type CardType,
 } from './balances';
+import { isValidSalaryRule, type SalaryRule } from './executiveSummary';
 
 const BACKUP_MAGIC = 'cashflow-backup';
 const BACKUP_VERSION = 1;
@@ -132,6 +134,10 @@ export interface FullBackupFile {
    *  lib/balances.ts and lib/cards' ASSETS_KEY doc comment. */
   assets: Asset[];
   assetValues: AssetValueEntry[];
+  /** Identifies salary payments for the Executive Summary's salary-cycle
+   *  periods — global, like assets above. Null means "not set up". See
+   *  lib/cards' SALARY_RULE_KEY doc comment. */
+  salaryRule: SalaryRule | null;
   /** Categorization rules shared by every card by default — see lib/cards'
    *  GLOBAL_RULES_DB doc comment. Card-specific overrides of these live
    *  inside each card's own CardBackup above. */
@@ -306,6 +312,7 @@ export async function buildFullBackup(
   budgetCycleAmounts: BudgetCycleAmount[],
   assets: Asset[],
   assetValues: AssetValueEntry[],
+  salaryRule: SalaryRule | null,
 ): Promise<FullBackupFile> {
   const cardBackups = await Promise.all(
     cards.map(async (card): Promise<CardBackup> => {
@@ -371,6 +378,7 @@ export async function buildFullBackup(
     budgetCycleAmounts,
     assets,
     assetValues,
+    salaryRule,
     globalRules,
     globalKeywordRules,
     globalSubRules,
@@ -610,6 +618,7 @@ export async function restoreFullBackup(
   existingBudgetCycleAmounts: BudgetCycleAmount[],
   existingAssets: Asset[],
   existingAssetValues: AssetValueEntry[],
+  existingSalaryRule: SalaryRule | null,
 ): Promise<{
   cards: Card[];
   activeCardId: string;
@@ -621,6 +630,7 @@ export async function restoreFullBackup(
   budgetCycleAmounts: BudgetCycleAmount[];
   assets: Asset[];
   assetValues: AssetValueEntry[];
+  salaryRule: SalaryRule | null;
   globalRules: CategoryRule[];
   globalKeywordRules: KeywordRule[];
   globalSubRules: SubRule[];
@@ -763,6 +773,13 @@ export async function restoreFullBackup(
   const assetValues = mergeAssetValues(existingAssetValues, incomingAssetValues);
   writeLS(ASSET_VALUES_KEY, JSON.stringify(assetValues));
 
+  // A missing/invalid salaryRule (e.g. an older backup, from before this
+  // field existed) keeps whatever's already set locally rather than wiping
+  // it out — same "don't silently revert a real local setting" care as
+  // theme, just without a merge (there's only ever one rule, not a list).
+  const salaryRule = isValidSalaryRule(backup.salaryRule) ? backup.salaryRule : existingSalaryRule;
+  if (isValidSalaryRule(backup.salaryRule)) writeLS(SALARY_RULE_KEY, JSON.stringify(salaryRule));
+
   // Global rules (shared by every card by default) reconcile into the
   // shared store the same key-aware, newer-wins way each card's own rules
   // do above, rather than letting an older backup revert a newer edit.
@@ -821,6 +838,7 @@ export async function restoreFullBackup(
     budgetCycleAmounts,
     assets,
     assetValues,
+    salaryRule,
     globalRules,
     globalKeywordRules,
     globalSubRules,

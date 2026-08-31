@@ -25,6 +25,32 @@ import { dayLabelShort, monthLabel } from './format';
 
 export type SummaryGranularity = 'week' | 'month';
 
+/**
+ * Identifies which transactions are salary payments, so Monthly periods can
+ * open on the actual day you got paid instead of a fixed day-of-month (see
+ * buildSalaryCyclePeriods). A transaction counts as salary when it's
+ * categorized as `category` (via categoryOf) AND its amount falls in
+ * [minAmount, maxAmount] (either bound optional) — amount is always the
+ * transaction's own signed value, so only ever matches positive (incoming)
+ * transactions in practice.
+ */
+export interface SalaryRule {
+  category: string;
+  minAmount: number | null;
+  maxAmount: number | null;
+}
+
+export function isValidSalaryRule(x: unknown): x is SalaryRule {
+  if (!x || typeof x !== 'object') return false;
+  const r = x as Record<string, unknown>;
+  return (
+    typeof r.category === 'string' &&
+    r.category.length > 0 &&
+    (r.minAmount === null || typeof r.minAmount === 'number') &&
+    (r.maxAmount === null || typeof r.maxAmount === 'number')
+  );
+}
+
 export interface CategoryAmount {
   category: string;
   amount: number;
@@ -197,6 +223,55 @@ function hasAnyData(
   return transactions.length > 0 || cards.some((c) => c.checkpoints.length > 0) || assets.length > 0;
 }
 
+function matchesSalaryRule(t: Transaction, categoryOf: (tx: Transaction) => string, rule: SalaryRule): boolean {
+  if (t.amount <= 0) return false;
+  if (categoryOf(t) !== rule.category) return false;
+  if (rule.minAmount != null && t.amount < rule.minAmount) return false;
+  if (rule.maxAmount != null && t.amount > rule.maxAmount) return false;
+  return true;
+}
+
+/** Whether `rule` matches at least one transaction — lets the UI warn that a
+ *  newly configured (or too-narrow) rule hasn't found a salary payment yet,
+ *  so periods are still falling back to the fixed pay-cycle. */
+export function hasSalaryRuleMatch(transactions: Transaction[], categoryOf: (tx: Transaction) => string, rule: SalaryRule): boolean {
+  return transactions.some((t) => matchesSalaryRule(t, categoryOf, rule));
+}
+
+/**
+ * "Monthly" periods built from actual salary-payment dates instead of a
+ * fixed day-of-month: each date a transaction matches `rule` (see
+ * matchesSalaryRule) opens a new period running through the day before the
+ * *next* salary date, so "opening balance" always means exactly what the
+ * user means by it — the balance the day they got paid. The most recent
+ * salary date's period runs through `today` (in progress). Returns null
+ * (falling back to the fixed pay-cycle behavior) when the rule hasn't
+ * matched anything yet, so the report never just goes blank while a newly
+ * set-up rule is waiting for its first real match.
+ */
+function buildSalaryCyclePeriods(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  transactions: Transaction[],
+  categoryOf: (tx: Transaction) => string,
+  rule: SalaryRule,
+  count: number,
+  today: string,
+): PeriodSummary[] | null {
+  const dates = [...new Set(transactions.filter((t) => matchesSalaryRule(t, categoryOf, rule)).map((t) => t.date))].sort();
+  if (dates.length === 0) return null;
+
+  const bounds = dates.map((from, i) => ({
+    from,
+    to: i + 1 < dates.length ? addDaysISO(dates[i + 1], -1) : today,
+  }));
+
+  return bounds
+    .slice(-count)
+    .map((b) => summarizeRange(cards, assets, assetValues, transactions, categoryOf, b.from, customRangeLabel(b.from, b.to), b.from, b.to));
+}
+
 // Weekly columns carry a full top-5-plus-Other breakdown each, so fewer of
 // them fit comfortably than the old simple-totals table did — 4 (roughly a
 // month of weeks) instead of 8.
@@ -216,6 +291,9 @@ const DEFAULT_PERIOD_COUNT: Record<SummaryGranularity, number> = { week: 4, mont
  * categorization applied (see lib/combine.ts's combineAllData) —
  * unfiltered by any card's own hidden-category filter, since this report is
  * meant to explain the real cash movement, not a curated subset of it.
+ *
+ * When `granularity` is 'month' and `salaryRule` is given, periods are built
+ * from actual salary-payment dates instead — see buildSalaryCyclePeriods.
  */
 export function buildPeriodBreakdowns(
   cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
@@ -227,10 +305,17 @@ export function buildPeriodBreakdowns(
   weekStartDay = 1,
   granularity: SummaryGranularity = 'month',
   periodCount?: number,
+  salaryRule?: SalaryRule | null,
 ): PeriodSummary[] {
   if (!hasAnyData(cards, assets, transactions)) return [];
 
   const count = periodCount ?? DEFAULT_PERIOD_COUNT[granularity];
+
+  if (granularity === 'month' && salaryRule) {
+    const salaryPeriods = buildSalaryCyclePeriods(cards, assets, assetValues, transactions, categoryOf, salaryRule, count, todayISO());
+    if (salaryPeriods) return salaryPeriods;
+  }
+
   const today = todayISO();
   const lastPeriod = lastPeriodKey(granularity, monthStartDay, weekStartDay, today);
   let startPeriod = lastPeriod;

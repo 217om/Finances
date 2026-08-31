@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../types';
-import { buildCustomRangeSummary, buildPeriodBreakdowns } from './executiveSummary';
+import { buildCustomRangeSummary, buildPeriodBreakdowns, hasSalaryRuleMatch, type SalaryRule } from './executiveSummary';
 
 let idCounter = 0;
 function tx(overrides: Partial<Transaction> & { date: string; amount: number; description?: string }): Transaction {
@@ -215,5 +215,92 @@ describe('buildCustomRangeSummary', () => {
     expect(summary.from).toBe('2026-08-01');
     // 2026-08-25 is in the future relative to the fake-timed "today" (Aug 10) -> clamped.
     expect(summary.to).toBe('2026-08-10');
+  });
+});
+
+describe('buildPeriodBreakdowns with a salaryRule (month granularity)', () => {
+  const salaryRule: SalaryRule = { category: 'Salary', minAmount: 1000, maxAmount: null };
+
+  it('opens each period on the actual salary date instead of a fixed day-of-month', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 20, 12, 0, 0)); // Aug 20
+
+    const cardTxs: Transaction[] = [
+      tx({ date: '2026-06-24', amount: 0, balance: 500, description: 'Anchor' }),
+      tx({ date: '2026-06-27', amount: 1500, description: 'Salary' }), // irregular payday
+      tx({ date: '2026-07-01', amount: -200, description: 'Rent' }),
+      tx({ date: '2026-07-29', amount: 1500, description: 'Salary' }), // shifted earlier this cycle
+      tx({ date: '2026-08-01', amount: -50, description: 'Groceries' }),
+    ];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    const periods = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', undefined, salaryRule);
+    vi.useRealTimers();
+
+    expect(periods.map((p) => p.from)).toEqual(['2026-06-27', '2026-07-29']);
+    expect(periods[0].to).toBe('2026-07-28'); // day before the next salary date
+    expect(periods[1].to).toBe('2026-08-20'); // in-progress period runs through "today"
+    expect(periods[0].opening).toBe(500);
+    // June's salary itself lands ON the period's first day, so it's part of
+    // that period's Sources, not folded into the prior (unshown) opening.
+    expect(periods[0].sources.top).toEqual([{ category: 'Salary', amount: 1500 }]);
+    expect(periods[0].uses.top).toEqual([{ category: 'Rent', amount: 200 }]);
+    expect(periods[1].sources.top).toEqual([{ category: 'Salary', amount: 1500 }]);
+  });
+
+  it('falls back to the fixed pay-cycle when the rule matches nothing yet', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
+
+    const cardTxs: Transaction[] = [tx({ date: '2026-08-05', amount: 500, description: 'Freelance' })];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    const withRule = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', 2, salaryRule);
+    const withoutRule = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', 2, null);
+    vi.useRealTimers();
+
+    expect(withRule.map((p) => p.period)).toEqual(withoutRule.map((p) => p.period));
+  });
+
+  it('respects the min/max amount bounds, ignoring same-category transactions outside them', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
+
+    const cardTxs: Transaction[] = [
+      tx({ date: '2026-08-01', amount: 50, description: 'Salary' }), // categorized right, too small to count
+      tx({ date: '2026-08-10', amount: 1200, description: 'Salary' }), // the real payday
+    ];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    const periods = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'month', 1, salaryRule);
+    vi.useRealTimers();
+
+    expect(periods).toHaveLength(1);
+    expect(periods[0].from).toBe('2026-08-10');
+  });
+
+  it('leaves week granularity on the calendar week regardless of a configured salaryRule', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12, 0, 0));
+
+    const cardTxs: Transaction[] = [tx({ date: '2026-08-10', amount: 1200, description: 'Salary' })];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    const withRule = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'week', 2, salaryRule);
+    const withoutRule = buildPeriodBreakdowns(cards, [], [], cardTxs, categoryOf, 1, 1, 'week', 2, null);
+    vi.useRealTimers();
+
+    expect(withRule.map((p) => p.from)).toEqual(withoutRule.map((p) => p.from));
+  });
+});
+
+describe('hasSalaryRuleMatch', () => {
+  const rule: SalaryRule = { category: 'Salary', minAmount: 1000, maxAmount: 2000 };
+
+  it('is true only when a transaction matches category and amount range', () => {
+    expect(hasSalaryRuleMatch([tx({ date: '2026-08-10', amount: 1500, description: 'Salary' })], categoryOf, rule)).toBe(true);
+    expect(hasSalaryRuleMatch([tx({ date: '2026-08-10', amount: 500, description: 'Salary' })], categoryOf, rule)).toBe(false);
+    expect(hasSalaryRuleMatch([tx({ date: '2026-08-10', amount: 1500, description: 'Bonus' })], categoryOf, rule)).toBe(false);
+    expect(hasSalaryRuleMatch([], categoryOf, rule)).toBe(false);
   });
 });

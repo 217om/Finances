@@ -42,7 +42,9 @@ import {
   THEME_KEY,
   COMBINE_KEY,
   ALL_CARDS_ID,
+  SALARY_RULE_KEY,
 } from './lib/cards';
+import { isValidSalaryRule, type SalaryRule } from './lib/executiveSummary';
 import { combineAllData, combineAllRows, type CardSnapshot } from './lib/combine';
 import { EXPENSE_CATEGORIES } from './lib/categorize';
 import { makePreset, isValidPresetList, type CategoryFilterPreset } from './lib/categoryFilterPresets';
@@ -135,6 +137,29 @@ export default function App() {
       }
       return next;
     });
+  }, []);
+
+  // Global, like theme — identifies salary payments so the Executive
+  // Summary's Monthly periods can open on the actual payday. Null means
+  // "not set up", falling back to the fixed monthStartDay pay-cycle.
+  const [salaryRule, setSalaryRuleState] = useState<SalaryRule | null>(() => {
+    try {
+      const raw = localStorage.getItem(SALARY_RULE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return isValidSalaryRule(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleSetSalaryRule = useCallback((next: SalaryRule | null) => {
+    setSalaryRuleState(next);
+    try {
+      if (next) localStorage.setItem(SALARY_RULE_KEY, JSON.stringify(next));
+      else localStorage.removeItem(SALARY_RULE_KEY);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // Bumped after a full-backup restore so the load effect below re-fetches
@@ -849,6 +874,7 @@ export default function App() {
         budgetCycleAmounts,
         assets,
         assetValues,
+        salaryRule,
       );
       downloadFullBackup(backup);
     } catch (e) {
@@ -865,6 +891,7 @@ export default function App() {
     budgetCycleAmounts,
     assets,
     assetValues,
+    salaryRule,
   ]);
 
   // Shared by both restore paths (a picked file, or a cloud sync download)
@@ -885,6 +912,7 @@ export default function App() {
         budgetCycleAmounts,
         assets,
         assetValues,
+        salaryRule,
       );
       setCards(result.cards);
       setActiveCardId(result.activeCardId);
@@ -896,6 +924,7 @@ export default function App() {
       setBudgetCycleAmounts(result.budgetCycleAmounts);
       setAssets(result.assets);
       setAssetValues(result.assetValues);
+      setSalaryRuleState(result.salaryRule);
       // Restored cards may carry a card type / balance checkpoints that
       // restoreFullBackup already wrote to localStorage above — reload
       // this in-memory record from every current card so the Balances tab
@@ -909,7 +938,7 @@ export default function App() {
       setReloadToken((n) => n + 1);
       if (!opts?.silent) setToast('Full backup restored.');
     },
-    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, budgetCycleAmounts, assets, assetValues],
+    [cards, combinedCategoryFilter, filterPresets, budgets, budgetEntries, budgetCycleAmounts, assets, assetValues, salaryRule],
   );
 
   const handleRestoreFullBackup = useCallback(
@@ -1089,6 +1118,7 @@ export default function App() {
     budgetCycleAmounts,
     assets,
     assetValues,
+    salaryRule,
   });
   useEffect(() => {
     backupParamsRef.current = {
@@ -1102,6 +1132,7 @@ export default function App() {
       budgetCycleAmounts,
       assets,
       assetValues,
+      salaryRule,
     };
   });
 
@@ -1119,6 +1150,7 @@ export default function App() {
         p.budgetCycleAmounts,
         p.assets,
         p.assetValues,
+        p.salaryRule,
       );
       return JSON.stringify(backup);
     });
@@ -1194,6 +1226,7 @@ export default function App() {
     globalKeywordRules,
     globalSubRules,
     theme,
+    salaryRule,
   ]);
 
   const hasData = transactions.length > 0;
@@ -1322,6 +1355,8 @@ export default function App() {
                 categoryOf={execSummaryData.categoryOf}
                 monthStartDay={monthStartDay}
                 weekStartDay={weekStartDay}
+                salaryRule={salaryRule}
+                onSalaryRuleChange={handleSetSalaryRule}
               />
             ) : view === 'categories' ? (
               combineEnabled && combinedAllData ? (

@@ -62,6 +62,11 @@ export const BALANCE_CHECKPOINTS_KEY = 'cashflow.balanceCheckpoints';
  *  like the combined filter and budgets above. See lib/balances.ts. */
 export const ASSETS_KEY = 'cashflow.assets';
 export const ASSET_VALUES_KEY = 'cashflow.assetValues';
+/** Global, like budgets/assets — identifies salary payments so the Executive
+ *  Summary's Monthly periods can open on the actual payday instead of a
+ *  fixed day-of-month. Null/absent means "not set up", falling back to
+ *  monthStartDay. See lib/executiveSummary.ts's SalaryRule. */
+export const SALARY_RULE_KEY = 'cashflow.salaryRule';
 
 /** The first card ever created keeps the original database name so existing
  *  users' data loads with no migration step. */
