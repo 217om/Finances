@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../types';
-import { buildPeriodBreakdowns } from './executiveSummary';
+import { buildCustomRangeSummary, buildPeriodBreakdowns } from './executiveSummary';
 
 let idCounter = 0;
 function tx(overrides: Partial<Transaction> & { date: string; amount: number; description?: string }): Transaction {
@@ -176,5 +176,44 @@ describe('buildPeriodBreakdowns', () => {
     vi.useRealTimers();
 
     expect(periods).toHaveLength(3);
+  });
+});
+
+describe('buildCustomRangeSummary', () => {
+  it('builds one breakdown for the exact picked [from, to] span, spanning arbitrary period boundaries', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 20, 12, 0, 0));
+
+    const cardTxs: Transaction[] = [
+      tx({ date: '2026-07-14', amount: 0, balance: 1000 }), // anchor, day before the picked window
+      tx({ date: '2026-07-20', amount: 400, description: 'Salary' }),
+      tx({ date: '2026-08-01', amount: -150, description: 'Rent' }),
+    ];
+    const cards = [{ type: 'debit' as const, transactions: cardTxs, checkpoints: [] }];
+
+    // A range that crosses a pay-cycle month boundary, which a trailing
+    // monthly/weekly period could never express on its own.
+    const summary = buildCustomRangeSummary(cards, [], [], cardTxs, categoryOf, '2026-07-15', '2026-08-05');
+    vi.useRealTimers();
+
+    expect(summary.from).toBe('2026-07-15');
+    expect(summary.to).toBe('2026-08-05');
+    expect(summary.opening).toBe(1000);
+    expect(summary.sources.top).toEqual([{ category: 'Salary', amount: 400 }]);
+    expect(summary.uses.top).toEqual([{ category: 'Rent', amount: 150 }]);
+    expect(summary.closing).toBe(1000 + 400 - 150);
+  });
+
+  it('swaps from/to when given in reverse order, and clamps to today', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 10, 12, 0, 0));
+
+    const cards = [{ type: 'debit' as const, transactions: [], checkpoints: [] }];
+    const summary = buildCustomRangeSummary(cards, [], [], [], categoryOf, '2026-08-25', '2026-08-01');
+    vi.useRealTimers();
+
+    expect(summary.from).toBe('2026-08-01');
+    // 2026-08-25 is in the future relative to the fake-timed "today" (Aug 10) -> clamped.
+    expect(summary.to).toBe('2026-08-10');
   });
 });

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Transaction } from '../types';
 import {
+  buildCustomRangeSummary,
   buildPeriodBreakdowns,
   type CategoryAmount,
   type CategoryBreakdown,
@@ -8,6 +9,7 @@ import {
   type SummaryGranularity,
 } from '../lib/executiveSummary';
 import type { Asset, AssetValueEntry, BalanceCheckpoint, CardType } from '../lib/balances';
+import { todayISO } from '../lib/budget';
 import { categoryColor } from '../lib/categorize';
 import { money } from '../lib/format';
 
@@ -31,9 +33,12 @@ interface Props {
   weekStartDay: number;
 }
 
-const GRANULARITIES: { key: SummaryGranularity; label: string }[] = [
+type ViewMode = SummaryGranularity | 'custom';
+
+const MODES: { key: ViewMode; label: string }[] = [
   { key: 'month', label: 'Monthly' },
   { key: 'week', label: 'Weekly' },
+  { key: 'custom', label: 'Custom range' },
 ];
 
 const TOP_CATEGORY_COUNT = 5;
@@ -113,12 +118,45 @@ export default function ExecutiveSummaryPage({
   monthStartDay,
   weekStartDay,
 }: Props) {
-  const [granularity, setGranularity] = useState<SummaryGranularity>('month');
+  const [mode, setMode] = useState<ViewMode>('month');
 
-  const periods = useMemo(
-    () => buildPeriodBreakdowns(cards, assets, assetValues, transactions, categoryOf, monthStartDay, weekStartDay, granularity),
-    [cards, assets, assetValues, transactions, categoryOf, monthStartDay, weekStartDay, granularity],
+  // The exact first/last transaction dates — the custom-range pickers below
+  // let the user pick any day in between, defaulting to the full span.
+  const dateBounds = useMemo(() => {
+    if (transactions.length === 0) return { min: '', max: '' };
+    let min = transactions[0].date;
+    let max = transactions[0].date;
+    for (const t of transactions) {
+      if (t.date < min) min = t.date;
+      if (t.date > max) max = t.date;
+    }
+    return { min, max };
+  }, [transactions]);
+
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  useEffect(() => {
+    if (!customFrom && !customTo && dateBounds.max) {
+      setCustomFrom(dateBounds.min);
+      setCustomTo(dateBounds.max);
+    }
+  }, [dateBounds.min, dateBounds.max]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const trendPeriods = useMemo(
+    () =>
+      mode === 'custom'
+        ? []
+        : buildPeriodBreakdowns(cards, assets, assetValues, transactions, categoryOf, monthStartDay, weekStartDay, mode),
+    [cards, assets, assetValues, transactions, categoryOf, monthStartDay, weekStartDay, mode],
   );
+
+  const customSummary = useMemo(() => {
+    if (mode !== 'custom' || !customFrom || !customTo) return null;
+    return buildCustomRangeSummary(cards, assets, assetValues, transactions, categoryOf, customFrom, customTo);
+  }, [mode, cards, assets, assetValues, transactions, categoryOf, customFrom, customTo]);
+
+  const periods = mode === 'custom' ? (customSummary ? [customSummary] : []) : trendPeriods;
 
   const hasAssets = assets.length > 0;
   const subtitle = cardName
@@ -131,18 +169,45 @@ export default function ExecutiveSummaryPage({
       <div className="exec-view-controls">
         <p className="muted">{subtitle}</p>
         <div className="seg seg-sm">
-          {GRANULARITIES.map((g) => (
+          {MODES.map((m) => (
             <button
-              key={g.key}
+              key={m.key}
               type="button"
-              className={granularity === g.key ? 'seg-on' : ''}
-              onClick={() => setGranularity(g.key)}
+              className={mode === m.key ? 'seg-on' : ''}
+              onClick={() => setMode(m.key)}
             >
-              {g.label}
+              {m.label}
             </button>
           ))}
         </div>
       </div>
+
+      {mode === 'custom' && (
+        <div className="exec-view-controls">
+          <p className="muted">Pick the exact start and end date for this report.</p>
+          <div className="range-pickers">
+            <label className="picker">
+              <span className="picker-label">From</span>
+              <input
+                type="date"
+                value={customFrom}
+                max={todayISO()}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+            </label>
+            <span className="range-dash">→</span>
+            <label className="picker">
+              <span className="picker-label">To</span>
+              <input
+                type="date"
+                value={customTo}
+                max={todayISO()}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       {periods.length === 0 ? (
         <section className="panel">

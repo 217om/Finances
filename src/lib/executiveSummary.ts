@@ -85,24 +85,21 @@ function categoryBreakdown(map: Map<string, number>, gapAdd: number): CategoryBr
   return { total: rawTotal + gapAdd, top, otherTotal };
 }
 
-/** One period's full opening/closing + sources/uses breakdown — the
- *  per-period computation behind buildPeriodBreakdowns. */
-function computePeriodSummary(
+/** One arbitrary [from, to] range's full opening/closing + sources/uses
+ *  breakdown — the shared computation behind both a trailing period (see
+ *  computePeriodSummary) and a user-picked custom date range (see
+ *  buildCustomRangeSummary). */
+function summarizeRange(
   cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
   assets: Asset[],
   assetValues: AssetValueEntry[],
   transactions: Transaction[],
   categoryOf: (tx: Transaction) => string,
-  monthStartDay: number,
-  granularity: SummaryGranularity,
-  key: string,
-  today: string,
+  period: string,
+  label: string,
+  from: string,
+  to: string,
 ): PeriodSummary {
-  const bounds = periodBounds(granularity, key, monthStartDay);
-  const from = bounds.from;
-  // A still-in-progress period's "closing" is as of today, not the full
-  // calendar period's end, which hasn't happened yet.
-  const to = bounds.to > today ? today : bounds.to;
   const openingAsOf = addDaysISO(from, -1);
 
   const openingNW = netWorthAsOf(cards, assets, assetValues, openingAsOf);
@@ -129,8 +126,8 @@ function computePeriodSummary(
   const gap = netChange - (rawSources - rawUses) - assetChange;
 
   return {
-    period: key,
-    label: periodLabel(granularity, key, bounds),
+    period,
+    label,
     from,
     to,
     opening: openingNW.amount,
@@ -142,6 +139,54 @@ function computePeriodSummary(
     sources: categoryBreakdown(sourceMap, Math.max(gap, 0)),
     uses: categoryBreakdown(useMap, Math.max(-gap, 0)),
   };
+}
+
+/** One period's full opening/closing + sources/uses breakdown — the
+ *  per-period computation behind buildPeriodBreakdowns. */
+function computePeriodSummary(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  transactions: Transaction[],
+  categoryOf: (tx: Transaction) => string,
+  monthStartDay: number,
+  granularity: SummaryGranularity,
+  key: string,
+  today: string,
+): PeriodSummary {
+  const bounds = periodBounds(granularity, key, monthStartDay);
+  // A still-in-progress period's "closing" is as of today, not the full
+  // calendar period's end, which hasn't happened yet.
+  const to = bounds.to > today ? today : bounds.to;
+  return summarizeRange(cards, assets, assetValues, transactions, categoryOf, key, periodLabel(granularity, key, bounds), bounds.from, to);
+}
+
+function customRangeLabel(from: string, to: string): string {
+  return from === to ? dayLabelShort(from) : `${dayLabelShort(from)} – ${dayLabelShort(to)}`;
+}
+
+/**
+ * The same opening/closing + sources/uses breakdown as one column of
+ * buildPeriodBreakdowns' trend table, but for an arbitrary user-picked
+ * [from, to] range instead of a trailing pay-cycle month or week — lets the
+ * report answer "what happened between these two exact dates" directly.
+ * `to` is clamped to today if it's in the future; `from`/`to` are swapped if
+ * given in reverse order.
+ */
+export function buildCustomRangeSummary(
+  cards: { type: CardType; transactions: Transaction[]; checkpoints: BalanceCheckpoint[] }[],
+  assets: Asset[],
+  assetValues: AssetValueEntry[],
+  transactions: Transaction[],
+  categoryOf: (tx: Transaction) => string,
+  from: string,
+  to: string,
+): PeriodSummary {
+  const today = todayISO();
+  const lo = from <= to ? from : to;
+  const hiRaw = from <= to ? to : from;
+  const hi = hiRaw > today ? today : hiRaw;
+  return summarizeRange(cards, assets, assetValues, transactions, categoryOf, `${lo}_${hi}`, customRangeLabel(lo, hi), lo, hi);
 }
 
 function hasAnyData(
