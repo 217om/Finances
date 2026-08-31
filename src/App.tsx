@@ -1007,7 +1007,7 @@ export default function App() {
           setToast(
             `Restored backup · ${result.added} added${
               result.duplicates ? `, ${result.duplicates} already present` : ''
-            }`,
+            }${result.balancesFilled ? `, ${result.balancesFilled} balances updated` : ''}`,
           );
         } catch (e) {
           setError(`Could not restore that backup. ${(e as Error).message ?? ''}`.trim());
@@ -1025,10 +1025,17 @@ export default function App() {
         // Prefer the mapping this card used last time — but only if every
         // column it names still exists in this file, so a bank's changed
         // export format falls back to fresh auto-detection instead of
-        // silently applying a stale/broken mapping.
+        // silently applying a stale/broken mapping. Still take a fresh stab
+        // at the Balance column specifically even when reusing an otherwise
+        // saved mapping: a bank export that's gained a running-balance
+        // column since the last import (a common reason to re-import the
+        // same statement) should have it picked up automatically, not
+        // silently dropped just because the rest of the mapping still fits.
         const savedMapping = loadSavedColumnMapping(activeCardId);
         const suggestedMapping =
-          savedMapping && mappingFitsHeaders(savedMapping, parsed.headers) ? savedMapping : parsed.suggestedMapping;
+          savedMapping && mappingFitsHeaders(savedMapping, parsed.headers)
+            ? { ...savedMapping, balanceColumn: savedMapping.balanceColumn ?? parsed.suggestedMapping?.balanceColumn }
+            : parsed.suggestedMapping;
         setPending({ ...parsed, suggestedMapping });
       } catch (e) {
         setError(`Could not read that file. ${(e as Error).message ?? ''}`.trim());
@@ -1576,6 +1583,9 @@ export default function App() {
 function buildToast(result: ImportResult, skipped: number): string {
   const parts = [`Added ${result.added} transaction${result.added === 1 ? '' : 's'}`];
   if (result.duplicates > 0) parts.push(`${result.duplicates} already imported`);
+  if (result.balancesFilled > 0) {
+    parts.push(`${result.balancesFilled} balance${result.balancesFilled === 1 ? '' : 's'} updated`);
+  }
   if (skipped > 0) parts.push(`${skipped} skipped`);
   return parts.join(' · ');
 }

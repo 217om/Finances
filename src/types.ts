@@ -75,6 +75,10 @@ export interface MonthlySummary {
 export interface ImportResult {
   added: number;
   duplicates: number;
+  /** Of those duplicates, how many were missing (or had a stale) `balance`
+   *  that this import filled in — the rest of a duplicate row is always
+   *  left untouched. See lib/db.ts's addTransactions. */
+  balancesFilled: number;
   fileName: string;
 }
 

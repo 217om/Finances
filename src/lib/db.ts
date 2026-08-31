@@ -152,18 +152,32 @@ export async function addTransactions(
 
   let added = 0;
   let duplicates = 0;
+  let balancesFilled = 0;
   for (const t of txs) {
     if (existing.has(t.id)) {
       duplicates++;
-      // The row's own content (date/amount/description/note/etc.) is left
-      // untouched on a duplicate — but if it predates the `seq` field
-      // (imported before same-day chronological ordering existed), and
-      // this fresh parse of the same file computed one, backfill just that
-      // so a routine re-import can self-heal same-day balance/sort
-      // ordering instead of it staying wrong forever.
-      if (t.seq !== undefined) {
+      // The row's own content (category, notes, etc. — none of which live on
+      // the row itself anyway, see overrides/subOverrides — plus date/
+      // amount/description) is left untouched on a duplicate. Two fields are
+      // the deliberate exception, self-healed from this fresh parse of the
+      // same transaction: `seq` only if it was missing before (an ordering
+      // field with no "corrected" value, just present-or-not), and
+      // `balance` whenever this parse has one and it differs from what's
+      // stored — a re-imported statement that now includes (or corrects) a
+      // running-balance column should update it, since that's exactly what
+      // "re-import to backfill the closing balance" means, without
+      // resurrecting anything else about the row.
+      if (t.seq !== undefined || t.balance !== undefined) {
         const row = await store.get(t.id);
-        if (row && row.seq === undefined) void store.put({ ...row, seq: t.seq });
+        if (row) {
+          const patch: Partial<Transaction> = {};
+          if (t.seq !== undefined && row.seq === undefined) patch.seq = t.seq;
+          if (t.balance !== undefined && t.balance !== row.balance) {
+            patch.balance = t.balance;
+            balancesFilled++;
+          }
+          if (Object.keys(patch).length > 0) void store.put({ ...row, ...patch });
+        }
       }
       continue;
     }
@@ -172,7 +186,7 @@ export async function addTransactions(
     added++;
   }
   await tx.done;
-  return { added, duplicates, fileName };
+  return { added, duplicates, balancesFilled, fileName };
 }
 
 /** Remove every transaction imported from a given file name. */
