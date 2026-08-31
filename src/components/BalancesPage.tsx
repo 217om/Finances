@@ -66,12 +66,17 @@ export function BalanceSnapshotCard({
   amount,
   freshness,
   history,
+  markerDates,
 }: {
   name: string;
   badge: string;
   amount: number | null;
   freshness: string;
   history: NetWorthPoint[];
+  /** See Sparkline's markerDates — only meaningful when `history`'s values
+   *  are known to line up exactly with whatever table these dates come
+   *  from (e.g. a single card with no other assets in the picture). */
+  markerDates?: Set<string>;
 }) {
   return (
     <div className="balance-card">
@@ -83,7 +88,9 @@ export function BalanceSnapshotCard({
         {amount === null ? '—' : money(amount)}
       </div>
       <div className="muted balance-freshness">{freshness}</div>
-      {history.length >= 2 && <Sparkline points={history} positive={amount === null || amount >= 0} />}
+      {history.length >= 2 && (
+        <Sparkline points={history} positive={amount === null || amount >= 0} markerDates={markerDates} />
+      )}
     </div>
   );
 }

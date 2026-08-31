@@ -194,20 +194,54 @@ export default function ExecutiveSummaryPage({
   // badge.
   const currentPeriodKey = mode !== 'custom' && periods.length > 0 ? periods[periods.length - 1].period : null;
 
+  // When there's exactly one card and no assets, the period table's
+  // opening/closing figures are that card's own numbers exactly (nothing
+  // else feeds them) — so its sparkline can be marked at each period
+  // boundary with those *exact* values, letting the chart's shape be read
+  // directly against the table below it. Doesn't apply once a second card
+  // or an asset is in the mix: the table would then be a combined total no
+  // single card's own line matches.
+  const periodMarkers = useMemo(() => {
+    if (cards.length !== 1 || assets.length > 0 || periods.length === 0) return null;
+    const values = new Map<string, number>();
+    const dates = new Set<string>();
+    for (const p of periods) {
+      values.set(p.from, p.opening);
+      dates.add(p.from);
+    }
+    const last = periods[periods.length - 1];
+    values.set(last.to, last.closing);
+    dates.add(last.to);
+    return { values, dates };
+  }, [cards.length, assets.length, periods]);
+
   // The same "current balance" snapshot the Balances tab shows, one row —
   // cards and other assets together, not split into separate sections —
   // read-only here (no type toggle, "Update balance" button, or history;
   // that stays the Balances tab's job).
   const cardSnapshots = useMemo(
     () =>
-      cards.map((c) => ({
-        key: c.cardId,
-        name: c.cardName,
-        badge: c.type === 'credit' ? 'Credit' : 'Debit',
-        computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
-        history: cardBalanceHistory(c.type, c.transactions, c.checkpoints),
-      })),
-    [cards],
+      cards.map((c) => {
+        const history = cardBalanceHistory(c.type, c.transactions, c.checkpoints);
+        // Merge in the period-boundary points (exact table values override
+        // whatever this card's own history would otherwise show for that
+        // date) so the marked dots are guaranteed to match the table, not
+        // just closely track it.
+        const merged = periodMarkers
+          ? [...new Map([...history.map((p): [string, number] => [p.date, p.amount]), ...periodMarkers.values]).entries()]
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([date, amount]): NetWorthPoint => ({ date, amount }))
+          : history;
+        return {
+          key: c.cardId,
+          name: c.cardName,
+          badge: c.type === 'credit' ? 'Credit' : 'Debit',
+          computed: computeCardBalance(c.type, c.transactions, c.checkpoints),
+          history: merged,
+          markerDates: periodMarkers?.dates,
+        };
+      }),
+    [cards, periodMarkers],
   );
   const assetSnapshots = useMemo(
     () =>
@@ -243,6 +277,7 @@ export default function ExecutiveSummaryPage({
                 amount={c.computed.amount}
                 freshness={freshnessLabel(c.computed)}
                 history={c.history}
+                markerDates={c.markerDates}
               />
             ))}
             {assetSnapshots.map((a) => (
