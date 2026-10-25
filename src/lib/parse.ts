@@ -440,7 +440,12 @@ export function normalize(
 
     const description = cleanDescription(row[mapping.descriptionColumn] ?? '');
     const month = date.slice(0, 7);
-    const id = hashId(`${date}|${amount.toFixed(2)}|${description.toLowerCase()}`);
+    // Preserve existing IDs for two-decimal amounts, without collapsing
+    // distinct OMR amounts such as 7.241 and 7.244 into one transaction.
+    const amountKey = Number(amount.toFixed(2)) === amount ? amount.toFixed(2) : String(amount);
+    const id = parsed.importKind === 'google-sheet' && row.__sheetIdentity
+      ? row.__sheetIdentity
+      : hashId(`${date}|${amountKey}|${description.toLowerCase()}`);
 
     // Raw, unmodified value — no sign convention applied here (see lib/balances.ts).
     let balance: number | undefined;
@@ -456,6 +461,7 @@ export function normalize(
       description,
       month,
       source: parsed.fileName,
+      ...(parsed.importKind ? { importKind: parsed.importKind } : {}),
       importedAt,
       ...(balance !== undefined ? { balance } : {}),
     });

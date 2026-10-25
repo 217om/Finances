@@ -77,6 +77,8 @@ import type { ProviderId } from './lib/cloudSync/types';
 import NotesWidget from './components/NotesWidget';
 import Header from './components/Header';
 import UploadPanel from './components/UploadPanel';
+import GoogleSheetsImport from './components/GoogleSheetsImport';
+import { isSmsSheetHeaders, type SmsSheet } from './lib/googleSheets';
 import ColumnMapper from './components/ColumnMapper';
 import Dashboard from './components/Dashboard';
 import EmptyState from './components/EmptyState';
@@ -240,6 +242,10 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<ParsedFile | null>(null);
+  const [uploadedSheet, setUploadedSheet] = useState<SmsSheet | null>(null);
+  const importCardRef = useRef(activeCardId);
+  importCardRef.current = activeCardId;
+  useEffect(() => { setPending(null); setUploadedSheet(null); }, [activeCardId]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrencyState] = useState(getCurrency());
@@ -1018,8 +1024,13 @@ export default function App() {
       // Otherwise inspect the statement so the user can confirm its columns.
       try {
         const parsed = await inspectFile(file);
+        if (importCardRef.current !== activeCardId) return;
         if (parsed.rows.length === 0) {
           setError(`No rows found in "${parsed.fileName}". Is it an exported transaction file?`);
+          return;
+        }
+        if (isSmsSheetHeaders(parsed.headers)) {
+          setUploadedSheet({ rows: parsed.rows, location: { id: 'uploaded', gid: 0 }, fileName: parsed.fileName });
           return;
         }
         // Prefer the mapping this card used last time — but only if every
@@ -1045,7 +1056,7 @@ export default function App() {
   );
 
   const handleConfirmMapping = useCallback(
-    async (parsed: ParsedFile, mapping: ColumnMapping) => {
+    async (parsed: ParsedFile, mapping: ColumnMapping, matches: ReadonlyMap<string, string>) => {
       setBusy(true);
       setError(null);
       try {
@@ -1055,13 +1066,13 @@ export default function App() {
           setBusy(false);
           return;
         }
-        const result: ImportResult = await addTransactions(dbName, txs, parsed.fileName);
+        const result: ImportResult = await addTransactions(dbName, txs, parsed.fileName, matches);
         const fresh = await getAllTransactions(dbName);
         setTransactions(fresh);
         setPending(null);
         setToast(buildToast(result, skipped));
         try {
-          localStorage.setItem(scopedKey(COLUMN_MAPPING_KEY, activeCardId), JSON.stringify(mapping));
+          if (!parsed.importKind) localStorage.setItem(scopedKey(COLUMN_MAPPING_KEY, activeCardId), JSON.stringify(mapping));
         } catch {
           /* ignore unavailable localStorage */
         }
@@ -1335,7 +1346,11 @@ export default function App() {
             )}
 
             {(view === 'summary' || view === 'dashboard' || !hasData) && !combineEnabled && (
-              <UploadPanel onFiles={handleFiles} compact={hasData} />
+              <>
+                <UploadPanel onFiles={handleFiles} compact={hasData} />
+                <GoogleSheetsImport key={activeCardId} cardId={activeCardId} cardName={activeCard.name}
+                  currency={currency} disabled={busy || loading || !!pending} uploadedSheet={uploadedSheet} onInspect={setPending} />
+              </>
             )}
 
             {error && (
@@ -1528,7 +1543,9 @@ export default function App() {
 
       {pending && (
         <ColumnMapper
+          key={`${activeCardId}:${pending.fileName}`}
           parsed={pending}
+          existing={transactions}
           busy={busy}
           onCancel={() => setPending(null)}
           onConfirm={handleConfirmMapping}

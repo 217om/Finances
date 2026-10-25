@@ -41,6 +41,63 @@ npm run preview  # preview the production build
 
 Then open the local URL, and drop in a statement exported from your bank.
 
+## Importing your SMS automation from Google Sheets
+
+Open **Import from Google Sheets** on an individual card, paste the sheet URL
+(including its `gid` tab), and choose **Read shared sheet** or **Sign in with
+Google (private sheet)**. Select the matching **Account / Card**, then **Review
+transactions** and import. The link is remembered locally for that card. Read
+the sheet again whenever your automation adds transactions; imports are manual,
+not background polling. The app only reads the sheet and never modifies it.
+
+The supported automation columns are `Direction`, `Amount`, `Currency`,
+`Transaction Date`, `Merchant / Counterparty`, and `Account / Card`. Optional
+`Raw SMS`, `Transaction Time`, `Transaction Type`, and `Transaction ID` improve
+descriptions and stable duplicate detection. `IN` is income and `OUT` is an
+expense. Automation dates use **MM/DD/YYYY**, not the bank-file date convention.
+Three-decimal OMR amounts are preserved.
+
+Import each account into its own card. Only rows in the active card's currency
+are imported: USD purchases are excluded from an OMR card, since the SMS does
+not contain their settled OMR amount. Import those from your OMR bank statement
+instead. Missing/invalid transaction dates and invalid amounts/directions are
+skipped and counted in the preview; fix them in the sheet and import again.
+`Received At` is never assumed to be the transaction date. **Available Balance /
+Limit** is not imported as a balance, because it can be an available credit
+limit rather than an account balance.
+
+Repeated sheet imports use the bank's transaction reference when available,
+otherwise a stable SMS identity including account, date, time and message.
+Statement and sheet entries with matching normalized date, signed amount and
+description merge automatically. When descriptions differ, **Review possible
+duplicates** pairs sheet and statement entries with the same date and exact
+amount, one-to-one. Checked pairs count once; uncheck separate payments. Verify
+these suggestions, particularly when several payments share a date and amount.
+Confirmed matches are remembered for future imports in this browser, including
+after reload. A later statement can fill the stored transaction's balance
+without replacing its notes or categorization. Import order does not matter.
+Identical SMS notifications without a unique reference or time cannot be
+distinguished reliably; make sure the automation records a unique reference or
+transaction time when separate payments would otherwise be identical.
+
+For private sheets, the app owner must enable the **Google Sheets API** in the
+Google Cloud project, configure an OAuth **Web application** client with the
+app's exact origin under **Authorized JavaScript origins**, configure the
+consent screen/test users and the read-only scope
+`https://www.googleapis.com/auth/spreadsheets.readonly`, then set the public
+`VITE_GOOGLE_CLIENT_ID` at build/dev startup. Restart Vite or rebuild after
+changing it. This uses the same client ID as Drive backups, but requests a
+separate read-only Sheets grant; existing Drive backup access alone cannot read
+your transaction sheet. No client secret is needed. Sign-in grants and tokens
+are not saved; sign in again when refreshing a private sheet.
+
+Keep private financial sheets private. If sign-in is not configured, download
+the tab using **File → Download → Comma-separated values (.csv)** and upload it
+through the existing statement dropzone. SMS-format CSV/Excel uploads use the
+same account selection, currency filtering and overlap review as the link.
+Shared-link reading works only when Google permits anonymous export and the
+browser/network permits the request. Never paste OAuth tokens into the URL.
+
 ## How to export a statement from your bank
 
 Most banks offer a "Download / Export transactions" option that produces a **CSV** (or Excel)

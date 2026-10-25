@@ -1248,6 +1248,20 @@ th.num {
   color: var(--muted);
   font-size: 13px;
 }
+.sheet-import {
+  margin: 16px 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.sheet-import h3, .import-overlaps h3 { margin: 0 0 8px; }
+.sheet-import .field input { width: 100%; min-width: 0; padding: 10px; }
+.sheet-import-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.import-overlaps { margin: 18px 0; }
+.import-overlap-list { max-height: 240px; overflow-y: auto; }
+.import-overlap { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.import-overlap input { flex-shrink: 0; margin-top: 4px; }
+.import-overlap span { overflow-wrap: anywhere; }
 .map-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

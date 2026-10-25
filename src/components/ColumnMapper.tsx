@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import type { ColumnMapping, ParsedFile } from '../types';
+import type { ColumnMapping, ParsedFile, Transaction } from '../types';
 import { normalize } from '../lib/parse';
+import { findImportOverlaps } from '../lib/importOverlaps';
 import { money, monthLabel } from '../lib/format';
 
 interface Props {
   parsed: ParsedFile;
   busy: boolean;
-  onConfirm: (parsed: ParsedFile, mapping: ColumnMapping) => void;
+  existing: Transaction[];
+  onConfirm: (parsed: ParsedFile, mapping: ColumnMapping, matches: ReadonlyMap<string, string>) => void;
   onCancel: () => void;
 }
 
@@ -19,7 +21,8 @@ const NONE = '';
  * mapping; the user can correct it if a bank uses unusual column names. A live
  * preview shows how many rows will import and the first few normalized rows.
  */
-export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Props) {
+export default function ColumnMapper({ parsed, busy, existing, onConfirm, onCancel }: Props) {
+  const [keepSeparate, setKeepSeparate] = useState<Set<string>>(new Set());
   const detected = parsed.suggestedMapping;
 
   const [mode, setMode] = useState<AmountMode>(
@@ -52,6 +55,9 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
     dateColumn !== NONE &&
     (mode === 'single' ? amountColumn !== NONE : debitColumn !== NONE || creditColumn !== NONE);
 
+  const normalized = useMemo(() => valid ? normalize(parsed, mapping).transactions : [], [parsed, mapping, valid]);
+  const overlaps = useMemo(() => findImportOverlaps(normalized, existing), [normalized, existing]);
+  const reviewedMatches = new Map([...overlaps].filter(([id, row]) => !keepSeparate.has(`${id}|${row.id}`)).map(([id, row]) => [id, row.id]));
   const preview = useMemo(() => {
     if (!valid) return { transactions: [], skipped: 0 };
     const { transactions, skipped } = normalize(parsed, mapping);
@@ -71,14 +77,16 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
   );
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-backdrop" onClick={() => { if (!busy) onCancel(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Review “{parsed.fileName}”</h2>
-          <p>We detected the columns below. Adjust anything that looks off, then import.</p>
+          <p>{parsed.importKind === 'google-sheet'
+            ? 'Amounts follow IN/OUT. Review the transactions and any possible duplicates before importing.'
+            : 'We detected the columns below. Adjust anything that looks off, then import.'}</p>
         </div>
 
-        <div className="map-grid">
+        {!parsed.importKind && <div className="map-grid">
           <label className="field">
             <span>Date column</span>
             {columnSelect(dateColumn, setDateColumn)}
@@ -143,7 +151,7 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
               </label>
             </>
           )}
-        </div>
+        </div>}
 
         <div className="preview">
           <div className="preview-head">
@@ -183,6 +191,32 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
           )}
         </div>
 
+        {overlaps.size > 0 && (
+          <section className="import-overlaps" aria-label="Review possible duplicates">
+            <h3>Review {overlaps.size} possible duplicate{overlaps.size === 1 ? '' : 's'}</h3>
+            <p className="muted">These sheet and statement entries have the same date and amount, but different descriptions.
+              Checked entries will count once. Uncheck any that are separate payments.</p>
+            <div className="import-overlap-list">
+              {normalized.filter((t, i, all) => overlaps.has(t.id) && all.findIndex((r) => r.id === t.id) === i).map((t) => {
+                const match = overlaps.get(t.id)!;
+                const key = `${t.id}|${match.id}`;
+                return <label className="import-overlap" key={key}>
+                  <input type="checkbox" checked={!keepSeparate.has(key)} disabled={busy} onChange={(e) => {
+                    const checked = e.target.checked;
+                    setKeepSeparate((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.delete(key); else next.add(key);
+                      return next;
+                    });
+                  }} />
+                  <span><strong>{t.date} · {money(t.amount)}</strong><br />
+                    New: {t.description || '—'}<br />Already stored: {match.description || '—'}</span>
+                </label>;
+              })}
+            </div>
+          </section>
+        )}
+
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>
             Cancel
@@ -191,9 +225,9 @@ export default function ColumnMapper({ parsed, busy, onConfirm, onCancel }: Prop
             type="button"
             className="btn btn-primary"
             disabled={!valid || busy}
-            onClick={() => onConfirm(parsed, mapping)}
+            onClick={() => onConfirm(parsed, mapping, reviewedMatches)}
           >
-            {busy ? 'Importing…' : 'Import statement'}
+            {busy ? 'Importing…' : 'Import transactions'}
           </button>
         </div>
       </div>

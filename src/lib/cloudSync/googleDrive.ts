@@ -36,24 +36,38 @@ declare global {
 }
 
 let gisLoadPromise: Promise<void> | null = null;
-function loadGis(): Promise<void> {
+export function loadGis(): Promise<void> {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
   if (gisLoadPromise) return gisLoadPromise;
   gisLoadPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${GIS_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Could not load Google Sign-In.')));
-      return;
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SRC}"]`);
+    const script = existing ?? document.createElement('script');
+    const cleanup = () => {
+      clearTimeout(timeout);
+      script.removeEventListener('load', onLoad);
+      script.removeEventListener('error', onError);
+    };
+    const onError = () => {
+      cleanup();
+      script.remove(); // Permit a subsequent attempt after a transient failure.
+      reject(new Error('Could not load Google Sign-In. Check your connection and try again.'));
+    };
+    const onLoad = () => {
+      if (!window.google?.accounts?.oauth2) { onError(); return; }
+      cleanup();
+      resolve();
+    };
+    const timeout = setTimeout(onError, 15_000);
+    script.addEventListener('load', onLoad);
+    script.addEventListener('error', onError);
+    if (!existing) {
+      script.src = GIS_SRC;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
     }
-    const script = document.createElement('script');
-    script.src = GIS_SRC;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Could not load Google Sign-In.'));
-    document.head.appendChild(script);
   });
+  gisLoadPromise.catch(() => { gisLoadPromise = null; });
   return gisLoadPromise;
 }
 

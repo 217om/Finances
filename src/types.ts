@@ -2,7 +2,7 @@
 
 /** A single normalized bank transaction. */
 export interface Transaction {
-  /** Stable hash id derived from date + amount + description; used for de-duplication. */
+  /** Stable statement content hash or SMS identity; used for de-duplication. */
   id: string;
   /** ISO date string, YYYY-MM-DD. */
   date: string;
@@ -14,6 +14,10 @@ export interface Transaction {
   month: string;
   /** Name of the file this transaction was imported from. */
   source: string;
+  /** Absent for statement uploads and older records. */
+  importKind?: 'google-sheet';
+  /** Identities confirmed to describe this same transaction in other imports. */
+  importAliases?: string[];
   /** Epoch millis of when this row was imported. */
   importedAt: number;
   /** Optional free-text note the user attached to this one transaction. Empty
@@ -54,6 +58,7 @@ export interface ColumnMapping {
 /** Result of inspecting an uploaded file before committing it to storage. */
 export interface ParsedFile {
   fileName: string;
+  importKind?: 'google-sheet';
   headers: string[];
   rows: Record<string, string>[];
   /** Best-guess mapping; the user can confirm or override it. */

@@ -8,6 +8,7 @@
 // existing users' data loads with no migration.
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { transactionContentKey } from './importOverlaps';
 import type {
   CategoryOverride,
   CategoryRule,
@@ -132,30 +133,52 @@ export async function getAllTransactions(dbName: string): Promise<Transaction[]>
 }
 
 /**
- * Insert transactions, skipping any whose id already exists. The id is a hash
- * of date+amount+description, so re-uploading an overlapping statement is safe
- * and won't double-count.
+ * Merge stable IDs, remembered aliases, exact content and explicitly reviewed
+ * sheet/statement overlaps in one write transaction. Existing records keep
+ * their IDs, descriptions and notes; statements may enrich their balances.
  */
 export async function addTransactions(
   dbName: string,
   txs: Transaction[],
   fileName: string,
+  reviewedMatches: ReadonlyMap<string, string> = new Map(),
 ): Promise<ImportResult> {
   const db = await getDB(dbName);
   const tx = db.transaction('transactions', 'readwrite');
   const store = tx.objectStore('transactions');
 
-  // Fetch existing keys once instead of an awaited lookup per row, then queue
-  // puts without awaiting each — a large import goes from thousands of
-  // round-trips to one key scan plus a batch of writes.
-  const existing = new Set<string>((await store.getAllKeys()) as string[]);
+  // Scan once, then queue writes without awaiting a lookup per incoming row.
+  const records = await store.getAll();
+  const existing = new Map(records.map((t) => [t.id, t]));
+  const aliases = new Map(records.flatMap((t) => (t.importAliases ?? []).map((alias) => [alias, t.id] as const)));
+  const byContent = new Map<string, Transaction[]>();
+  for (const row of records) {
+    const key = transactionContentKey(row);
+    byContent.set(key, [...(byContent.get(key) ?? []), row]);
+  }
+  const consumed = new Set<string>();
 
   let added = 0;
   let duplicates = 0;
   let balancesFilled = 0;
-  for (const t of txs) {
-    if (existing.has(t.id)) {
+  for (const incoming of txs) {
+    // Older versions hashed OMR values to two decimals. If that old hash
+    // belongs to a genuinely different amount, preserve both payments.
+    const collision = existing.get(incoming.id);
+    const t = collision && !incoming.importKind && transactionContentKey(collision) !== transactionContentKey(incoming)
+      ? { ...incoming, id: `${incoming.id}:${transactionContentKey(incoming)}` } : incoming;
+    const reviewed = existing.get(reviewedMatches.get(t.id) ?? '');
+    // Validate a reviewed overlap again inside the write transaction, so a
+    // stale review can never merge different amounts or dates.
+    const reviewedId = reviewed && reviewed.date === t.date && reviewed.amount === t.amount
+      && reviewed.importKind !== t.importKind && !consumed.has(reviewed.id) ? reviewed.id : undefined;
+    const contentMatch = byContent.get(transactionContentKey(t))?.find((row) =>
+      !consumed.has(row.id) && (row.importKind !== t.importKind || !t.importKind),
+    );
+    const duplicateId = existing.has(t.id) ? t.id : aliases.get(t.id) ?? reviewedId ?? contentMatch?.id;
+    if (duplicateId) {
       duplicates++;
+      consumed.add(duplicateId);
       // The row's own content (category, notes, etc. — none of which live on
       // the row itself anyway, see overrides/subOverrides — plus date/
       // amount/description) is left untouched on a duplicate. Two fields are
@@ -167,21 +190,38 @@ export async function addTransactions(
       // running-balance column should update it, since that's exactly what
       // "re-import to backfill the closing balance" means, without
       // resurrecting anything else about the row.
-      if (t.seq !== undefined || t.balance !== undefined) {
-        const row = await store.get(t.id);
+      if (t.seq !== undefined || t.balance !== undefined || t.id !== duplicateId || t.importAliases?.length) {
+        const row = existing.get(duplicateId);
         if (row) {
           const patch: Partial<Transaction> = {};
+          const mergedAliases = new Set([...(row.importAliases ?? []), ...(t.importAliases ?? [])]);
+          if (t.id !== duplicateId) mergedAliases.add(t.id);
+          if (mergedAliases.size > (row.importAliases ?? []).length) {
+            patch.importAliases = [...mergedAliases];
+            for (const alias of mergedAliases) aliases.set(alias, duplicateId);
+          }
           if (t.seq !== undefined && row.seq === undefined) patch.seq = t.seq;
+          // Once a statement supplies an SMS row's running balance, use its
+          // batch ordering too: SMS receipt order is not settlement order.
+          if (row.importKind === 'google-sheet' && !t.importKind && t.balance !== undefined && t.seq !== undefined) {
+            patch.seq = t.seq;
+            patch.importedAt = t.importedAt;
+          }
           if (t.balance !== undefined && t.balance !== row.balance) {
             patch.balance = t.balance;
             balancesFilled++;
           }
-          if (Object.keys(patch).length > 0) void store.put({ ...row, ...patch });
+          if (Object.keys(patch).length > 0) {
+            const updated = { ...row, ...patch };
+            existing.set(row.id, updated);
+            void store.put(updated);
+          }
         }
       }
       continue;
     }
-    existing.add(t.id); // also de-dupes identical rows within this file
+    existing.set(t.id, t); // also de-dupes identical rows within this file
+    for (const alias of t.importAliases ?? []) aliases.set(alias, t.id);
     void store.put(t);
     added++;
   }
